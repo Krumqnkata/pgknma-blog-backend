@@ -362,9 +362,19 @@ UNFOLD = {
                         "icon": "privacy_tip",
                     },
                     {
-                        "title": "Изпратени",
+                        "title": "Текущи сигнали",
                         "link": "/admin/valentine/valenitines/",
                         "icon": "message",
+                    },
+                    {
+                        "title": "Годишни кампании",
+                        "link": "/admin/valentine/valentinecampaign/",
+                        "icon": "calendar_month",
+                    },
+                    {
+                        "title": "Архивирани сигнали",
+                        "link": "/admin/valentine/archivedvalentine/",
+                        "icon": "archive",
                     },
                 ],
             },

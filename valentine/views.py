@@ -1,4 +1,5 @@
 import hashlib
+import uuid
 from datetime import date, timedelta
 from functools import wraps
 
@@ -7,7 +8,8 @@ from django.contrib import messages
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.http import JsonResponse
+from django.db.models import Count, Max
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -15,13 +17,22 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .forms import AccessCodeForm, ReportValentineForm, ValentineCreateForm
+from .forms import (
+    AccessCodeForm,
+    ReportValentineForm,
+    ValentineCreateForm,
+    ValentineEditForm,
+)
 from .models import Profile, Register, Settings, Valenitines
 
 
 AUTH_COOKIE = "authv"
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_MAX_ATTEMPTS = 5
+GROUP_AUDIENCE_TYPES = (
+    Valenitines.AudienceType.CLASS,
+    Valenitines.AudienceType.TEACHERS,
+)
 
 
 def _default_reveal_date():
@@ -33,8 +44,13 @@ def _default_reveal_date():
 def get_platform_settings():
     platform_settings = Settings.objects.first()
     if platform_settings:
+        platform_settings.ensure_active_campaign()
         return platform_settings
-    return Settings.objects.create(reveal_date=_default_reveal_date())
+    platform_settings = Settings.objects.create(
+        reveal_date=_default_reveal_date()
+    )
+    platform_settings.ensure_active_campaign()
+    return platform_settings
 
 
 def get_current_session(request):
@@ -80,6 +96,35 @@ def _class_label(class_name):
     if not class_name or len(class_name) < 2:
         return class_name
     return f"{class_name[:-1]}{mapping.get(class_name[-1].upper(), class_name[-1])} клас"
+
+
+def _sent_dispatch_count(profile, campaign, day_start, day_end):
+    return (
+        Valenitines.objects.filter(
+            sender_profile=profile,
+            campaign=campaign,
+            date__gte=day_start,
+            date__lt=day_end,
+        )
+        .values("dispatch_id")
+        .distinct()
+        .count()
+    )
+
+
+def _group_dispatch_count(profile, campaign, day_start, day_end):
+    return (
+        Valenitines.objects.filter(
+            sender_profile=profile,
+            campaign=campaign,
+            audience_type__in=GROUP_AUDIENCE_TYPES,
+            date__gte=day_start,
+            date__lt=day_end,
+        )
+        .values("dispatch_id")
+        .distinct()
+        .count()
+    )
 
 
 @never_cache
@@ -152,14 +197,22 @@ def logout(request):
 def home(request):
     profile = request.valentine_profile
     platform_settings = get_platform_settings()
+    campaign = platform_settings.active_campaign
     now = timezone.now()
     form = ValentineCreateForm(request.POST or None, sender=profile)
     day_start, day_end = _day_bounds(now)
-    sent_today = Valenitines.objects.filter(
-        sender_profile=profile,
-        date__gte=day_start,
-        date__lt=day_end,
-    ).count()
+    sent_today = _sent_dispatch_count(
+        profile,
+        campaign,
+        day_start,
+        day_end,
+    )
+    group_sent_today = _group_dispatch_count(
+        profile,
+        campaign,
+        day_start,
+        day_end,
+    )
 
     if request.method == "POST":
         form_is_valid = form.is_valid()
@@ -167,51 +220,113 @@ def home(request):
             form.add_error(None, "Изпращането на валентинки в момента е затворено.")
         if form_is_valid and not form.errors:
             created = False
+            delivered_count = 0
             with transaction.atomic():
                 Profile.objects.select_for_update().get(pk=profile.pk)
-                locked_sent_today = Valenitines.objects.filter(
-                    sender_profile=profile,
-                    date__gte=day_start,
-                    date__lt=day_end,
-                ).count()
+                locked_sent_today = _sent_dispatch_count(
+                    profile,
+                    campaign,
+                    day_start,
+                    day_end,
+                )
                 if locked_sent_today >= platform_settings.daily_limit:
                     form.add_error(
                         None,
                         f"Достигна дневния лимит от {platform_settings.daily_limit} валентинки.",
                     )
                 else:
-                    last_sent = (
-                        Valenitines.objects.filter(sender_profile=profile)
-                        .order_by("-date")
-                        .first()
+                    target_type = form.cleaned_data["target_type"]
+                    is_group = target_type in GROUP_AUDIENCE_TYPES
+                    locked_group_sent_today = _group_dispatch_count(
+                        profile,
+                        campaign,
+                        day_start,
+                        day_end,
                     )
-                    if last_sent:
-                        remaining = platform_settings.cooldown_seconds - int(
-                            (now - last_sent.date).total_seconds()
+                    if (
+                        is_group
+                        and locked_group_sent_today
+                        >= platform_settings.group_daily_limit
+                    ):
+                        form.add_error(
+                            None,
+                            "Достигна дневния лимит от "
+                            f"{platform_settings.group_daily_limit} "
+                            "групови пратки.",
                         )
-                        if remaining > 0:
-                            form.add_error(
-                                None,
-                                f"Изчакай още {remaining} секунди преди следващото послание.",
+                    else:
+                        last_sent = (
+                            Valenitines.objects.filter(
+                                sender_profile=profile,
+                                campaign=campaign,
                             )
-                    if not form.errors:
-                        Valenitines.objects.create(
-                            profile=form.cleaned_data["recipient"],
-                            sender_profile=profile,
-                            content=form.cleaned_data["content"],
-                            theme=form.cleaned_data["theme"],
-                            is_anonymous=form.cleaned_data["is_anonymous"],
+                            .order_by("-date")
+                            .first()
                         )
-                        created = True
+                        if last_sent:
+                            remaining = (
+                                platform_settings.cooldown_seconds
+                                - int((now - last_sent.date).total_seconds())
+                            )
+                            if remaining > 0:
+                                form.add_error(
+                                    None,
+                                    "Изчакай още "
+                                    f"{remaining} секунди преди "
+                                    "следващото послание.",
+                                )
+                        if not form.errors:
+                            recipients = form.cleaned_data["recipients"]
+                            dispatch_id = uuid.uuid4()
+                            if (
+                                target_type
+                                == Valenitines.AudienceType.INDIVIDUAL
+                            ):
+                                audience_label = recipients[0].full_name
+                            elif (
+                                target_type
+                                == Valenitines.AudienceType.CLASS
+                            ):
+                                audience_label = _class_label(
+                                    form.cleaned_data["target_class"]
+                                )
+                            else:
+                                audience_label = "Всички учители"
+                            rows = [
+                                Valenitines(
+                                    profile=recipient,
+                                    sender_profile=profile,
+                                    campaign=campaign,
+                                    dispatch_id=dispatch_id,
+                                    audience_type=target_type,
+                                    audience_label=audience_label,
+                                    content=form.cleaned_data["content"],
+                                    theme=form.cleaned_data["theme"],
+                                    is_anonymous=form.cleaned_data[
+                                        "is_anonymous"
+                                    ],
+                                )
+                                for recipient in recipients
+                            ]
+                            Valenitines.objects.bulk_create(rows)
+                            delivered_count = len(rows)
+                            created = True
             if created:
-                messages.success(
-                    request,
-                    "Валентинката е запечатана и доставена! 💌",
-                )
+                if delivered_count == 1:
+                    success_message = (
+                        "Валентинката е запечатана и доставена! 💌"
+                    )
+                else:
+                    success_message = (
+                        "Груповата валентинка е запечатана и доставена "
+                        f"на {delivered_count} получатели! 💌"
+                    )
+                messages.success(request, success_message)
                 return redirect("valentine:home")
 
     class_names = (
         Profile.objects.exclude(pk=profile.pk)
+        .exclude(clas="U")
         .order_by("clas")
         .values_list("clas", flat=True)
         .distinct()
@@ -220,18 +335,38 @@ def home(request):
         {"value": class_name, "label": _class_label(class_name)}
         for class_name in class_names
     ]
+    all_recipients = (
+        Profile.objects.exclude(pk=profile.pk)
+        .order_by("clas", "first_name", "last_name")
+    )
+    teacher_count = all_recipients.filter(clas="U").count()
     reveal_at = platform_settings.get_reveal_at()
-    received_count = Valenitines.objects.filter(profile=profile).count()
+    received_count = Valenitines.objects.filter(
+        profile=profile,
+        campaign=campaign,
+    ).count()
     selected_recipient_id = form.data.get("recipient") if form.is_bound else ""
-    selected_class = ""
+    selected_target_type = (
+        form.data.get("target_type")
+        if form.is_bound
+        else Valenitines.AudienceType.INDIVIDUAL
+    ) or Valenitines.AudienceType.INDIVIDUAL
+    selected_class = (
+        ValentineCreateForm.normalize_class_name(
+            form.data.get("target_class")
+        )
+        if form.is_bound
+        else ""
+    )
     if selected_recipient_id:
         try:
-            selected_class = (
-                Profile.objects.filter(pk=selected_recipient_id)
-                .values_list("clas", flat=True)
-                .first()
-                or ""
-            )
+            if not selected_class:
+                selected_class = (
+                    Profile.objects.filter(pk=selected_recipient_id)
+                    .values_list("clas", flat=True)
+                    .first()
+                    or ""
+                )
         except (ValidationError, ValueError):
             selected_recipient_id = ""
 
@@ -242,7 +377,10 @@ def home(request):
             "form": form,
             "profile": profile,
             "classes": classes,
+            "all_recipients": all_recipients,
+            "teacher_count": teacher_count,
             "platform_settings": platform_settings,
+            "campaign": campaign,
             "sending_open": platform_settings.sending_is_open(now),
             "reveal_at": reveal_at,
             "is_revealed": now >= reveal_at,
@@ -252,9 +390,17 @@ def home(request):
                 platform_settings.daily_limit - sent_today,
                 0,
             ),
-            "total_sent": Valenitines.objects.count(),
+            "group_sent_today": group_sent_today,
+            "group_remaining_today": max(
+                platform_settings.group_daily_limit - group_sent_today,
+                0,
+            ),
+            "total_sent": Valenitines.objects.filter(
+                campaign=campaign
+            ).count(),
             "selected_recipient_id": selected_recipient_id,
             "selected_class": selected_class,
+            "selected_target_type": selected_target_type,
         },
     )
 
@@ -287,19 +433,24 @@ def get_students(request, class_name):
 def inbox(request):
     profile = request.valentine_profile
     platform_settings = get_platform_settings()
+    campaign = platform_settings.active_campaign
     reveal_at = platform_settings.get_reveal_at()
     now = timezone.now()
     is_revealed = now >= reveal_at
     received = Valenitines.objects.filter(
         profile=profile,
+        campaign=campaign,
         is_reported=False,
-    ).exclude(moderation_status=Valenitines.ModerationStatus.HIDDEN)
+    ).exclude(
+        moderation_status=Valenitines.ModerationStatus.HIDDEN
+    ).select_related("sender_profile")
 
     return render(
         request,
         "valentine/inbox.html",
         {
             "profile": profile,
+            "campaign": campaign,
             "valentines": received if is_revealed else received.none(),
             "received_count": received.count(),
             "show_received_count": platform_settings.show_received_count,
@@ -314,17 +465,124 @@ def inbox(request):
 @require_GET
 @valentine_login_required
 def outbox(request):
-    sent = (
-        Valenitines.objects.filter(sender_profile=request.valentine_profile)
-        .select_related("profile")
-        .order_by("-date")
+    platform_settings = get_platform_settings()
+    campaign = platform_settings.active_campaign
+    sent_dispatches = (
+        Valenitines.objects.filter(
+            sender_profile=request.valentine_profile,
+            campaign=campaign,
+        )
+        .values(
+            "dispatch_id",
+            "audience_type",
+            "audience_label",
+            "content",
+            "theme",
+            "is_anonymous",
+        )
+        .annotate(
+            sent_at=Max("date"),
+            edited_at=Max("edited_at"),
+            recipient_count=Count("id"),
+        )
+        .order_by("-sent_at")
     )
+    reveal_at = platform_settings.get_reveal_at()
     return render(
         request,
         "valentine/outbox.html",
         {
             "profile": request.valentine_profile,
-            "valentines": sent,
+            "campaign": campaign,
+            "dispatches": sent_dispatches,
+            "can_edit": timezone.now() < reveal_at,
+            "reveal_at": reveal_at,
+        },
+    )
+
+
+@never_cache
+@require_http_methods(["GET", "POST"])
+@valentine_login_required
+def edit_valentine(request, dispatch_id):
+    platform_settings = get_platform_settings()
+    campaign = platform_settings.active_campaign
+    dispatch_queryset = Valenitines.objects.filter(
+        sender_profile=request.valentine_profile,
+        dispatch_id=dispatch_id,
+        campaign=campaign,
+    )
+    representative = dispatch_queryset.order_by("date").first()
+    if representative is None:
+        raise Http404
+
+    reveal_at = platform_settings.get_reveal_at()
+    if timezone.now() >= reveal_at:
+        messages.error(
+            request,
+            "Валентинките не могат да се редактират след разкриването.",
+        )
+        return redirect("valentine:outbox")
+    if dispatch_queryset.exclude(
+        moderation_status=Valenitines.ModerationStatus.CLEAR
+    ).exists():
+        messages.error(
+            request,
+            "Докладвана или модерирана валентинка не може да се редактира.",
+        )
+        return redirect("valentine:outbox")
+
+    form = ValentineEditForm(
+        request.POST or None,
+        initial={
+            "content": representative.content,
+            "theme": representative.theme,
+            "is_anonymous": representative.is_anonymous,
+        },
+    )
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            locked_dispatch = list(
+                dispatch_queryset.select_for_update()
+            )
+            if not locked_dispatch:
+                raise Http404
+            if timezone.now() >= get_platform_settings().get_reveal_at():
+                messages.error(
+                    request,
+                    "Моментът за разкриване настъпи. "
+                    "Промените не бяха запазени.",
+                )
+                return redirect("valentine:outbox")
+            if any(
+                valentine.moderation_status
+                != Valenitines.ModerationStatus.CLEAR
+                for valentine in locked_dispatch
+            ):
+                messages.error(
+                    request,
+                    "Докладвана или модерирана валентинка "
+                    "не може да се редактира.",
+                )
+                return redirect("valentine:outbox")
+            dispatch_queryset.update(
+                content=form.cleaned_data["content"],
+                theme=form.cleaned_data["theme"],
+                is_anonymous=form.cleaned_data["is_anonymous"],
+                edited_at=timezone.now(),
+            )
+        messages.success(request, "Промените по валентинката са запазени.")
+        return redirect("valentine:outbox")
+
+    return render(
+        request,
+        "valentine/edit.html",
+        {
+            "form": form,
+            "profile": request.valentine_profile,
+            "audience_label": representative.audience_label,
+            "recipient_count": dispatch_queryset.count(),
+            "reveal_at": reveal_at,
         },
     )
 
@@ -332,10 +590,12 @@ def outbox(request):
 @require_POST
 @valentine_login_required
 def report_valentine(request, valentine_id):
+    campaign = get_platform_settings().active_campaign
     valentine = get_object_or_404(
         Valenitines,
         pk=valentine_id,
         profile=request.valentine_profile,
+        campaign=campaign,
     )
     form = ReportValentineForm(request.POST)
     if not form.is_valid():

@@ -96,7 +96,50 @@ class Register(models.Model):
         verbose_name_plural = "Valentine сесии"
 
 
+class ValentineCampaign(models.Model):
+    year = models.PositiveSmallIntegerField(
+        unique=True,
+        verbose_name="Година",
+    )
+    name = models.CharField(
+        max_length=120,
+        blank=True,
+        verbose_name="Име на кампанията",
+    )
+    is_archived = models.BooleanField(
+        default=False,
+        verbose_name="Архивирана",
+    )
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Архивирана на",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Създадена на",
+    )
+
+    def save(self, *args, **kwargs):
+        if not self.name:
+            self.name = f"Valentine {self.year}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name or f"Valentine {self.year}"
+
+    class Meta:
+        ordering = ("-year",)
+        verbose_name = "Valentine кампания"
+        verbose_name_plural = "Valentine кампании"
+
+
 class Valenitines(models.Model):
+    class AudienceType(models.TextChoices):
+        INDIVIDUAL = "individual", "Един човек"
+        CLASS = "class", "Цял клас"
+        TEACHERS = "teachers", "Всички учители"
+
     class Theme(models.TextChoices):
         CLASSIC = "classic", "Класическа"
         SUNSET = "sunset", "Залез"
@@ -119,17 +162,40 @@ class Valenitines(models.Model):
 
     profile = models.ForeignKey(
         Profile,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="received_valentines",
         verbose_name="Получател",
     )
     sender_profile = models.ForeignKey(
         Profile,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         related_name="sent_valentines",
         null=True,
         blank=True,
         verbose_name="Изпращач",
+    )
+    campaign = models.ForeignKey(
+        ValentineCampaign,
+        on_delete=models.PROTECT,
+        related_name="valentines",
+        verbose_name="Кампания",
+    )
+    dispatch_id = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        db_index=True,
+        verbose_name="Пратка",
+    )
+    audience_type = models.CharField(
+        max_length=20,
+        choices=AudienceType.choices,
+        default=AudienceType.INDIVIDUAL,
+        verbose_name="Тип получател",
+    )
+    audience_label = models.CharField(
+        max_length=120,
+        blank=True,
+        verbose_name="Получатели",
     )
     content = models.TextField(
         validators=[MaxLengthValidator(500)],
@@ -157,6 +223,11 @@ class Valenitines(models.Model):
         verbose_name="Модерация",
     )
     date = models.DateTimeField(auto_now_add=True)
+    edited_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Последна редакция",
+    )
 
     def __str__(self):
         return f"До {self.profile.full_name} от {self.sender_profile or 'системата'}"
@@ -165,9 +236,42 @@ class Valenitines(models.Model):
         ordering = ("-date",)
         verbose_name = "Валентинка"
         verbose_name_plural = "Валентинки"
+        indexes = (
+            models.Index(
+                fields=("sender_profile", "date"),
+                name="val_sender_date_idx",
+            ),
+            models.Index(
+                fields=("sender_profile", "dispatch_id"),
+                name="val_sender_dispatch_idx",
+            ),
+            models.Index(
+                fields=("campaign", "profile", "date"),
+                name="val_campaign_recv_idx",
+            ),
+            models.Index(
+                fields=("campaign", "sender_profile", "date"),
+                name="val_campaign_sent_idx",
+            ),
+        )
+
+
+class ArchivedValentine(Valenitines):
+    class Meta:
+        proxy = True
+        verbose_name = "Архивирана валентинка"
+        verbose_name_plural = "Архивирани валентинки"
 
 
 class Settings(models.Model):
+    active_campaign = models.ForeignKey(
+        ValentineCampaign,
+        on_delete=models.PROTECT,
+        related_name="+",
+        null=True,
+        blank=True,
+        verbose_name="Активна кампания",
+    )
     reveal_date = models.DateField(verbose_name="Резервна дата за разкриване")
     reveal_at = models.DateTimeField(
         null=True,
@@ -197,12 +301,23 @@ class Settings(models.Model):
         default=30,
         verbose_name="Пауза между две изпращания (секунди)",
     )
+    group_daily_limit = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name="Дневен лимит за групови пратки",
+        help_text=(
+            "Групова пратка до клас или всички учители се брои като една."
+        ),
+    )
     show_received_count = models.BooleanField(
         default=True,
         verbose_name="Показвай броя получени преди разкриването",
     )
 
     def clean(self):
+        if self.active_campaign_id and self.active_campaign.is_archived:
+            raise ValidationError(
+                "Архивирана кампания не може да бъде активна."
+            )
         if (
             self.sending_starts_at
             and self.sending_ends_at
@@ -211,8 +326,33 @@ class Settings(models.Model):
             raise ValidationError(
                 "Краят на изпращането трябва да бъде след началото."
             )
+        reveal_at = (
+            self.get_reveal_at()
+            if self.reveal_at or self.reveal_date
+            else None
+        )
+        if (
+            self.sending_ends_at
+            and reveal_at
+            and reveal_at < self.sending_ends_at
+        ):
+            raise ValidationError(
+                "Разкриването трябва да бъде след края на изпращането."
+            )
+        if (
+            self.sending_starts_at
+            and reveal_at
+            and reveal_at <= self.sending_starts_at
+        ):
+            raise ValidationError(
+                "Разкриването трябва да бъде след началото на изпращането."
+            )
         if self.daily_limit < 1:
             raise ValidationError("Дневният лимит трябва да бъде поне 1.")
+        if self.group_daily_limit < 1:
+            raise ValidationError(
+                "Дневният лимит за групови пратки трябва да бъде поне 1."
+            )
 
     def save(self, *args, **kwargs):
         if not self.pk and Settings.objects.exists():
@@ -226,13 +366,36 @@ class Settings(models.Model):
         value = datetime.combine(self.reveal_date, time.min)
         return timezone.make_aware(value, timezone.get_current_timezone())
 
+    def ensure_active_campaign(self):
+        if self.active_campaign_id:
+            return self.active_campaign
+        year = self.get_reveal_at().year
+        campaign, _ = ValentineCampaign.objects.get_or_create(
+            year=year,
+            defaults={"name": f"Valentine {year}"},
+        )
+        if campaign.is_archived:
+            campaign.is_archived = False
+            campaign.archived_at = None
+            campaign.save(update_fields=["is_archived", "archived_at"])
+        self.active_campaign = campaign
+        if self.pk:
+            Settings.objects.filter(pk=self.pk).update(
+                active_campaign=campaign
+            )
+        return campaign
+
     def sending_is_open(self, at=None):
         at = at or timezone.now()
         if not self.valentines_enabled:
             return False
+        if self.active_campaign_id and self.active_campaign.is_archived:
+            return False
         if self.sending_starts_at and at < self.sending_starts_at:
             return False
         if self.sending_ends_at and at > self.sending_ends_at:
+            return False
+        if at >= self.get_reveal_at():
             return False
         return True
 

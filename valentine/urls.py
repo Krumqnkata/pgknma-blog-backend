@@ -13,6 +13,11 @@ urlpatterns = [
     path("inbox/", views.inbox, name="inbox"),
     path("outbox/", views.outbox, name="outbox"),
     path(
+        "outbox/<uuid:dispatch_id>/edit/",
+        views.edit_valentine,
+        name="edit",
+    ),
+    path(
         "report/<int:valentine_id>/",
         views.report_valentine,
         name="report",

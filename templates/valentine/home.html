@@ -52,31 +52,69 @@
 
     <div class="composer-grid">
         <form method="post" class="panel composer-form" novalidate
-              data-students-url="{% url 'valentine:students' '__CLASS__' %}">
+              data-students-url="{% url 'valentine:students' '__CLASS__' %}"
+              data-teacher-count="{{ teacher_count }}">
             {% csrf_token %}
             {% if form.non_field_errors %}
             <div class="form-alert">{{ form.non_field_errors }}</div>
             {% endif %}
 
-            <div class="step-label"><span>1</span> Избери получател</div>
-            <div class="field-grid">
-                <div class="field">
+            <div class="step-label"><span>1</span> Избери получатели</div>
+            <div class="audience-picker" role="radiogroup" aria-label="Изпрати до">
+                <label class="audience-option">
+                    <input type="radio" name="target_type" value="individual"
+                           {% if selected_target_type == "individual" %}checked{% endif %}>
+                    <span><strong>Един човек</strong><small>Избери конкретен получател</small></span>
+                </label>
+                <label class="audience-option">
+                    <input type="radio" name="target_type" value="class"
+                           {% if selected_target_type == "class" %}checked{% endif %}>
+                    <span><strong>Цял клас</strong><small>Едно послание до всички в класа</small></span>
+                </label>
+                <label class="audience-option">
+                    <input type="radio" name="target_type" value="teachers"
+                           {% if selected_target_type == "teachers" %}checked{% endif %}>
+                    <span><strong>Всички учители</strong><small>{{ teacher_count }} налични получатели</small></span>
+                </label>
+            </div>
+            {% if form.target_type.errors %}<div class="field-error">{{ form.target_type.errors }}</div>{% endif %}
+
+            <div class="field-grid audience-fields">
+                <div class="field" data-class-field>
                     <label for="recipient-class">Клас</label>
-                    <select id="recipient-class" data-selected="{{ selected_class }}" required>
+                    <select id="recipient-class" name="target_class"
+                            data-selected="{{ selected_class }}">
                         <option value="">Избери клас</option>
                         {% for class in classes %}
                         <option value="{{ class.value }}" {% if selected_class == class.value %}selected{% endif %}>{{ class.label }}</option>
                         {% endfor %}
                     </select>
+                    {% if form.target_class.errors %}<div class="field-error">{{ form.target_class.errors }}</div>{% endif %}
                 </div>
-                <div class="field">
+                <div class="field" data-recipient-field>
                     <label for="recipient">Получател</label>
-                    <select id="recipient" name="recipient" data-selected="{{ selected_recipient_id }}" required disabled>
-                        <option value="">Първо избери клас</option>
+                    <select id="recipient" name="recipient"
+                            data-selected="{{ selected_recipient_id }}">
+                        <option value="">Избери получател</option>
+                        {% for recipient in all_recipients %}
+                            {% with recipient_id=recipient.pk|stringformat:"s" %}
+                            <option value="{{ recipient_id }}"
+                                    data-class="{{ recipient.clas }}"
+                                    {% if selected_recipient_id == recipient_id %}selected{% endif %}>
+                                {{ recipient.full_name }} · {{ recipient.clas_bg }}
+                            </option>
+                            {% endwith %}
+                        {% endfor %}
                     </select>
                     {% if form.recipient.errors %}<div class="field-error">{{ form.recipient.errors }}</div>{% endif %}
                 </div>
             </div>
+            <p class="audience-summary" data-audience-summary aria-live="polite"></p>
+            <p class="field-help">
+                Групови пратки днес: {{ group_sent_today }} от
+                {{ platform_settings.group_daily_limit }}.
+                Остават {{ group_remaining_today }}.
+            </p>
 
             <div class="step-label"><span>2</span> Напиши посланието</div>
             <div class="field">

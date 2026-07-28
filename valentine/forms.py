@@ -23,10 +23,22 @@ class AccessCodeForm(forms.Form):
 
 
 class ValentineCreateForm(forms.Form):
+    target_type = forms.ChoiceField(
+        choices=Valenitines.AudienceType.choices,
+        initial=Valenitines.AudienceType.INDIVIDUAL,
+        required=False,
+        label="Изпрати до",
+    )
+    target_class = forms.CharField(
+        max_length=4,
+        required=False,
+        label="Клас",
+    )
     recipient = forms.ModelChoiceField(
         queryset=Profile.objects.none(),
         label="Получател",
         empty_label=None,
+        required=False,
     )
     content = forms.CharField(
         min_length=2,
@@ -53,10 +65,112 @@ class ValentineCreateForm(forms.Form):
 
     def __init__(self, *args, sender=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.sender = sender
         recipients = Profile.objects.all()
         if sender is not None:
             recipients = recipients.exclude(pk=sender.pk)
         self.fields["recipient"].queryset = recipients
+
+    @staticmethod
+    def normalize_class_name(value):
+        value = (value or "").strip().upper()
+        mapping = {"А": "A", "Б": "B", "В": "V", "Г": "G"}
+        if value and value[-1] in mapping:
+            value = value[:-1] + mapping[value[-1]]
+        return value
+
+    def clean(self):
+        cleaned_data = super().clean()
+        target_type = (
+            cleaned_data.get("target_type")
+            or Valenitines.AudienceType.INDIVIDUAL
+        )
+        target_class = self.normalize_class_name(
+            cleaned_data.get("target_class")
+        )
+        recipient = cleaned_data.get("recipient")
+
+        if target_type == Valenitines.AudienceType.INDIVIDUAL:
+            if recipient is None:
+                self.add_error("recipient", "Избери получател.")
+                return cleaned_data
+            if target_class and recipient.clas != target_class:
+                self.add_error(
+                    "recipient",
+                    "Избраният човек не е в посочения клас.",
+                )
+                return cleaned_data
+            recipients = [recipient]
+            target_class = recipient.clas
+        elif target_type == Valenitines.AudienceType.CLASS:
+            if not target_class:
+                self.add_error("target_class", "Избери клас.")
+                return cleaned_data
+            if target_class == "U":
+                self.add_error(
+                    "target_class",
+                    "За учителите използвай „Всички учители“.",
+                )
+                return cleaned_data
+            recipients = list(
+                self.fields["recipient"].queryset.filter(
+                    clas=target_class
+                )
+            )
+            if not recipients:
+                self.add_error(
+                    "target_class",
+                    "В този клас няма налични получатели.",
+                )
+                return cleaned_data
+        elif target_type == Valenitines.AudienceType.TEACHERS:
+            target_class = "U"
+            recipients = list(
+                self.fields["recipient"].queryset.filter(clas="U")
+            )
+            if not recipients:
+                self.add_error(
+                    "target_type",
+                    "Няма налични учители.",
+                )
+                return cleaned_data
+        else:
+            self.add_error("target_type", "Невалиден тип получател.")
+            return cleaned_data
+
+        cleaned_data["target_type"] = target_type
+        cleaned_data["target_class"] = target_class
+        cleaned_data["recipients"] = recipients
+        return cleaned_data
+
+    def clean_content(self):
+        content = self.cleaned_data["content"].strip()
+        if len(content) < 2:
+            raise forms.ValidationError("Посланието е твърде кратко.")
+        return content
+
+
+class ValentineEditForm(forms.Form):
+    content = forms.CharField(
+        min_length=2,
+        max_length=500,
+        label="Послание",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 7,
+                "placeholder": "Напиши нещо мило…",
+                "maxlength": 500,
+            }
+        ),
+    )
+    theme = forms.ChoiceField(
+        choices=Valenitines.Theme.choices,
+        label="Тема на картичката",
+    )
+    is_anonymous = forms.BooleanField(
+        required=False,
+        label="Анонимно за получателя",
+    )
 
     def clean_content(self):
         content = self.cleaned_data["content"].strip()

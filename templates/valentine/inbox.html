@@ -29,7 +29,7 @@
 {% else %}
 <section class="mail-grid wrap">
     {% for valentine in valentines %}
-    <article class="received-card theme-{{ valentine.theme }}">
+    <article class="received-card theme-{{ valentine.theme }}" data-download-card>
         <div class="card-stamp">♥</div>
         <span class="card-kicker">{{ valentine.date|date:"d.m.Y · H:i" }}</span>
         <p class="received-message">{{ valentine.content }}</p>
@@ -42,7 +42,15 @@
                 От Valentine екипа
             {% endif %}
         </div>
-        <details class="report-details">
+        <div class="card-download-row" data-download-exclude>
+            <button class="button button-secondary button-small"
+                    type="button"
+                    data-download-image
+                    data-filename="valentine-{{ valentine.id }}">
+                Изтегли като снимка
+            </button>
+        </div>
+        <details class="report-details" data-download-exclude>
             <summary>Докладвай</summary>
             <form method="post" action="{% url 'valentine:report' valentine.id %}">
                 {% csrf_token %}

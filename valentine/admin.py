@@ -1,6 +1,8 @@
 import csv
+from datetime import date
 
 from django.contrib import admin, messages
+from django.db import transaction
 from django.db.models import Count
 from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import reverse
@@ -8,9 +10,11 @@ from django.utils import timezone
 from unfold.admin import ModelAdmin
 
 from .models import (
+    ArchivedValentine,
     Profile,
     Register,
     Settings,
+    ValentineCampaign,
     Valenitines,
     generate_unique_code,
 )
@@ -38,6 +42,22 @@ class ProfileAdmin(ModelAdmin):
 
     @admin.action(description="Изпрати позитивна системна валентинка")
     def send_system_valentine(self, request, queryset):
+        platform_settings = Settings.objects.first()
+        if platform_settings is None:
+            self.message_user(
+                request,
+                "Първо създай Valentine настройки и активна кампания.",
+                messages.ERROR,
+            )
+            return
+        campaign = platform_settings.ensure_active_campaign()
+        if campaign.is_archived:
+            self.message_user(
+                request,
+                "Не може да се изпраща в архивирана кампания.",
+                messages.ERROR,
+            )
+            return
         wishes = (
             "Продължавай да бъдеш причината някой да се усмихне днес. ✨",
             "Твоята енергия прави училището по-хубаво място. 💛",
@@ -51,6 +71,8 @@ class ProfileAdmin(ModelAdmin):
                 Valenitines(
                     profile=student,
                     sender_profile=None,
+                    campaign=campaign,
+                    audience_label=student.full_name,
                     content=wishes[index % len(wishes)],
                     is_anonymous=True,
                     theme=Valenitines.Theme.CLASSIC,
@@ -114,12 +136,15 @@ class ValentinesAdmin(ModelAdmin):
     list_display = (
         "profile",
         "sender_display",
+        "campaign",
+        "audience_label",
         "is_anonymous",
         "moderation_status",
         "date",
         "content_preview",
     )
     list_filter = (
+        "campaign",
         "moderation_status",
         "is_reported",
         "is_anonymous",
@@ -136,18 +161,30 @@ class ValentinesAdmin(ModelAdmin):
     )
     readonly_fields = (
         "date",
+        "edited_at",
         "profile",
         "sender_profile",
+        "campaign",
+        "dispatch_id",
+        "audience_type",
+        "audience_label",
         "content",
         "theme",
         "is_anonymous",
+        "is_reported",
         "report_reason",
         "reported_at",
+        "moderation_status",
     )
     fields = (
         "profile",
         "sender_profile",
+        "campaign",
+        "dispatch_id",
+        "audience_type",
+        "audience_label",
         "date",
+        "edited_at",
         "content",
         "theme",
         "is_anonymous",
@@ -162,6 +199,20 @@ class ValentinesAdmin(ModelAdmin):
         "export_reported_valentines",
         "export_valentine_stats",
     )
+
+    def get_queryset(self, request):
+        active_campaign_id = Settings.objects.values_list(
+            "active_campaign_id",
+            flat=True,
+        ).first()
+        return super().get_queryset(request).filter(
+            moderation_status__in=(
+                Valenitines.ModerationStatus.PENDING,
+                Valenitines.ModerationStatus.HIDDEN,
+                Valenitines.ModerationStatus.RESTORED,
+            ),
+            campaign_id=active_campaign_id,
+        )
 
     @admin.display(description="Изпращач")
     def sender_display(self, obj):
@@ -184,17 +235,18 @@ class ValentinesAdmin(ModelAdmin):
         count = queryset.update(
             is_reported=False,
             moderation_status=Valenitines.ModerationStatus.RESTORED,
-            report_reason="",
-            reported_at=None,
         )
         self.message_user(request, f"Възстановени послания: {count}.")
 
-    @admin.action(description="Експорт на докладваните (CSV)")
+    @admin.action(description="Експорт на модерираните (CSV)")
     def export_reported_valentines(self, request, queryset):
-        reported = queryset.filter(is_reported=True).select_related(
-            "sender_profile",
-            "profile",
-        )
+        reported = queryset.filter(
+            moderation_status__in=(
+                Valenitines.ModerationStatus.PENDING,
+                Valenitines.ModerationStatus.HIDDEN,
+                Valenitines.ModerationStatus.RESTORED,
+            )
+        ).select_related("sender_profile", "profile", "campaign")
         response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
         response["Content-Disposition"] = (
             'attachment; filename="reported_valentines.csv"'
@@ -202,6 +254,7 @@ class ValentinesAdmin(ModelAdmin):
         writer = csv.writer(response)
         writer.writerow(
             (
+                "Кампания",
                 "Изпращач",
                 "Клас на изпращача",
                 "Получател",
@@ -214,6 +267,7 @@ class ValentinesAdmin(ModelAdmin):
             sender = valentine.sender_profile
             writer.writerow(
                 (
+                    csv_safe(valentine.campaign),
                     csv_safe(sender.full_name if sender else "Valentine екип"),
                     csv_safe(sender.clas_bg if sender else "-"),
                     csv_safe(valentine.profile.full_name),
@@ -231,31 +285,175 @@ class ValentinesAdmin(ModelAdmin):
             'attachment; filename="valentine_statistics.csv"'
         )
         writer = csv.writer(response)
-        writer.writerow(("Клас", "Получени", "Изпратени"))
+        writer.writerow(("Кампания", "Клас", "Получени", "Изпратени"))
 
+        campaign_ids = queryset.values_list(
+            "campaign_id",
+            flat=True,
+        ).distinct()
+        statistics_source = Valenitines.objects.filter(
+            campaign_id__in=campaign_ids
+        )
         received = {
-            row["profile__clas"]: row["total"]
-            for row in Valenitines.objects.values("profile__clas").annotate(
-                total=Count("id")
-            )
+            (row["campaign__name"], row["profile__clas"]): row["total"]
+            for row in statistics_source.values(
+                "campaign__name",
+                "profile__clas",
+            ).annotate(total=Count("id"))
         }
         sent = {
-            row["sender_profile__clas"]: row["total"]
-            for row in Valenitines.objects.exclude(sender_profile=None)
-            .values("sender_profile__clas")
+            (row["campaign__name"], row["sender_profile__clas"]): row["total"]
+            for row in statistics_source.exclude(sender_profile=None)
+            .values("campaign__name", "sender_profile__clas")
             .annotate(total=Count("id"))
         }
-        for class_name in sorted(set(received) | set(sent)):
+        for campaign_name, class_name in sorted(set(received) | set(sent)):
             writer.writerow(
                 (
+                    csv_safe(campaign_name),
                     csv_safe(class_name),
-                    received.get(class_name, 0),
-                    sent.get(class_name, 0),
+                    received.get((campaign_name, class_name), 0),
+                    sent.get((campaign_name, class_name), 0),
                 )
             )
         return response
 
     def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ArchivedValentine)
+class ArchivedValentinesAdmin(ValentinesAdmin):
+    def get_queryset(self, request):
+        return ModelAdmin.get_queryset(self, request).filter(
+            moderation_status__in=(
+                Valenitines.ModerationStatus.PENDING,
+                Valenitines.ModerationStatus.HIDDEN,
+                Valenitines.ModerationStatus.RESTORED,
+            ),
+            campaign__is_archived=True,
+        )
+
+
+@admin.register(ValentineCampaign)
+class ValentineCampaignAdmin(ModelAdmin):
+    list_display = (
+        "name",
+        "year",
+        "is_archived",
+        "archived_at",
+        "message_count",
+    )
+    ordering = ("-year",)
+    search_fields = ("name", "=year")
+    list_filter = ("is_archived", "year")
+    readonly_fields = ("is_archived", "archived_at", "created_at")
+    fields = (
+        "name",
+        "year",
+        "is_archived",
+        "archived_at",
+        "created_at",
+    )
+    actions = (
+        "make_active",
+        "archive_campaigns",
+        "restore_campaigns",
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            total_messages=Count("valentines")
+        )
+
+    @admin.display(description="Валентинки", ordering="total_messages")
+    def message_count(self, obj):
+        return obj.total_messages
+
+    @admin.action(
+        description="Направи активна и архивирай предишната кампания"
+    )
+    def make_active(self, request, queryset):
+        if queryset.count() != 1:
+            self.message_user(
+                request,
+                "Избери точно една кампания.",
+                messages.ERROR,
+            )
+            return
+        campaign = queryset.first()
+        with transaction.atomic():
+            campaign.is_archived = False
+            campaign.archived_at = None
+            campaign.save(update_fields=["is_archived", "archived_at"])
+
+            platform_settings = Settings.objects.select_for_update().first()
+            if platform_settings is None:
+                platform_settings = Settings.objects.create(
+                    reveal_date=date(campaign.year, 2, 14),
+                    active_campaign=campaign,
+                )
+            else:
+                previous = platform_settings.active_campaign
+                if previous and previous.pk != campaign.pk:
+                    previous.is_archived = True
+                    previous.archived_at = timezone.now()
+                    previous.save(
+                        update_fields=["is_archived", "archived_at"]
+                    )
+                Settings.objects.filter(pk=platform_settings.pk).update(
+                    active_campaign=campaign
+                )
+        self.message_user(
+            request,
+            f"{campaign} вече е активната кампания.",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Архивирай избраните минали кампании")
+    def archive_campaigns(self, request, queryset):
+        active_campaign_id = (
+            Settings.objects.values_list(
+                "active_campaign_id",
+                flat=True,
+            ).first()
+        )
+        if active_campaign_id and queryset.filter(
+            pk=active_campaign_id
+        ).exists():
+            self.message_user(
+                request,
+                "Активната кампания не може да бъде архивирана. "
+                "Първо активирай новата година.",
+                messages.ERROR,
+            )
+            return
+        count = queryset.update(
+            is_archived=True,
+            archived_at=timezone.now(),
+        )
+        self.message_user(
+            request,
+            f"Архивирани кампании: {count}.",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Възстанови избраните кампании от архива")
+    def restore_campaigns(self, request, queryset):
+        count = queryset.update(
+            is_archived=False,
+            archived_at=None,
+        )
+        self.message_user(
+            request,
+            f"Възстановени кампании: {count}.",
+            messages.SUCCESS,
+        )
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 
@@ -274,6 +472,7 @@ class SettingsAdmin(ModelAdmin):
             "Кампания",
             {
                 "fields": (
+                    "active_campaign",
                     "valentines_enabled",
                     "sending_starts_at",
                     "sending_ends_at",
@@ -287,12 +486,14 @@ class SettingsAdmin(ModelAdmin):
             {
                 "fields": (
                     "daily_limit",
+                    "group_daily_limit",
                     "cooldown_seconds",
                     "show_received_count",
                 )
             },
         ),
     )
+    readonly_fields = ("active_campaign",)
 
     def changelist_view(self, request, extra_context=None):
         obj = Settings.objects.first()

@@ -6,20 +6,42 @@
 <section class="page-hero compact wrap">
     <span class="eyebrow">Твоите добри думи</span>
     <h1>Изпратени валентинки</h1>
-    <p>История на посланията, които си запечатал.</p>
+    {% if can_edit %}
+    <p>Можеш да редактираш посланията до {{ reveal_at|date:"d.m.Y · H:i" }}. Изтриване не е позволено.</p>
+    {% else %}
+    <p>Посланията са разкрити и вече не могат да бъдат редактирани.</p>
+    {% endif %}
 </section>
 
-<section class="outbox-list wrap">
-    {% for valentine in valentines %}
-    <article class="outbox-row">
-        <div class="outbox-icon theme-{{ valentine.theme }}" aria-hidden="true">♥</div>
-        <div class="outbox-main">
-            <span>До {{ valentine.profile.full_name }} · {{ valentine.profile.clas_bg }}</span>
-            <p>{{ valentine.content }}</p>
+<section class="mail-grid outbox-card-grid wrap">
+    {% for dispatch in dispatches %}
+    <article class="received-card theme-{{ dispatch.theme }}" data-download-card>
+        <div class="card-stamp">♥</div>
+        <span class="card-kicker">
+            {{ dispatch.sent_at|date:"d.m.Y · H:i" }}
+            {% if dispatch.edited_at %}· редактирано{% endif %}
+        </span>
+        <p class="received-message">{{ dispatch.content }}</p>
+        <div class="received-from">
+            До {{ dispatch.audience_label }}
+            {% if dispatch.recipient_count > 1 %}
+                · {{ dispatch.recipient_count }} получатели
+            {% endif %}
+            · {% if dispatch.is_anonymous %}анонимно{% else %}с твоето име{% endif %}
         </div>
-        <div class="outbox-meta">
-            <span>{{ valentine.date|date:"d.m.Y · H:i" }}</span>
-            <span class="status-pill">{% if valentine.is_anonymous %}Анонимно{% else %}С твоето име{% endif %}</span>
+        <div class="sent-card-actions" data-download-exclude>
+            <button class="button button-secondary button-small"
+                    type="button"
+                    data-download-image
+                    data-filename="valentine-{{ dispatch.dispatch_id }}">
+                Изтегли като снимка
+            </button>
+            {% if can_edit %}
+            <a class="button button-secondary button-small"
+               href="{% url 'valentine:edit' dispatch.dispatch_id %}">
+                Редактирай
+            </a>
+            {% endif %}
         </div>
     </article>
     {% empty %}

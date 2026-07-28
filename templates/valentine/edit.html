@@ -1,0 +1,70 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Редакция · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">До момента на разкриване</span>
+    <h1>Редактирай валентинката</h1>
+    <p>
+        До {{ audience_label|default:"избрания получател" }}
+        {% if recipient_count > 1 %}· {{ recipient_count }} получатели{% endif %}.
+        След {{ reveal_at|date:"d.m.Y · H:i" }} редакцията ще бъде заключена.
+    </p>
+</section>
+
+<section class="edit-shell wrap">
+    <form method="post" class="panel edit-panel" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="form-alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="field">
+            <label for="{{ form.content.id_for_label }}">Послание</label>
+            {{ form.content }}
+            <div class="field-meta">
+                <span>Получателите ще видят редактираната версия.</span>
+                <span data-char-count>{{ form.content.value|default_if_none:""|length }} / 500</span>
+            </div>
+            {% if form.content.errors %}<div class="field-error">{{ form.content.errors }}</div>{% endif %}
+        </div>
+
+        <div class="field">
+            <span class="field-label">Тема на картичката</span>
+            <div class="theme-picker" role="radiogroup" aria-label="Тема">
+                {% with selected_theme=form.theme.value|default:"classic" %}
+                {% for value, label in form.theme.field.choices %}
+                <label class="theme-chip theme-{{ value }}">
+                    <input type="radio" name="theme" value="{{ value }}"
+                           {% if selected_theme == value %}checked{% endif %}>
+                    <span>{{ label }}</span>
+                </label>
+                {% endfor %}
+                {% endwith %}
+            </div>
+            {% if form.theme.errors %}<div class="field-error">{{ form.theme.errors }}</div>{% endif %}
+        </div>
+
+        <label class="privacy-toggle">
+            <input type="checkbox" name="is_anonymous"
+                   {% if form.is_anonymous.value %}checked{% endif %}>
+            <span class="toggle-track" aria-hidden="true"></span>
+            <span>
+                <strong>Анонимно за получателя</strong>
+                <small>Модераторите виждат изпращача само при сигнал.</small>
+            </span>
+        </label>
+
+        <div class="edit-actions">
+            <button class="button button-primary" type="submit">
+                Запази промените
+            </button>
+            <a class="button button-secondary" href="{% url 'valentine:outbox' %}">
+                Отказ
+            </a>
+        </div>
+        <p class="no-delete-note">Изпратените валентинки не могат да бъдат изтривани.</p>
+    </form>
+</section>
+{% endblock %}
