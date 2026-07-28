@@ -1,0 +1,169 @@
+{% if campaign_stats %}
+<section class="vstats-dashboard" aria-labelledby="campaign-statistics-title">
+    <header class="vstats-header">
+        <div>
+            <span class="vstats-status vstats-status-{{ campaign_stats.status_class }}">
+                {{ campaign_stats.status_label }}
+            </span>
+            <h2 id="campaign-statistics-title">
+                Статистика за {{ original }}
+            </h2>
+            <p>
+                Показват се само обобщени данни. Таблото не зарежда имена,
+                получатели или текстове на валентинки.
+            </p>
+        </div>
+        <a class="vstats-export"
+           href="{{ campaign_statistics_export_url }}">
+            Изтегли статистиката (CSV)
+        </a>
+    </header>
+
+    <div class="vstats-card-grid">
+        {% for card in campaign_stats.cards %}
+        <article class="vstats-card">
+            <span>{{ card.label }}</span>
+            <strong>{{ card.value }}</strong>
+            <small>{{ card.description }}</small>
+        </article>
+        {% endfor %}
+    </div>
+
+    <div class="vstats-two-columns">
+        <section class="vstats-panel">
+            <div class="vstats-panel-heading">
+                <div>
+                    <span class="vstats-kicker">Разпределение</span>
+                    <h3>По тип получатели</h3>
+                </div>
+            </div>
+            <div class="vstats-compact-table">
+                <div class="vstats-compact-head">
+                    <span>Тип</span>
+                    <span>Пратки</span>
+                    <span>Доставки</span>
+                </div>
+                {% for row in campaign_stats.audience_rows %}
+                <div class="vstats-compact-row">
+                    <strong>{{ row.label }}</strong>
+                    <span>{{ row.dispatches }}</span>
+                    <span>{{ row.deliveries }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            <div class="vstats-footnote">
+                <span>
+                    Системни пратки:
+                    <strong>{{ campaign_stats.totals.system_dispatches }}</strong>
+                </span>
+                <span>
+                    Подписани:
+                    <strong>{{ campaign_stats.totals.signed_dispatches }}</strong>
+                </span>
+            </div>
+        </section>
+
+        <section class="vstats-panel">
+            <div class="vstats-panel-heading">
+                <div>
+                    <span class="vstats-kicker">Без съдържание</span>
+                    <h3>Модерация</h3>
+                </div>
+            </div>
+            <div class="vstats-moderation-grid">
+                {% for row in campaign_stats.moderation_rows %}
+                <div>
+                    <strong>{{ row.value }}</strong>
+                    <span>{{ row.label }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% if campaign_stats.reason_rows %}
+            <div class="vstats-reasons">
+                <h4>Причини за сигналите</h4>
+                {% for row in campaign_stats.reason_rows %}
+                <div>
+                    <span>{{ row.label }}</span>
+                    <strong>{{ row.count }}</strong>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="vstats-empty-small">Няма подадени сигнали.</p>
+            {% endif %}
+        </section>
+    </div>
+
+    <section class="vstats-panel">
+        <div class="vstats-panel-heading">
+            <div>
+                <span class="vstats-kicker">Участие</span>
+                <h3>Статистика по класове</h3>
+            </div>
+            <p>Показват се само бройки, без имена на ученици и учители.</p>
+        </div>
+        {% if campaign_stats.class_rows %}
+        <div class="vstats-table-wrap">
+            <table class="vstats-table">
+                <thead>
+                    <tr>
+                        <th scope="col">Клас</th>
+                        <th scope="col">Активни изпращачи</th>
+                        <th scope="col">Изпратени пратки</th>
+                        <th scope="col">Получени доставки</th>
+                        <th scope="col">Сигнали</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in campaign_stats.class_rows %}
+                    <tr>
+                        <th scope="row">{{ row.label }}</th>
+                        <td>{{ row.active_senders }}</td>
+                        <td>{{ row.sent_dispatches }}</td>
+                        <td>{{ row.received }}</td>
+                        <td>{{ row.reports }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="vstats-empty">Все още няма данни за тази кампания.</p>
+        {% endif %}
+    </section>
+
+    <section class="vstats-panel">
+        <div class="vstats-panel-heading">
+            <div>
+                <span class="vstats-kicker">Активност</span>
+                <h3>По дни</h3>
+            </div>
+            <p>Пратките се броят еднократно, независимо от броя получатели.</p>
+        </div>
+        {% if campaign_stats.daily_rows %}
+        <div class="vstats-days">
+            {% for row in campaign_stats.daily_rows %}
+            <div class="vstats-day">
+                <time datetime="{{ row.day|date:'Y-m-d' }}">
+                    {{ row.day|date:"d.m.Y" }}
+                </time>
+                <div>
+                    <progress max="{{ campaign_stats.daily_max }}"
+                              value="{{ row.deliveries }}">
+                        {{ row.deliveries }}
+                    </progress>
+                </div>
+                <span>
+                    <strong>{{ row.dispatches }}</strong> пратки ·
+                    <strong>{{ row.deliveries }}</strong> доставки ·
+                    <strong>{{ row.reports }}</strong> сигнали
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="vstats-empty">Все още няма активност.</p>
+        {% endif %}
+    </section>
+</section>
+{% endif %}

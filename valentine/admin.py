@@ -2,10 +2,13 @@ import csv
 from datetime import date
 
 from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
+from django.db.models.functions import TruncDate
 from django.http import HttpResponse, HttpResponseRedirect
-from django.urls import reverse
+from django.shortcuts import get_object_or_404
+from django.urls import path, reverse
 from django.utils import timezone
 from unfold.admin import ModelAdmin
 
@@ -26,6 +29,27 @@ def csv_safe(value):
     if text.startswith(("=", "+", "-", "@")):
         return f"'{text}"
     return text
+
+
+def class_label(class_name):
+    if class_name == "U":
+        return "Учители"
+    mapping = {"A": "А", "B": "Б", "V": "В", "G": "Г"}
+    if not class_name or len(class_name) < 2:
+        return class_name or "Без клас"
+    return (
+        f"{class_name[:-1]}"
+        f"{mapping.get(class_name[-1].upper(), class_name[-1])} клас"
+    )
+
+
+def class_sort_key(class_name):
+    if class_name == "U":
+        return (10_000, "")
+    try:
+        return (int(class_name[:-1]), class_name[-1])
+    except (TypeError, ValueError):
+        return (9_999, class_name or "")
 
 
 @admin.register(Profile)
@@ -340,12 +364,16 @@ class ArchivedValentinesAdmin(ValentinesAdmin):
 
 @admin.register(ValentineCampaign)
 class ValentineCampaignAdmin(ModelAdmin):
+    change_form_before_template = (
+        "admin/valentine/valentinecampaign/dashboard.html"
+    )
     list_display = (
         "name",
         "year",
         "is_archived",
         "archived_at",
-        "message_count",
+        "dispatch_count",
+        "delivery_count",
     )
     ordering = ("-year",)
     search_fields = ("name", "=year")
@@ -364,14 +392,427 @@ class ValentineCampaignAdmin(ModelAdmin):
         "restore_campaigns",
     )
 
+    class Media:
+        css = {
+            "all": ("valentines/admin_campaign.css",),
+        }
+
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
-            total_messages=Count("valentines")
+            total_dispatches=Count(
+                "valentines__dispatch_id",
+                distinct=True,
+            ),
+            total_deliveries=Count("valentines"),
         )
 
-    @admin.display(description="Валентинки", ordering="total_messages")
-    def message_count(self, obj):
-        return obj.total_messages
+    @admin.display(description="Пратки", ordering="total_dispatches")
+    def dispatch_count(self, obj):
+        return obj.total_dispatches
+
+    @admin.display(description="Доставки", ordering="total_deliveries")
+    def delivery_count(self, obj):
+        return obj.total_deliveries
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                "<path:object_id>/statistics.csv",
+                self.admin_site.admin_view(self.export_statistics),
+                name="valentine_valentinecampaign_statistics",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def change_view(
+        self,
+        request,
+        object_id,
+        form_url="",
+        extra_context=None,
+    ):
+        extra_context = dict(extra_context or {})
+        campaign = self.get_object(request, object_id)
+        if (
+            campaign is not None
+            and self.has_view_or_change_permission(request, campaign)
+        ):
+            extra_context["campaign_stats"] = self.build_statistics(
+                campaign
+            )
+            extra_context["campaign_statistics_export_url"] = reverse(
+                "admin:valentine_valentinecampaign_statistics",
+                args=(campaign.pk,),
+            )
+        return super().change_view(
+            request,
+            object_id,
+            form_url,
+            extra_context,
+        )
+
+    def build_statistics(self, campaign):
+        source = Valenitines.objects.filter(campaign=campaign)
+        totals = source.aggregate(
+            deliveries=Count("id"),
+            dispatches=Count("dispatch_id", distinct=True),
+            unique_senders=Count(
+                "sender_profile",
+                distinct=True,
+                filter=Q(sender_profile__isnull=False),
+            ),
+            unique_recipients=Count("profile", distinct=True),
+            system_dispatches=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(sender_profile__isnull=True),
+            ),
+            anonymous_dispatches=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(is_anonymous=True),
+            ),
+            signed_dispatches=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(is_anonymous=False),
+            ),
+            individual_dispatches=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(
+                    audience_type=Valenitines.AudienceType.INDIVIDUAL
+                ),
+            ),
+            individual_deliveries=Count(
+                "id",
+                filter=Q(
+                    audience_type=Valenitines.AudienceType.INDIVIDUAL
+                ),
+            ),
+            class_dispatches=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(
+                    audience_type=Valenitines.AudienceType.CLASS
+                ),
+            ),
+            class_deliveries=Count(
+                "id",
+                filter=Q(
+                    audience_type=Valenitines.AudienceType.CLASS
+                ),
+            ),
+            teacher_dispatches=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(
+                    audience_type=Valenitines.AudienceType.TEACHERS
+                ),
+            ),
+            teacher_deliveries=Count(
+                "id",
+                filter=Q(
+                    audience_type=Valenitines.AudienceType.TEACHERS
+                ),
+            ),
+            reports=Count(
+                "id",
+                filter=Q(reported_at__isnull=False),
+            ),
+            reported_dispatches=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(reported_at__isnull=False),
+            ),
+            pending=Count(
+                "id",
+                filter=Q(
+                    moderation_status=(
+                        Valenitines.ModerationStatus.PENDING
+                    )
+                ),
+            ),
+            hidden=Count(
+                "id",
+                filter=Q(
+                    moderation_status=(
+                        Valenitines.ModerationStatus.HIDDEN
+                    )
+                ),
+            ),
+            restored=Count(
+                "id",
+                filter=Q(
+                    moderation_status=(
+                        Valenitines.ModerationStatus.RESTORED
+                    )
+                ),
+            ),
+        )
+
+        received_by_class = {
+            row["profile__clas"]: row
+            for row in source.values("profile__clas").annotate(
+                received=Count("id"),
+                reports=Count(
+                    "id",
+                    filter=Q(reported_at__isnull=False),
+                ),
+            )
+        }
+        sent_by_class = {
+            row["sender_profile__clas"]: row
+            for row in source.exclude(sender_profile=None)
+            .values("sender_profile__clas")
+            .annotate(
+                active_senders=Count(
+                    "sender_profile",
+                    distinct=True,
+                ),
+                sent_dispatches=Count(
+                    "dispatch_id",
+                    distinct=True,
+                ),
+            )
+        }
+        class_rows = []
+        for class_name in sorted(
+            set(received_by_class) | set(sent_by_class),
+            key=class_sort_key,
+        ):
+            received = received_by_class.get(class_name, {})
+            sent = sent_by_class.get(class_name, {})
+            class_rows.append(
+                {
+                    "label": class_label(class_name),
+                    "active_senders": sent.get("active_senders", 0),
+                    "sent_dispatches": sent.get("sent_dispatches", 0),
+                    "received": received.get("received", 0),
+                    "reports": received.get("reports", 0),
+                }
+            )
+
+        daily_rows = list(
+            source.annotate(
+                day=TruncDate(
+                    "date",
+                    tzinfo=timezone.get_current_timezone(),
+                )
+            )
+            .values("day")
+            .annotate(
+                dispatches=Count("dispatch_id", distinct=True),
+                deliveries=Count("id"),
+                reports=Count(
+                    "id",
+                    filter=Q(reported_at__isnull=False),
+                ),
+            )
+            .order_by("day")
+        )
+        daily_max = max(
+            (row["deliveries"] for row in daily_rows),
+            default=1,
+        )
+
+        reason_labels = dict(Valenitines.ReportReason.choices)
+        reason_rows = [
+            {
+                "label": reason_labels.get(
+                    row["report_reason"],
+                    row["report_reason"],
+                ),
+                "count": row["total"],
+            }
+            for row in source.filter(reported_at__isnull=False)
+            .exclude(report_reason="")
+            .values("report_reason")
+            .annotate(total=Count("id"))
+            .order_by("-total", "report_reason")
+        ]
+
+        active_campaign_id = Settings.objects.values_list(
+            "active_campaign_id",
+            flat=True,
+        ).first()
+        if campaign.pk == active_campaign_id:
+            status_label = "Активна кампания"
+            status_class = "active"
+        elif campaign.is_archived:
+            status_label = "Архивирана кампания"
+            status_class = "archived"
+        else:
+            status_label = "Неактивна кампания"
+            status_class = "inactive"
+
+        cards = (
+            {
+                "label": "Пратки",
+                "value": totals["dispatches"],
+                "description": "Уникални изпращания",
+            },
+            {
+                "label": "Доставки",
+                "value": totals["deliveries"],
+                "description": "Всички получени копия",
+            },
+            {
+                "label": "Изпращачи",
+                "value": totals["unique_senders"],
+                "description": "Уникални профили",
+            },
+            {
+                "label": "Получатели",
+                "value": totals["unique_recipients"],
+                "description": "Уникални профили",
+            },
+            {
+                "label": "Сигнали",
+                "value": totals["reports"],
+                "description": (
+                    f"{totals['reported_dispatches']} засегнати пратки"
+                ),
+            },
+            {
+                "label": "Анонимни",
+                "value": totals["anonymous_dispatches"],
+                "description": "Уникални пратки",
+            },
+        )
+        audience_rows = (
+            {
+                "label": "До един човек",
+                "dispatches": totals["individual_dispatches"],
+                "deliveries": totals["individual_deliveries"],
+            },
+            {
+                "label": "До цял клас",
+                "dispatches": totals["class_dispatches"],
+                "deliveries": totals["class_deliveries"],
+            },
+            {
+                "label": "До всички учители",
+                "dispatches": totals["teacher_dispatches"],
+                "deliveries": totals["teacher_deliveries"],
+            },
+        )
+        moderation_rows = (
+            {
+                "label": "Чака преглед",
+                "value": totals["pending"],
+            },
+            {
+                "label": "Скрито от модератор",
+                "value": totals["hidden"],
+            },
+            {
+                "label": "Възстановено",
+                "value": totals["restored"],
+            },
+        )
+        return {
+            "status_label": status_label,
+            "status_class": status_class,
+            "totals": totals,
+            "cards": cards,
+            "audience_rows": audience_rows,
+            "moderation_rows": moderation_rows,
+            "reason_rows": reason_rows,
+            "class_rows": class_rows,
+            "daily_rows": daily_rows,
+            "daily_max": daily_max,
+        }
+
+    def export_statistics(self, request, object_id):
+        campaign = get_object_or_404(
+            self.get_queryset(request),
+            pk=object_id,
+        )
+        if not self.has_view_or_change_permission(request, campaign):
+            raise PermissionDenied
+
+        statistics = self.build_statistics(campaign)
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = (
+            f'attachment; filename="valentine-{campaign.year}-statistics.csv"'
+        )
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        writer.writerow(("Кампания", csv_safe(campaign.name)))
+        writer.writerow(("Статус", statistics["status_label"]))
+        writer.writerow(())
+        writer.writerow(("Обобщение", "Стойност", "Пояснение"))
+        for card in statistics["cards"]:
+            writer.writerow(
+                (
+                    card["label"],
+                    card["value"],
+                    card["description"],
+                )
+            )
+        writer.writerow(
+            (
+                "Системни пратки",
+                statistics["totals"]["system_dispatches"],
+                "Без потребителски изпращач",
+            )
+        )
+        writer.writerow(
+            (
+                "Подписани пратки",
+                statistics["totals"]["signed_dispatches"],
+                "С видимо име за получателя",
+            )
+        )
+        writer.writerow(())
+        writer.writerow(("Тип получатели", "Пратки", "Доставки"))
+        for row in statistics["audience_rows"]:
+            writer.writerow(
+                (
+                    row["label"],
+                    row["dispatches"],
+                    row["deliveries"],
+                )
+            )
+        writer.writerow(())
+        writer.writerow(("Модерация", "Брой"))
+        for row in statistics["moderation_rows"]:
+            writer.writerow((row["label"], row["value"]))
+        for row in statistics["reason_rows"]:
+            writer.writerow((f"Причина: {row['label']}", row["count"]))
+        writer.writerow(())
+        writer.writerow(
+            (
+                "Клас",
+                "Активни изпращачи",
+                "Изпратени пратки",
+                "Получени доставки",
+                "Сигнали",
+            )
+        )
+        for row in statistics["class_rows"]:
+            writer.writerow(
+                (
+                    csv_safe(row["label"]),
+                    row["active_senders"],
+                    row["sent_dispatches"],
+                    row["received"],
+                    row["reports"],
+                )
+            )
+        writer.writerow(())
+        writer.writerow(("Ден", "Пратки", "Доставки", "Сигнали"))
+        for row in statistics["daily_rows"]:
+            writer.writerow(
+                (
+                    row["day"].isoformat(),
+                    row["dispatches"],
+                    row["deliveries"],
+                    row["reports"],
+                )
+            )
+        return response
 
     @admin.action(
         description="Направи активна и архивирай предишната кампания"

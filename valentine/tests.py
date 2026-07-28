@@ -616,6 +616,91 @@ class ValentinePlatformTests(TestCase):
         self.assertIsNotNone(self.campaign.archived_at)
         self.assertFalse(next_campaign.is_archived)
 
+    def test_campaign_dashboard_is_aggregated_and_private(self):
+        group_dispatch_id = uuid.uuid4()
+        private_group_text = "Поверителен групов текст за статистиката"
+        private_individual_text = "Поверителен индивидуален текст"
+        Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            dispatch_id=group_dispatch_id,
+            audience_type=Valenitines.AudienceType.CLASS,
+            audience_label="10Б клас",
+            content=private_group_text,
+            is_reported=True,
+            report_reason=Valenitines.ReportReason.OTHER,
+            reported_at=timezone.now(),
+            moderation_status=Valenitines.ModerationStatus.PENDING,
+        )
+        Valenitines.objects.create(
+            profile=self.same_name_recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            dispatch_id=group_dispatch_id,
+            audience_type=Valenitines.AudienceType.CLASS,
+            audience_label="10Б клас",
+            content=private_group_text,
+        )
+        Valenitines.objects.create(
+            profile=self.sender,
+            sender_profile=self.recipient,
+            campaign=self.campaign,
+            audience_type=Valenitines.AudienceType.INDIVIDUAL,
+            audience_label=self.sender.full_name,
+            content=private_individual_text,
+            is_anonymous=False,
+        )
+        dashboard_admin = get_user_model().objects.create_superuser(
+            username="statistics-admin",
+            email="statistics@example.com",
+            password="test-password",
+        )
+        self.client.force_login(dashboard_admin)
+
+        dashboard_url = reverse(
+            "admin:valentine_valentinecampaign_change",
+            args=(self.campaign.pk,),
+        )
+        response = self.client.get(dashboard_url)
+
+        self.assertEqual(response.status_code, 200)
+        statistics = response.context["campaign_stats"]
+        self.assertEqual(statistics["totals"]["dispatches"], 2)
+        self.assertEqual(statistics["totals"]["deliveries"], 3)
+        self.assertEqual(statistics["totals"]["unique_senders"], 2)
+        self.assertEqual(statistics["totals"]["unique_recipients"], 3)
+        self.assertEqual(statistics["totals"]["class_dispatches"], 1)
+        self.assertEqual(statistics["totals"]["class_deliveries"], 2)
+        self.assertEqual(statistics["totals"]["reports"], 1)
+        self.assertEqual(statistics["totals"]["pending"], 1)
+        self.assertContains(response, "Статистика за")
+        self.assertContains(response, "Статистика по класове")
+        self.assertContains(response, "valentines/admin_campaign.css")
+        self.assertNotContains(response, private_group_text)
+        self.assertNotContains(response, private_individual_text)
+        self.assertNotContains(response, self.sender.full_name)
+        self.assertNotContains(response, self.recipient.full_name)
+
+        export_url = reverse(
+            "admin:valentine_valentinecampaign_statistics",
+            args=(self.campaign.pk,),
+        )
+        export_response = self.client.get(export_url)
+        self.assertEqual(export_response.status_code, 200)
+        self.assertEqual(
+            export_response["Content-Type"],
+            "text/csv; charset=utf-8",
+        )
+        exported = export_response.content.decode("utf-8-sig")
+        self.assertIn("Обобщение", exported)
+        self.assertIn("10А клас", exported)
+        self.assertIn("10Б клас", exported)
+        self.assertNotIn(private_group_text, exported)
+        self.assertNotIn(private_individual_text, exported)
+        self.assertNotIn(self.sender.full_name, exported)
+        self.assertNotIn(self.recipient.full_name, exported)
+
     def test_users_only_see_dispatches_from_active_campaign(self):
         archived_campaign = ValentineCampaign.objects.create(
             year=self.campaign.year - 1,
