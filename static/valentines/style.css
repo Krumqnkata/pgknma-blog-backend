@@ -1031,10 +1031,14 @@ summary:focus-visible {
     position: relative;
     z-index: 2;
     margin: 0;
+    min-width: 0;
+    max-width: 100%;
     font-family: var(--font-display);
     font-size: 1.42rem;
     line-height: 1.5;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .card-signature {
@@ -1160,10 +1164,14 @@ summary:focus-visible {
     position: relative;
     z-index: 2;
     margin: 42px 0 26px;
+    min-width: 0;
+    max-width: 100%;
     font-family: var(--font-display);
     font-size: 1.3rem;
     line-height: 1.5;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .received-from {
