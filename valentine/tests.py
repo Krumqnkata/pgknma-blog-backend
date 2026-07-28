@@ -293,7 +293,8 @@ class ValentinePlatformTests(TestCase):
         self.login()
 
         page = self.client.get(reverse("valentine:home"))
-        self.assertContains(page, '<option value="U"')
+        self.assertNotContains(page, '<option value="U"')
+        self.assertContains(page, 'data-teacher-count="1"')
 
         teacher_options = self.client.get(
             reverse("valentine:students", args=("U",))

@@ -59,9 +59,7 @@
             "[data-audience-summary]"
         );
         const teacherCount = Number(composer.dataset.teacherCount || 0);
-        const teacherClassOption = Array.from(classSelect.options).find(
-            (option) => option.value === "U"
-        );
+        let teacherClassOption = null;
         const fallbackRecipientOptions = recipientSelect.innerHTML;
         let studentsRequest = 0;
 
@@ -99,15 +97,21 @@
             const requestId = ++studentsRequest;
             const targetType = getTargetType();
             const canSelectIndividualTeacher = targetType === "individual";
-            if (teacherClassOption) {
-                teacherClassOption.hidden = !canSelectIndividualTeacher;
-                teacherClassOption.disabled = !canSelectIndividualTeacher;
-                if (
-                    !canSelectIndividualTeacher &&
-                    classSelect.value === "U"
-                ) {
+            if (canSelectIndividualTeacher && teacherCount > 0) {
+                if (!teacherClassOption) {
+                    teacherClassOption = new Option("Учители", "U");
+                    classSelect.add(teacherClassOption);
+                }
+                if (classSelect.dataset.selected === "U") {
+                    classSelect.value = "U";
+                    classSelect.dataset.selected = "";
+                }
+            } else if (teacherClassOption) {
+                if (classSelect.value === "U") {
                     classSelect.value = "";
                 }
+                teacherClassOption.remove();
+                teacherClassOption = null;
             }
             const className =
                 targetType === "teachers" ? "U" : classSelect.value;
