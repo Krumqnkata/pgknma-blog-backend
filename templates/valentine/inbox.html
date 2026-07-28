@@ -1,0 +1,69 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Получени · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">Твоята пощенска кутия</span>
+    <h1>Получени валентинки</h1>
+    <p>{{ profile.first_name }}, тук са посланията, изпратени специално за теб.</p>
+</section>
+
+{% if not is_revealed %}
+<section class="locked-inbox wrap">
+    <div class="locked-envelope" aria-hidden="true"><span>♥</span></div>
+    <span class="eyebrow">Все още са запечатани</span>
+    <h2>Търпението също е част от изненадата.</h2>
+    {% if show_received_count %}
+    <p>В кутията ти чакат <strong>{{ received_count }}</strong> послания.</p>
+    {% else %}
+    <p>Посланията ще се появят тук, когато настъпи моментът за разкриване.</p>
+    {% endif %}
+    <div class="countdown countdown-dark" data-countdown="{{ reveal_at|date:'c' }}">
+        <div><strong data-days>--</strong><span>дни</span></div>
+        <div><strong data-hours>--</strong><span>часа</span></div>
+        <div><strong data-minutes>--</strong><span>минути</span></div>
+    </div>
+    <a class="button button-primary" href="{% url 'valentine:home' %}">Изпрати валентинка</a>
+</section>
+{% else %}
+<section class="mail-grid wrap">
+    {% for valentine in valentines %}
+    <article class="received-card theme-{{ valentine.theme }}">
+        <div class="card-stamp">♥</div>
+        <span class="card-kicker">{{ valentine.date|date:"d.m.Y · H:i" }}</span>
+        <p class="received-message">{{ valentine.content }}</p>
+        <div class="received-from">
+            {% if valentine.is_anonymous %}
+                От анонимен приятел
+            {% elif valentine.sender_profile %}
+                От {{ valentine.sender_profile.full_name }}
+            {% else %}
+                От Valentine екипа
+            {% endif %}
+        </div>
+        <details class="report-details">
+            <summary>Докладвай</summary>
+            <form method="post" action="{% url 'valentine:report' valentine.id %}">
+                {% csrf_token %}
+                <label for="reason-{{ valentine.id }}">Причина за сигнала</label>
+                <select id="reason-{{ valentine.id }}" name="reason" required>
+                    {% for value, label in report_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <button class="button button-danger button-small" type="submit">Скрий и изпрати за преглед</button>
+            </form>
+        </details>
+    </article>
+    {% empty %}
+    <div class="empty-state">
+        <span aria-hidden="true">♡</span>
+        <h2>Все още няма послания</h2>
+        <p>Понякога най-хубавите неща пристигат малко по-късно.</p>
+        <a class="button button-primary" href="{% url 'valentine:home' %}">Изпрати първата усмивка</a>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

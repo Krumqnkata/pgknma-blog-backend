@@ -1,0 +1,34 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Изпратени · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">Твоите добри думи</span>
+    <h1>Изпратени валентинки</h1>
+    <p>История на посланията, които си запечатал.</p>
+</section>
+
+<section class="outbox-list wrap">
+    {% for valentine in valentines %}
+    <article class="outbox-row">
+        <div class="outbox-icon theme-{{ valentine.theme }}" aria-hidden="true">♥</div>
+        <div class="outbox-main">
+            <span>До {{ valentine.profile.full_name }} · {{ valentine.profile.clas_bg }}</span>
+            <p>{{ valentine.content }}</p>
+        </div>
+        <div class="outbox-meta">
+            <span>{{ valentine.date|date:"d.m.Y · H:i" }}</span>
+            <span class="status-pill">{% if valentine.is_anonymous %}Анонимно{% else %}С твоето име{% endif %}</span>
+        </div>
+    </article>
+    {% empty %}
+    <div class="empty-state">
+        <span aria-hidden="true">✉</span>
+        <h2>Още не си изпратил валентинка</h2>
+        <p>Едно кратко мило послание може да промени нечий ден.</p>
+        <a class="button button-primary" href="{% url 'valentine:home' %}#composer">Създай послание</a>
+    </div>
+    {% endfor %}
+</section>
+{% endblock %}

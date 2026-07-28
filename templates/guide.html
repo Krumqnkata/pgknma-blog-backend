@@ -1,0 +1,64 @@
+{% load static %}
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ръководство - Свети Валентин</title>
+    <link rel="stylesheet" href="{% static 'valentines/style.css' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet">
+    <link rel="icon" href="{% static 'valentines/favicon.ico' %}" type="image/x-icon">
+</head>
+<body>
+    <div class="container" style="max-width: 800px;">
+        <div id="form-container">
+            <header>
+                <img src="{% static 'valentines/logo.png' %}" alt="School Logo" class="school-logo">
+                <h1>Ръководство за употреба 💌</h1>
+            </header>
+            
+            <div class="modal-body" style="text-align: left; color: #333;">
+                <h2>Как да използвате системата "Свети Валентин" на ПГКНМА "Проф. Минко Балкански"</h2>
+                <p>Тази система ви позволява да изпращате и получавате виртуални валентинки. Ето как да я използвате:</p>
+
+                <h3>1. Вход в системата</h3>
+                <p>За да влезете в системата, ще ви е необходим <strong>уникален код за достъп</strong>.</p>
+                <ol>
+                    <li>Отворете вашия уеб браузър и отидете на страницата за вход: <code>/</code></li>
+                    <li>Въведете предоставения ви код за достъп в полето.</li>
+                    <li>Натиснете бутона за вход.</li>
+                </ol>
+                <p>Ако кодът е валиден, ще бъдете влезли в системата.</p>
+
+                <h3>2. Изпращане на валентинка</h3>
+                <p>След като сте влезли в системата, можете да изпращате валентинки:</p>
+                <ol>
+                    <li>Отидете на главната страница на приложението: <code>/create</code></li>
+                    <li><strong>Изберете клас:</strong> От падащото меню изберете класа на ученика, на когото искате да изпратите валентинка.</li>
+                    <li><strong>Изберете ученик:</strong> След като изберете клас, ще се появи списък с учениците от този клас. Изберете името на ученика.</li>
+                    <li><strong>Напишете съобщение:</strong> В текстовото поле въведете вашето съобщение.</li>
+                    <li><strong>Изпратете:</strong> Натиснете бутона "Изпрати".</li>
+                </ol>
+                <p><strong>Важно:</strong> Изпращането на валентинки може да бъде временно изключено. В такъв случай ще видите съобщение, което ви информира за това.</p>
+
+                <h3>3. Преглед на получените валентинки</h3>
+                <p>За да видите валентинките, които сте получили:</p>
+                <ol>
+                    <li>Уверете се, че сте влезли в системата с вашия уникален код за достъп.</li>
+                    <li>Системата автоматично ще ви пренасочи към вашия профил (или можете да отидете на <code>/my/</code>).</li>
+                    <li>На тази страница ще видите вашето име и списък с всички валентинки, които са били изпратени до вас.</li>
+                </ol>
+                <p><strong>Важно:</strong> Получените валентинки може да не са видими веднага. Администраторът на системата определя "дата на разкриване", преди която валентинките не могат да бъдат разгледани.</p>
+
+                <br>
+                <div class="button-group" style="justify-content: center;">
+                    <button type="button" onclick="history.back()" class="secondary-button" style="width: 50%;">Назад</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="{% static 'valentines/background-animation.js' %}"></script>
+</body>
+</html>

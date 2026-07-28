@@ -1,0 +1,60 @@
+{% load static %}
+<!doctype html>
+<html lang="bg">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#741d45">
+    <title>{% block title %}Valentine ПГКНМА{% endblock %}</title>
+    <link rel="icon" href="{% static 'valentines/favicon.svg' %}" type="image/svg+xml">
+    <link rel="stylesheet" href="{% static 'valentines/style.css' %}">
+    {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <header class="site-header">
+        <a class="brand" href="{% url 'valentine:home' %}" aria-label="Valentine начало">
+            <span class="brand-mark" aria-hidden="true">♥</span>
+            <span>
+                <strong>Valentine</strong>
+                <small>ПГКНМА</small>
+            </span>
+        </a>
+
+        {% if request.valentine_profile %}
+        <nav class="main-nav" aria-label="Основна навигация">
+            <a href="{% url 'valentine:home' %}">Начало</a>
+            <a href="{% url 'valentine:inbox' %}">Получени</a>
+            <a href="{% url 'valentine:outbox' %}">Изпратени</a>
+            <a href="{% url 'valentine:guide' %}">Помощ</a>
+        </nav>
+        <form method="post" action="{% url 'valentine:logout' %}" class="logout-form">
+            {% csrf_token %}
+            <button class="button button-ghost button-small" type="submit">Изход</button>
+        </form>
+        {% endif %}
+    </header>
+
+    {% if messages %}
+    <div class="toast-stack" aria-live="polite">
+        {% for message in messages %}
+        <div class="toast toast-{{ message.tags|default:'info' }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <span>Създадено с грижа за училищната общност.</span>
+        <a href="/">Към блога</a>
+    </footer>
+
+    <script src="{% static 'valentines/app.js' %}" defer></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

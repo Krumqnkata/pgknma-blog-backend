@@ -1,0 +1,84 @@
+<!-- templates/admin/site_settings_change_form.html -->
+{% extends "admin/change_form.html" %}
+
+{% block field_sets %}
+    {{ block.super }}
+
+    <!-- Meme Selection Section -->
+    <div class="module aligned">
+        <h2 class="meme-section-header">Изтриване на мемета (Необратимо действие!)</h2>
+        <div class="form-row">
+            <form method="post" style="width: 100%;">
+                {% csrf_token %}
+                {{ meme_selection_form.non_field_errors }}
+
+                <div style="max-height: 400px; overflow-y: auto; margin-bottom: 10px;">
+                    {% for field in meme_selection_form %}
+                        <div class="form-row" style="border-bottom: 1px solid #eee; padding: 8px 0;">
+                            <label style="display: flex; align-items: center; gap: 10px;">
+                                {{ field }}
+                                <span style="flex: 1; display: flex; align-items: center; gap: 5px;">{{ field.label|safe }}</span>
+                            </label>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <div class="submit-row" style="display: flex; justify-content: flex-start;">
+                    <input type="submit" value="Изтрий избраните мемета" class="default delete-meme-button" name="delete_selected_memes">
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Song Suggestion Selection Section -->
+    <div class="module aligned">
+        <h2 class="meme-section-header">Изтриване на предложения за песни (Необратимо действие!)</h2>
+        <div class="form-row">
+            <form method="post" style="width: 100%;">
+                {% csrf_token %}
+                {{ suggestion_selection_form.non_field_errors }}
+
+                <div style="max-height: 400px; overflow-y: auto; margin-bottom: 10px;">
+                    {% for field in suggestion_selection_form %}
+                        <div class="form-row" style="border-bottom: 1px solid #eee; padding: 8px 0;">
+                            <label style="display: flex; align-items: center; gap: 10px;">
+                                {{ field }}
+                                <span style="flex: 1; display: flex; align-items: center; gap: 5px;">{{ field.label }}</span>
+                            </label>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <div class="submit-row" style="display: flex; justify-content: flex-start;">
+                    <input type="submit" value="Изтрий избраните предложения" class="default delete-meme-button" name="delete_selected_suggestions">
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Poll Question Selection Section -->
+    <div class="module aligned">
+        <h2 class="meme-section-header">Изтриване на седмични анкети (Необратимо действие!)</h2>
+        <div class="form-row">
+            <form method="post" style="width: 100%;">
+                {% csrf_token %}
+                {{ poll_selection_form.non_field_errors }}
+
+                <div style="max-height: 400px; overflow-y: auto; margin-bottom: 10px;">
+                    {% for field in poll_selection_form %}
+                        <div class="form-row" style="border-bottom: 1px solid #eee; padding: 8px 0;">
+                            <label style="display: flex; align-items: center; gap: 10px;">
+                                {{ field }}
+                                <span style="flex: 1; display: flex; align-items: center; gap: 5px;">{{ field.label }}</span>
+                            </label>
+                        </div>
+                    {% endfor %}
+                </div>
+
+                <div class="submit-row" style="display: flex; justify-content: flex-start;">
+                    <input type="submit" value="Изтрий избраните анкети" class="default delete-meme-button" name="delete_selected_polls">
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}

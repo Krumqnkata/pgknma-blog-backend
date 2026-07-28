@@ -1,0 +1,40 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Вход · Valentine ПГКНМА{% endblock %}
+{% block body_class %}login-page{% endblock %}
+
+{% block content %}
+<section class="login-shell">
+    <div class="login-story">
+        <span class="eyebrow">Пощата за добри думи</span>
+        <h1>Някои послания заслужават специален плик.</h1>
+        <p>Изпрати мило послание на съученик, приятел или учител. Пощенските кутии ще се отворят в определения ден.</p>
+        <div class="floating-envelope" aria-hidden="true">
+            <span>♥</span>
+        </div>
+    </div>
+
+    <div class="panel login-panel">
+        <div class="panel-icon" aria-hidden="true">✦</div>
+        <span class="eyebrow">Добре дошъл</span>
+        <h2>Влез със своя код</h2>
+        <p class="muted">Кодът е личен. Не го споделяй с други хора.</p>
+
+        <form method="post" class="stack-form" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="form-alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+            <label for="{{ form.code.id_for_label }}">Код за достъп</label>
+            {{ form.code }}
+            {% if form.code.errors %}<div class="field-error">{{ form.code.errors }}</div>{% endif %}
+            <button class="button button-primary button-wide" type="submit">
+                Отвори Valentine
+                <span aria-hidden="true">→</span>
+            </button>
+        </form>
+
+        <a class="text-link" href="{% url 'valentine:guide' %}">Как работи платформата?</a>
+    </div>
+</section>
+{% endblock %}

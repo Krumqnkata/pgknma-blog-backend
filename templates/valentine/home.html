@@ -1,0 +1,143 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Начало · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="hero wrap">
+    <div class="hero-copy">
+        <span class="eyebrow">Здравей, {{ profile.first_name }}</span>
+        <h1>Изпрати нещо, което ще накара някого да се усмихне.</h1>
+        <p>Посланието може да е за приятел, съученик или учител. Анонимно е за получателя, но модератор може да види изпращача при сигнал.</p>
+        <div class="hero-actions">
+            <a class="button button-light" href="#composer">Напиши валентинка</a>
+            <a class="button button-ghost-light" href="{% url 'valentine:inbox' %}">Моята кутия</a>
+        </div>
+    </div>
+
+    <div class="countdown-card">
+        {% if is_revealed %}
+            <span class="countdown-label">Пощенската кутия е отворена</span>
+            <strong>Време е за посланията! 💌</strong>
+            <a href="{% url 'valentine:inbox' %}">Отвори получените</a>
+        {% else %}
+            <span class="countdown-label">До разкриването остават</span>
+            <div class="countdown" data-countdown="{{ reveal_at|date:'c' }}">
+                <div><strong data-days>--</strong><span>дни</span></div>
+                <div><strong data-hours>--</strong><span>часа</span></div>
+                <div><strong data-minutes>--</strong><span>минути</span></div>
+            </div>
+            {% if platform_settings.show_received_count %}
+            <p>В твоята кутия чакат <b>{{ received_count }}</b> запечатани плика.</p>
+            {% endif %}
+        {% endif %}
+    </div>
+</section>
+
+<section class="stats-strip wrap" aria-label="Статистика">
+    <div><strong>{{ total_sent }}</strong><span>послания в училището</span></div>
+    <div><strong>{{ sent_today }}</strong><span>изпратени от теб днес</span></div>
+    <div><strong>{{ remaining_today }}</strong><span>остават за днес</span></div>
+    <div>
+        <strong>{% if sending_open %}Отворено{% else %}Затворено{% endif %}</strong>
+        <span>изпращане</span>
+    </div>
+</section>
+
+<section id="composer" class="composer-section wrap">
+    <div class="section-heading">
+        <span class="eyebrow">Създай послание</span>
+        <h2>Твоята валентинка</h2>
+        <p>Избери получател, напиши нещо мило и оформи картичката.</p>
+    </div>
+
+    <div class="composer-grid">
+        <form method="post" class="panel composer-form" novalidate
+              data-students-url="{% url 'valentine:students' '__CLASS__' %}">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="form-alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="step-label"><span>1</span> Избери получател</div>
+            <div class="field-grid">
+                <div class="field">
+                    <label for="recipient-class">Клас</label>
+                    <select id="recipient-class" data-selected="{{ selected_class }}" required>
+                        <option value="">Избери клас</option>
+                        {% for class in classes %}
+                        <option value="{{ class.value }}" {% if selected_class == class.value %}selected{% endif %}>{{ class.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="recipient">Получател</label>
+                    <select id="recipient" name="recipient" data-selected="{{ selected_recipient_id }}" required disabled>
+                        <option value="">Първо избери клас</option>
+                    </select>
+                    {% if form.recipient.errors %}<div class="field-error">{{ form.recipient.errors }}</div>{% endif %}
+                </div>
+            </div>
+
+            <div class="step-label"><span>2</span> Напиши посланието</div>
+            <div class="field">
+                <label for="id_content">Послание</label>
+                <textarea id="id_content" name="content" rows="6" maxlength="500" placeholder="Напиши нещо мило…" required>{{ form.content.value|default_if_none:"" }}</textarea>
+                <div class="field-meta"><span>Добри думи, истински усмивки.</span><span data-char-count>0 / 500</span></div>
+                {% if form.content.errors %}<div class="field-error">{{ form.content.errors }}</div>{% endif %}
+            </div>
+
+            <div class="step-label"><span>3</span> Избери стил</div>
+            <div class="theme-picker" role="radiogroup" aria-label="Тема">
+                {% with selected_theme=form.theme.value|default:"classic" %}
+                <label class="theme-chip theme-classic">
+                    <input type="radio" name="theme" value="classic" {% if selected_theme == "classic" %}checked{% endif %}>
+                    <span>Класическа</span>
+                </label>
+                <label class="theme-chip theme-sunset">
+                    <input type="radio" name="theme" value="sunset" {% if selected_theme == "sunset" %}checked{% endif %}>
+                    <span>Залез</span>
+                </label>
+                <label class="theme-chip theme-midnight">
+                    <input type="radio" name="theme" value="midnight" {% if selected_theme == "midnight" %}checked{% endif %}>
+                    <span>Среднощна</span>
+                </label>
+                <label class="theme-chip theme-candy">
+                    <input type="radio" name="theme" value="candy" {% if selected_theme == "candy" %}checked{% endif %}>
+                    <span>Бонбонена</span>
+                </label>
+                <label class="theme-chip theme-bloom">
+                    <input type="radio" name="theme" value="bloom" {% if selected_theme == "bloom" %}checked{% endif %}>
+                    <span>Цветна</span>
+                </label>
+                {% endwith %}
+            </div>
+            {% if form.theme.errors %}<div class="field-error">{{ form.theme.errors }}</div>{% endif %}
+
+            <label class="privacy-toggle">
+                <input type="checkbox" name="is_anonymous" {% if form.is_anonymous.value or not form.is_bound %}checked{% endif %}>
+                <span class="toggle-track" aria-hidden="true"></span>
+                <span><strong>Анонимно за получателя</strong><small>При сигнал модераторите могат да установят изпращача.</small></span>
+            </label>
+
+            <button class="button button-primary button-wide" type="submit" {% if not sending_open %}disabled{% endif %}>
+                <span aria-hidden="true">♥</span>
+                Запечатай и изпрати
+            </button>
+        </form>
+
+        <aside class="preview-column">
+            <span class="preview-label">Преглед на картичката</span>
+            <article class="valentine-preview theme-classic" data-card-preview>
+                <div class="card-stamp">♥</div>
+                <span class="card-kicker">Специално за</span>
+                <h3 data-preview-recipient>някой специален</h3>
+                <p data-preview-content>Твоето послание ще изглежда така…</p>
+                <div class="card-signature" data-preview-signature>
+                    Анонимен приятел
+                </div>
+            </article>
+            <p class="safety-note"><span aria-hidden="true">🛡</span> Посланията могат да бъдат докладвани. Нека платформата остане приятно място за всички.</p>
+        </aside>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Как работи · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">Кратко и ясно</span>
+    <h1>Как работи Valentine?</h1>
+    <p>Платформата е за мили, уважителни и позитивни послания в училищната общност.</p>
+</section>
+
+<section class="guide-grid wrap">
+    <article class="guide-card">
+        <span>01</span>
+        <h2>Влез с личния си код</h2>
+        <p>Кодът идентифицира твоя училищен профил. Не го изпращай на други хора.</p>
+    </article>
+    <article class="guide-card">
+        <span>02</span>
+        <h2>Избери човек</h2>
+        <p>Можеш да изпратиш послание на ученик или учител от наличния списък.</p>
+    </article>
+    <article class="guide-card">
+        <span>03</span>
+        <h2>Оформи картичката</h2>
+        <p>Напиши до 500 символа, избери тема и реши дали името ти да бъде видимо.</p>
+    </article>
+    <article class="guide-card">
+        <span>04</span>
+        <h2>Изчакай разкриването</h2>
+        <p>Получените пликове остават запечатани до датата и часа, зададени от организаторите.</p>
+    </article>
+</section>
+
+<section class="kindness-panel wrap">
+    <div>
+        <span class="eyebrow">Важно</span>
+        <h2>Анонимно не означава безотговорно.</h2>
+    </div>
+    <p>Получателят не вижда името при анонимно изпращане. При сигнал модераторите могат да установят изпращача и да предприемат действия. Обидни, заплашителни или неподходящи послания не са разрешени.</p>
+</section>
+
+<div class="center-action">
+    {% if is_logged_in %}
+    <a class="button button-primary" href="{% url 'valentine:home' %}">Към платформата</a>
+    {% else %}
+    <a class="button button-primary" href="{% url 'valentine:login' %}">Вход с код</a>
+    {% endif %}
+</div>
+{% endblock %}

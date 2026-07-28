@@ -1,0 +1,96 @@
+{% load static %}
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Онлайн валентинки</title>
+    <link rel="stylesheet" href="{% static 'valentines/style.css' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet">
+    <link rel="icon" href="{% static 'valentines/favicon.ico' %}" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <div id="form-container">
+            <header>
+                <img src="{% static 'valentines/logo.png' %}" alt="School Logo" class="school-logo">
+                <h1>Изпрати Валентинка 💌</h1>
+                {% if message %}
+                    <p class="error-message">{{ message }}</p>
+                {% else %}
+                    <p>Попълни формата, за да изпратиш валентинка до твоя любим съученик или учител.</p>
+                {% endif %}
+            </header>
+            {% if not message %}
+                <form id="valentine-form" method="POST">
+                    {% csrf_token %}
+
+                    <!-- Step 1: Select Class and Recipient -->
+                    <div id="step-1-and-2" class="form-step">
+                        <div class="form-group">
+                            <label for="clas">Клас</label>
+                            <select id="clas" name="clas" required>
+                                <option value="" disabled selected>Избери клас</option>
+                                {% for class in classes %}
+                                    <option value="{{ class.latin }}">{{ class.cyrillic }} клас</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="name">До</label>
+                            <select id="name" name="name" required disabled>
+                                <option value="" disabled selected>Избери име</option>
+                            </select>
+                        </div>
+                        <button type="button" id="next-to-step3" disabled>Напред</button>
+                    </div>
+
+                    <!-- Step 3: Write Message -->
+                    <div id="step-3" class="form-step" style="display: none;">
+                        <div class="form-group">
+                            <label for="message">Съобщение</label>
+                            <textarea id="message" name="message" rows="4" placeholder="Напиши нещо мило..." required maxlength="500"></textarea>
+                            <div id="char-counter">0 / 500</div>
+                        </div>
+                        <!-- Anonymity switch -->
+                        <div class="form-group switch-container">
+                            <label class="switch">
+                                <input type="checkbox" id="is_anonymous" name="is_anonymous" checked>
+                                <span class="slider round"></span>
+                            </label>
+                            <label for="is_anonymous" class="switch-label">Изпрати анонимно</label>
+                        </div>
+			<p>По default изпращането е анонимно, но ако цъкнете суича ще изпратите с вашето име.</p>
+                        <!-- End Anonymity switch -->
+                        <div class="button-group">
+                            <button type="button" id="prev-step-3">Назад</button>
+                            <button type="submit">Създай Валентинка</button>
+                        </div>
+                    </div>
+                </form>
+            {% endif %}
+            <div class="button-group">
+                <button type="button" onclick="location.href='{% url 'profile_page' %}'">Виж получените валентинки</button>
+                <button type="button" id="guide-button-index">Прочети ръководството</button>
+            </div>
+	    	      <div style="background-color: #fff1f2; border: 2px solid #db2777; padding: 30px; border-radius: 30px; text-align: center; margin-top: 20px;"><p style="font-family: sans-serif; color: #9d174d; margin-bottom: 20px; font-weight: bold; font-size: 1.2rem;">ВКЛЮЧИ СЕ В КОНКУРСА ТУК:</p><a href="https://docs.google.com/forms/d/e/1FAIpQLSdE6CPBpdH46HsJXVp9FK5lThN0cOtxPhwA0fdv6qX48QjfbQ/viewform" style="display: inline-block; background-color: #db2777; color: #ffffff; padding: 18px 45px; text-decoration: none; font-family: sans-serif; font-size: 1.5rem; border-radius: 50px; font-weight: bold; box-shadow: 0 6px 15px rgba(219, 39, 119, 0.4);">КЪМ КОНКУРСА</a></div>
+		<a href="/" style="display: block; text-align: center; margin-top: 20px; font-family: var(--font-body); color: #fff; text-decoration: none; font-size: 0.9rem; opacity: 0.7;">Към блога</a>
+            </div>
+        </div>
+        
+
+        <div id="card-container" class="hidden">
+            <div class="valentine-card">
+                <p class="to">До: <span id="card-recipient-name"></span> <span id="card-recipient-class"></span></p>
+                <p class="message-body" id="card-message"></p>
+                <div class="heart">❤️</div>
+            </div>
+            <button id="create-new">Създай Друга</button>
+        </div>
+    </div>
+    <script src="{% static 'valentines/script.js' %}"></script>
+    <script src="{% static 'valentines/background-animation.js' %}"></script>
+</body>
+</html>

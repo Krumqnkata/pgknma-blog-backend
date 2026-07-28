@@ -1,0 +1,167 @@
+{% extends "unfold/layouts/base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "Начално табло" %} | {{ site_title|default:_("Django site admin") }}{% endblock %}
+
+{% block content %}
+<div class="p-6">
+    <div class="mb-8">
+        <h1 class="text-2xl font-semibold text-font-important">{% trans "Добре дошли, " %}{{ request.user.username }}!</h1>
+        
+        <div class="my-6 flex flex-col md:flex-row items-center rounded-lg border border-border-subtle bg-card-background p-6 shadow-sm">
+            <div class="flex-shrink-0 mb-4 md:mb-0">
+                <img src="/static/images/logo-sm.png" width="250" height="150" alt="Лого" class="dark:opacity-90 dark:brightness-110">
+            </div>
+            <div class="flex-1 md:ml-6 italic flex flex-col items-center text-center">
+                <p id="quote-text" class="text-lg text-font-default font-medium leading-relaxed"></p>
+                <footer id="quote-author" class="mt-2 text-sm text-font-subtle font-semibold"></footer>
+            </div>
+        </div>
+
+        <div class="mb-8 p-4 rounded-lg border-l-4 border-primary-500 bg-primary-500/10">
+            <h2 class="text-xl font-bold text-primary-500 leading-tight">
+                ⚠️ {% trans "Моля, първо създайте съдържанието, запишете го и едва тогава качете снимки или файлове!" %}
+            </h2>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <a href="{% url 'admin:blog_posts_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-add text-2xl text-primary-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Добави публикация" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Създайте нова статия." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:blog_bellsongsuggestion_changelist' %}?status__exact=pending" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-music_note text-2xl text-yellow-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Одобри песни" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Прегледайте предложенията." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:blog_comments_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-comment text-2xl text-blue-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Коментари" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Управлявайте отзивите." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:blog_event_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-event text-2xl text-green-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Добави събитие" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Ново събитие в календара." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:blog_pollquestion_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-poll text-2xl text-indigo-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Добави анкета" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Създайте нова анкета." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:blog_sitesettings_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-settings text-2xl text-red-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Настройки" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Управление на сайта." %}</p>
+                </div>
+            </div>
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block footer %}
+{{ block.super }}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const quotes = [
+            { text: "Всеки глупак може да напише код, който компютърът разбира. Добрите програмисти пишат код, който хората разбират.", author: "Мартин Фаулър" },
+            { text: "Първо, решете проблема. След това, напишете кода.", author: "Джон Джонсън" },
+            { text: "Опитът е името, което всеки дава на грешките си.", author: "Оскар Уайлд" },
+            { text: "Ако дебъгването е процес на премахване на бъгове, то програмирането трябва да е процес на тяхното поставяне.", author: "Едсгер Дейкстра" },
+            { text: "Винаги кодирайте така, сякаш човекът, който ще поддържа вашия код, е жесток психопат, който знае къде живеете.", author: "Джон Уудс" },
+            { text: "Има само два вида езици за програмиране: тези, от които хората се оплакват, и тези, които никой не използва.", author: "Бьорн Страуструп" },
+            { text: "Програмирането днес е надпревара между софтуерните инженери и Вселената, която произвежда по-големи идиоти. Засега Вселената печели.", author: "Рик Кук" },
+            { text: "Кодът е като хумора. Когато трябва да го обясняваш, е лош.", author: "Кори Хаус" },
+            { text: "Измерването на напредъка по редове код е като измерване на напредъка в строежа на самолети по тегло.", author: "Бил Гейтс" },
+            { text: "За да разбереш рекурсията, първо трябва да разбереш рекурсията.", author: "Неизвестен" },
+            { text: "Софтуерът и катедралите са почти едно и също – първо ги строим, после се молим.", author: "Неизвестен" },
+            { text: "Дебъгването е два пъти по-трудно от писането. Ако пишете кода възможно най-умно, няма да сте достатъчно умни да го дебъгвате.", author: "Брайън Кърниган" },
+            { text: "Има само две трудни неща: невалидиране на кеша и именуване на нещата.", author: "Фил Карлтън" },
+            { text: "Най-евтините, бързи и надеждни компоненти са тези, които не съществуват.", author: "Гордън Бел" },
+            { text: "Не съм се провалил. Просто открих 10 000 начина, които не работят.", author: "Томас Едисън" },
+            { text: "Разговорите са евтини. Покажи ми кода.", author: "Линус Торвалдс" },
+            { text: "Добрият код е най-добрата си документация.", author: "Стив Макконъл" },
+            { text: "Единственият начин да научиш да програмираш е да програмираш.", author: "Неизвестен" },
+            { text: "Програмирането не е за това какво знаеш, а за това какво можеш да разбереш.", author: "Неизвестен" },
+            { text: "Програмирането е изкуството да казваш на друг човек какво искаш компютърът да направи.", author: "Доналд Кнут" },
+            { text: "Лошият код работи. Добрият код остава.", author: "Неизвестен" },
+            { text: "Програмистът е човек, който решава проблеми, за които не е знаел, че съществуват.", author: "Неизвестен" },
+            { text: "Първо направи да работи. После го направи красиво.", author: "Кент Бек" },
+            { text: "Най-опасната фраза в програмирането е: „Това няма как да се случи.“", author: "Неизвестен" },
+            { text: "Добрият програмист гледа кода си така, както ковачът гледа меча – здрав, прост и верен.", author: "Неизвестен" },
+            { text: "Кодът, който не си написал, е кодът без бъгове.", author: "Неизвестен" },
+            { text: "Програмирането е мислене, не писане.", author: "Рич Хики" },
+            { text: "Всеки може да напише код, който работи. Малцина могат да напишат код, който живее.", author: "Неизвестен" },
+            { text: "Оптимизацията е коренът на много злини – особено преждевременната.", author: "Доналд Кнут" },
+            { text: "Ако кодът ти е труден за писане, ще е труден и за четене.", author: "Робърт Мартин" },
+            { text: "Програмистът не се бори с компютъра, а със собствените си мисли.", author: "Неизвестен" },
+            { text: "Кодът е обещание към бъдещето.", author: "Неизвестен" },
+            { text: "Един ред код може да спаси часове мислене – или да ги унищожи.", author: "Неизвестен" },
+            { text: "Истинският майстор пише по-малко код, но по-добър.", author: "Неизвестен" },
+            { text: "Всеки бъг е урок, който отказахме да научим навреме.", author: "Неизвестен" },
+            { text: "Програмирането е търпение, превърнато в логика.", author: "Неизвестен" },
+            { text: "Кодът не лъже. Коментарите – понякога.", author: "Рон Джефрис" },
+            { text: "Добрият дизайн прави грешките очевидни.", author: "Неизвестен" },
+            { text: "Програмистът пише код за хора, не за машини.", author: "Харолд Абелсън" },
+            { text: "Ако трябва да питаш дали кодът е лош – значи е.", author: "Неизвестен" },
+            { text: "Най-добрият дебъгер е ясното мислене.", author: "Неизвестен" },
+            { text: "Кодът остарява. Принципите остават.", author: "Неизвестен" },
+            { text: "Програмирането е дисциплина, не вдъхновение.", author: "Неизвестен" },
+            { text: "Всеки проект започва с ентусиазъм и свършва с рефакторинг.", author: "Неизвестен" },
+            { text: "Кодът е история, която разказваш на следващия програмист.", author: "Неизвестен" },
+            { text: "Колкото по-тихо работи кодът, толкова по-добре е написан.", author: "Неизвестен" },
+            { text: "Истинската сложност не е в алгоритмите, а в хората.", author: "Неизвестен" },
+            { text: "Програмирането е занаят – учи се цял живот.", author: "Неизвестен" },
+            { text: "Добрият код не впечатлява. Той служи.", author: "Неизвестен" }
+        ];
+
+        const randomIndex = Math.floor(Math.random() * quotes.length);
+        const randomQuote = quotes[randomIndex];
+
+        document.getElementById('quote-text').innerText = `"${randomQuote.text}"`;
+        document.getElementById('quote-author').innerText = `- ${randomQuote.author}`;
+    });
+</script>
+{% endblock %}

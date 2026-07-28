@@ -1,0 +1,15 @@
+.venv/
+db.sqlite3
+__pycache__/
+*.py[cod]
+.env
+.agents/
+.codex/
+.openai/
+files/
+staticfiles_collected/
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/

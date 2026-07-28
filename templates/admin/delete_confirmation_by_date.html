@@ -1,0 +1,58 @@
+{% extends "unfold/layouts/base.html" %}
+{% load i18n unfold %}
+
+{% block content %}
+<div class="flex items-center justify-center min-h-[70vh] px-4">
+    <div class="max-w-lg w-full bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-800 overflow-hidden">
+        
+        <div class="bg-red-50 dark:bg-red-900/20 px-8 py-6 border-b border-red-100 dark:border-red-900/30">
+            <div class="flex items-center">
+                <div class="p-3 bg-red-600 rounded-lg shadow-lg mr-4">
+                    <svg class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="Wait 19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-extrabold text-gray-900 dark:text-white">Почистване на базата</h2>
+                    <p class="text-sm text-red-600 dark:text-red-400 font-medium italic">Внимавайте, действието е необратимо!</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-8">
+            <form method="post" class="space-y-6">
+                {% csrf_token %}
+                
+                <div class="space-y-4">
+                    <p class="text-gray-600 dark:text-gray-400 leading-relaxed">
+                        Изберете дата. Системата ще намери всички предложения за песни, създадени <strong>преди</strong> този момент, и ще ги изтрие окончателно.
+                    </p>
+                    
+                    <div class="relative group">
+                        <label class="text-xs uppercase tracking-widest font-bold text-gray-500 dark:text-gray-500 mb-2 block">
+                            Крайна дата
+                        </label>
+                        {{ form.delete_before_date }}
+                    </div>
+                </div>
+
+                <input type="hidden" name="action" value="delete_by_date" />
+                <input type="hidden" name="apply" value="True" />
+                <input type="hidden" name="post" value="yes" />
+                {% for obj in queryset %}
+                    <input type="hidden" name="_selected_action" value="{{ obj.pk }}" />
+                {% endfor %}
+
+                <div class="flex flex-col sm:flex-row gap-3 pt-6">
+                    <button type="submit" class="flex-1 inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-bold rounded-xl text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all shadow-md hover:shadow-lg">
+                        Изтрий записите
+                    </button>
+                    <a href="." class="flex-1 inline-flex justify-center items-center px-6 py-3 border border-gray-300 dark:border-gray-700 text-base font-medium rounded-xl text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all">
+                        Отказ
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

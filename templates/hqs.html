@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Видео плейър</title>
+    
+    <style>
+        :root {
+            --main-color: #b83b3b;
+            --fixed-height: 500px;
+        }
+
+        body {
+            background-color: #0a0a0a;
+            background-image: radial-gradient(#2a2a35 1px, transparent 1px);
+            background-size: 25px 25px;
+            color: #fff;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 40px 0;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .header-container { text-align: center; margin-bottom: 25px; }
+        .movie-title { font-size: 2.2rem; font-weight: 300; letter-spacing: 2px; margin: 0; }
+
+        .video-wrapper {
+            position: relative;
+            padding: 10px;
+            background: #1e1e1e;
+            border-radius: 16px;
+            border: 1px solid #333;
+            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.9);
+            z-index: 2;
+            width: fit-content;
+            max-width: 95vw;
+        }
+
+        .video-wrapper::before {
+            content: '';
+            position: absolute;
+            top: -5px; left: -5px; right: -5px; bottom: -5px;
+            background: linear-gradient(45deg, var(--main-color), #1a0b2e);
+            z-index: -1;
+            filter: blur(35px);
+            opacity: 0.3;
+            border-radius: 20px;
+            transition: opacity 0.8s ease;
+        }
+
+        .video-wrapper.is-playing::before {
+            opacity: 0.8;
+            animation: colorShift 12s linear infinite;
+        }
+
+        @keyframes colorShift {
+            0% { filter: blur(35px) hue-rotate(0deg); }
+            100% { filter: blur(35px) hue-rotate(360deg); }
+        }
+
+        .artplayer-app {
+            width: 800px;
+            max-width: 90vw;
+            height: var(--fixed-height);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+        }
+
+        .footer-controls { margin-top: 40px; }
+        .btn-home {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #ccc;
+            text-decoration: none;
+            padding: 14px 30px;
+            border-radius: 50px;
+            border: 1px solid #444;
+            transition: 0.3s;
+        }
+        .btn-home:hover { background: var(--main-color); color: #fff; }
+
+        @media (max-width: 600px) {
+            :root { --fixed-height: 60vh; }
+            .artplayer-app { width: 95vw; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <h1 class="movie-title">Видеоклип</h1>
+    </div>
+
+    <div class="video-wrapper">
+        <div class="artplayer-app"></div>
+    </div>
+
+    <div class="footer-controls">
+        <a href="/" class="btn-home">Начална страница</a>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/artplayer/dist/artplayer.js"></script>
+
+    <script>
+        const videoWrapper = document.querySelector('.video-wrapper');
+        
+        const art = new Artplayer({
+            container: '.artplayer-app',
+            url: "{{ video_url }}",
+            type: 'm3u8',
+            theme: '#b83b3b',
+            fullscreen: true,
+            fullscreenWeb: true,
+            setting: true,
+            pip: true,
+            // --- НАСТРОЙКИ ---
+            hotkey: true,           
+            playbackRate: true,     
+            screenshot: false,      // Напълно премахнат скрийншот
+            subtitle: {
+                url: "{{ subtitle_url }}", 
+                style: {
+                    color: '#fff',
+                    fontSize: '20px',
+                    textShadow: '0 2px 4px rgba(0,0,0,0.8)'
+                },
+                encoding: 'utf-8',
+            },
+            
+            customType: {
+                m3u8: function (video, url) {
+                    if (Hls.isSupported()) {
+                        const hls = new Hls();
+                        hls.loadSource(url);
+                        hls.attachMedia(video);
+                        hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                            const qualities = hls.levels.map((level, index) => ({
+                                html: level.height + 'p',
+                                level: index,
+                            }));
+                            qualities.unshift({ html: 'Auto', level: -1 });
+                            art.setting.add({
+                                name: 'quality',
+                                type: 'selector',
+                                html: 'Качество',
+                                selector: qualities,
+                                onSelect: function (item) {
+                                    hls.currentLevel = item.level;
+                                    return item.html;
+                                },
+                            });
+                        });
+                    }
+                },
+            },
+        });
+
+        art.on('play', () => videoWrapper.classList.add('is-playing'));
+        art.on('pause', () => videoWrapper.classList.remove('is-playing'));
+    </script>
+</body>
+</html>

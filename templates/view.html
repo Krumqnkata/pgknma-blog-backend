@@ -1,0 +1,106 @@
+{% load static %}
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Моите валентинки</title>
+    <link rel="stylesheet" href="{% static 'valentines/style.css' %}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700&family=Montserrat:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Pacifico&display=swap" rel="stylesheet">
+    <link rel="icon" href="{% static 'valentines/favicon.ico' %}" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <div id="form-container">
+            <header>
+                <img src="{% static 'valentines/logo.png' %}" alt="School Logo" class="school-logo">
+                <h1>Получени валентинки 💌</h1>
+                <p>Здравей, {{name}}!</p>
+		<p>Нека видим адресираните до теб валентинки.</p>
+            </header>
+            <div class="container-view">
+            {%for v in valentines%}
+            <div class="valentine-item" id="valentine-{{ v.id }}">
+                <p class="valentine-text">{{ v.content }}</p>
+                <p class="valentine-sender">
+                    {% if v.is_anonymous %}
+                        Анонимна 💖
+                    {% elif v.sender_profile %}
+                        От: {{ v.sender_profile.first_name }} {{ v.sender_profile.last_name }} 💖
+                    {% else %}
+                        Неизвестен изпращач 💖
+                    {% endif %}
+                </p>
+                <!-- Report Button -->
+                <button type="button" class="report-button" onclick="reportValentine('{{ v.id }}', this)">Докладвай за обидно съдържание</button>
+            </div>
+            {%empty%}
+            <p>Все още нямаш получени валентинки.</p>
+            {%endfor%}
+            </div>
+            <div class="button-group">
+                <button type="button" onclick="location.href='{% url 'index' %}'">Назад</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    // Does this cookie string begin with the name we want?
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        function reportValentine(valentineId, buttonElement) {
+            const confirmation = confirm("Сигурни ли сте, че искате да докладвате валентинката? Тя ще бъде скрита завинаги от профила ви.");
+
+            if (confirmation) {
+                const csrftoken = getCookie('csrftoken');
+                fetch('{% url 'report_valentine' 0 %}'.replace('0', valentineId), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrftoken,
+                    },
+                    body: JSON.stringify({}) // Empty body for a simple POST
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    }
+                    throw new Error('Something went wrong with the report.');
+                })
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert("Валентинката беше докладвана и скрита.");
+                        // Hide the valentine item from the DOM
+                        const valentineItem = document.getElementById(`valentine-${valentineId}`);
+                        if (valentineItem) {
+                            valentineItem.style.display = 'none'; // Or remove it completely
+                        }
+                    } else {
+                        alert(`Грешка: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error reporting valentine:', error);
+                    alert("Възникна грешка при докладването на валентинката.");
+                });
+            }
+        }
+    </script>
+    <script src="{% static 'valentines/script.js' %}"></script>
+    <script src="{% static 'valentines/background-animation.js' %}"></script>
+</body>
+</html>
