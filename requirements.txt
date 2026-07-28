@@ -23,6 +23,7 @@ packaging
 pillow
 PyJWT
 requests
+reportlab
 google-auth
 soupsieve
 sqlparse

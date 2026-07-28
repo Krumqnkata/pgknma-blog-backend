@@ -1,0 +1,132 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <div class="bg-white border border-base-200 p-6 rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+        <h1 class="font-semibold text-xl text-font-important-light dark:text-font-important-dark">
+            Импорт на ученици от CSV
+        </h1>
+        <p class="mt-2 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            Задължителни колони:
+            <code>first_name</code>, <code>last_name</code> и
+            <code>class</code>. Приемат се и заглавията
+            <code>Име</code>, <code>Фамилия</code> и
+            <code>Клас</code>. Колоните <code>email</code> и
+            <code>code</code> са незадължителни. При празен код системата
+            ще създаде сигурен шестзнаков код автоматично.
+        </p>
+        <p class="mt-2 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            Съществуващите профили се разпознават по код, имейл или точно
+            име и фамилия. Преди запис винаги ще видиш преглед.
+        </p>
+        <a class="inline-block mt-4 border border-base-200 font-medium px-4 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"
+           href="{{ template_url }}">
+            Изтегли празен CSV шаблон
+        </a>
+    </div>
+
+    {% if import_errors %}
+    <div class="bg-red-50 border border-red-200 p-5 rounded-default text-red-800 dark:bg-red-950 dark:border-red-800 dark:text-red-200">
+        <strong>Импортът не е записан. Поправи следните проблеми:</strong>
+        <ul class="list-disc mt-2 pl-6">
+            {% for error in import_errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if preview_rows %}
+    <div class="bg-white border border-base-200 p-6 rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+        <h2 class="font-semibold text-lg text-font-important-light dark:text-font-important-dark">
+            Предварителен преглед – {{ preview_rows|length }} ученици
+        </h2>
+        <p class="mt-2 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            Нищо още не е записано. Провери данните и потвърди.
+        </p>
+    </div>
+
+    <div class="bg-white border border-base-200 overflow-x-auto rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+        <table class="w-full">
+            <thead>
+                <tr class="border-b border-base-200 dark:border-base-700">
+                    <th class="px-4 py-3 text-left">Ред</th>
+                    <th class="px-4 py-3 text-left">Ученик</th>
+                    <th class="px-4 py-3 text-left">Клас</th>
+                    <th class="px-4 py-3 text-left">Имейл</th>
+                    <th class="px-4 py-3 text-left">Код</th>
+                    <th class="px-4 py-3 text-left">Действие</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in preview_rows %}
+                <tr class="border-b border-base-100 last:border-b-0 dark:border-base-800">
+                    <td class="px-4 py-3">{{ row.row_number }}</td>
+                    <td class="px-4 py-3">
+                        <strong>{{ row.first_name }} {{ row.last_name }}</strong>
+                    </td>
+                    <td class="px-4 py-3">{{ row.clas }}</td>
+                    <td class="px-4 py-3">
+                        {{ row.display_email|default:"—" }}
+                    </td>
+                    <td class="px-4 py-3">{{ row.display_code }}</td>
+                    <td class="px-4 py-3">{{ row.action_label }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden" name="confirm" value="yes">
+        <input type="hidden" name="import_token" value="{{ import_token }}">
+        <div class="flex flex-wrap gap-3">
+            <button class="bg-primary-600 border border-transparent font-medium px-4 py-2 rounded-default text-sm text-white hover:bg-primary-700"
+                    type="submit">
+                Потвърди и запиши
+            </button>
+            <a class="border border-base-200 font-medium px-4 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"
+               href="{{ changelist_url }}">
+                Отказ
+            </a>
+        </div>
+    </form>
+    {% else %}
+    <form method="post"
+          enctype="multipart/form-data"
+          class="bg-white border border-base-200 p-6 rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        <div class="flex flex-col gap-5">
+            {% for field in form %}
+            <div>
+                <label class="block font-medium mb-2 text-sm"
+                       for="{{ field.id_for_label }}">
+                    {{ field.label }}
+                </label>
+                {{ field }}
+                {% if field.help_text %}
+                <p class="mt-1 text-xs text-font-subtle-light dark:text-font-subtle-dark">
+                    {{ field.help_text }}
+                </p>
+                {% endif %}
+                {{ field.errors }}
+            </div>
+            {% endfor %}
+        </div>
+        <div class="flex flex-wrap gap-3 mt-6">
+            <button class="bg-primary-600 border border-transparent font-medium px-4 py-2 rounded-default text-sm text-white hover:bg-primary-700"
+                    type="submit">
+                Провери файла
+            </button>
+            <a class="border border-base-200 font-medium px-4 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"
+               href="{{ changelist_url }}">
+                Отказ
+            </a>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

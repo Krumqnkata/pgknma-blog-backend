@@ -58,7 +58,7 @@ class Profile(models.Model):
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     clas = models.CharField(max_length=4)
-    email = models.EmailField()
+    email = models.EmailField(blank=True, verbose_name="Имейл")
     is_active = models.BooleanField(
         default=True,
         verbose_name="Активен профил",

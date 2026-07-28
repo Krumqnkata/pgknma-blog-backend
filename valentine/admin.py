@@ -4,6 +4,7 @@ from datetime import date
 
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
+from django.core import signing
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Q
@@ -15,6 +16,7 @@ from django.urls import path, reverse
 from django.utils import timezone
 from unfold.admin import ModelAdmin
 
+from .forms import ProfileCsvImportForm
 from .models import (
     ArchivedValentine,
     Profile,
@@ -25,6 +27,13 @@ from .models import (
     generate_unique_code,
     normalize_class_code,
 )
+from .profile_import import (
+    ProfileImportError,
+    apply_profile_import,
+    build_profile_import_plan,
+    parse_profile_csv,
+)
+from .profile_pdf import ProfilePdfError, build_profiles_pdf
 
 
 def csv_safe(value):
@@ -74,6 +83,7 @@ def next_student_class(class_name):
 
 @admin.register(Profile)
 class ProfileAdmin(ModelAdmin):
+    change_list_template = "admin/valentine/profile/change_list.html"
     list_display = (
         "full_name_display",
         "clas",
@@ -89,6 +99,7 @@ class ProfileAdmin(ModelAdmin):
         "promote_to_next_academic_year",
         "deactivate_profiles",
         "reactivate_profiles",
+        "export_selected_profiles_pdf",
         "send_system_valentine",
         "regenerate_access_codes",
     )
@@ -103,6 +114,216 @@ class ProfileAdmin(ModelAdmin):
     )
     def academic_year_display(self, obj):
         return obj.academic_year_label
+
+    def get_urls(self):
+        custom_urls = [
+            path(
+                "import-csv/",
+                self.admin_site.admin_view(self.import_profiles_csv),
+                name="valentine_profile_import_csv",
+            ),
+            path(
+                "import-template.csv",
+                self.admin_site.admin_view(self.download_import_template),
+                name="valentine_profile_import_template",
+            ),
+            path(
+                "active-codes.pdf",
+                self.admin_site.admin_view(self.export_active_profiles_pdf),
+                name="valentine_profile_active_codes_pdf",
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = dict(extra_context or {})
+        extra_context.update(
+            {
+                "profile_import_url": reverse(
+                    "admin:valentine_profile_import_csv"
+                ),
+                "profile_pdf_url": reverse(
+                    "admin:valentine_profile_active_codes_pdf"
+                ),
+                "can_import_profiles": self.has_add_permission(request),
+            }
+        )
+        return super().changelist_view(request, extra_context)
+
+    def _pdf_response(self, request, queryset, title, filename):
+        try:
+            pdf_data = build_profiles_pdf(queryset, title=title)
+        except ProfilePdfError as exc:
+            self.message_user(request, str(exc), messages.ERROR)
+            return HttpResponseRedirect(
+                reverse("admin:valentine_profile_changelist")
+            )
+        response = HttpResponse(pdf_data, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+    @admin.action(description="Изтегли избраните профили като PDF")
+    def export_selected_profiles_pdf(self, request, queryset):
+        queryset = queryset.order_by(
+            "clas",
+            "first_name",
+            "last_name",
+        )
+        return self._pdf_response(
+            request,
+            queryset,
+            "Избрани кодове за Valentine платформата",
+            "valentine-selected-codes.pdf",
+        )
+
+    def export_active_profiles_pdf(self, request):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        queryset = Profile.objects.filter(is_active=True).order_by(
+            "clas",
+            "first_name",
+            "last_name",
+        )
+        return self._pdf_response(
+            request,
+            queryset,
+            "Активни кодове за Valentine платформата",
+            f"valentine-active-codes-{timezone.localdate():%Y-%m-%d}.pdf",
+        )
+
+    def download_import_template(self, request):
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+        response = HttpResponse(
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = (
+            'attachment; filename="valentine-students-template.csv"'
+        )
+        response.write("\ufeff")
+        writer = csv.writer(response, delimiter=";")
+        writer.writerow(
+            ("first_name", "last_name", "class", "email", "code")
+        )
+        return response
+
+    def import_profiles_csv(self, request):
+        if not self.has_add_permission(request):
+            raise PermissionDenied
+
+        form = ProfileCsvImportForm(
+            request.POST or None,
+            request.FILES or None,
+        )
+        preview_rows = []
+        import_errors = []
+        import_token = ""
+
+        if (
+            request.method == "POST"
+            and request.POST.get("confirm") == "yes"
+        ):
+            try:
+                payload = signing.loads(
+                    request.POST.get("import_token", ""),
+                    salt="valentine-profile-csv-import",
+                    max_age=60 * 60,
+                )
+                if payload.get("user_id") != request.user.pk:
+                    raise signing.BadSignature
+                result = apply_profile_import(
+                    payload["rows"],
+                    payload["academic_year_start"],
+                )
+            except signing.SignatureExpired:
+                import_errors.append(
+                    "Предварителният преглед е изтекъл. "
+                    "Качи CSV файла отново."
+                )
+            except (signing.BadSignature, KeyError, TypeError):
+                import_errors.append(
+                    "Невалидно потвърждение. Качи CSV файла отново."
+                )
+            except ProfileImportError as exc:
+                import_errors.extend(exc.errors)
+            else:
+                self.message_user(
+                    request,
+                    f"CSV импортът завърши: {result['created']} създадени, "
+                    f"{result['updated']} обновени"
+                    + (
+                        f", {result['reactivated']} възстановени"
+                        if result["reactivated"]
+                        else ""
+                    )
+                    + ".",
+                    messages.SUCCESS,
+                )
+                return HttpResponseRedirect(
+                    reverse("admin:valentine_profile_changelist")
+                )
+
+        elif request.method == "POST" and form.is_valid():
+            try:
+                rows, parse_errors = parse_profile_csv(
+                    form.cleaned_data["csv_file"]
+                )
+            except ProfileImportError as exc:
+                import_errors.extend(exc.errors)
+            else:
+                plans, plan_errors = build_profile_import_plan(rows)
+                import_errors.extend(parse_errors)
+                import_errors.extend(plan_errors)
+                if not import_errors:
+                    action_labels = {
+                        "create": "Нов профил",
+                        "update": "Обновяване",
+                        "reactivate": "Възстановяване",
+                    }
+                    preview_rows = [
+                        {
+                            **plan["row"],
+                            "action_label": action_labels[plan["action"]],
+                            "display_code": plan["display_code"],
+                            "display_email": plan["display_email"],
+                        }
+                        for plan in plans
+                    ]
+                    import_token = signing.dumps(
+                        {
+                            "user_id": request.user.pk,
+                            "academic_year_start": form.cleaned_data[
+                                "academic_year_start"
+                            ],
+                            "rows": rows,
+                        },
+                        salt="valentine-profile-csv-import",
+                        compress=True,
+                    )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Импорт на ученици от CSV",
+            "opts": self.model._meta,
+            "media": self.media + form.media,
+            "form": form,
+            "preview_rows": preview_rows,
+            "import_errors": import_errors,
+            "import_token": import_token,
+            "template_url": reverse(
+                "admin:valentine_profile_import_template"
+            ),
+            "changelist_url": reverse(
+                "admin:valentine_profile_changelist"
+            ),
+        }
+        return TemplateResponse(
+            request,
+            "admin/valentine/profile/import_csv.html",
+            context,
+        )
 
     @admin.action(
         description="Мигрирай към следващата учебна година"

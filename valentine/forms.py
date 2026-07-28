@@ -1,6 +1,11 @@
 from django import forms
 
-from .models import Profile, Valenitines, normalize_class_code
+from .models import (
+    Profile,
+    Valenitines,
+    default_academic_year_start,
+    normalize_class_code,
+)
 
 
 class AccessCodeForm(forms.Form):
@@ -179,4 +184,24 @@ class ReportValentineForm(forms.Form):
     reason = forms.ChoiceField(
         choices=Valenitines.ReportReason.choices,
         label="Причина",
+    )
+
+
+class ProfileCsvImportForm(forms.Form):
+    csv_file = forms.FileField(
+        label="CSV файл",
+        help_text=(
+            "Приемат се UTF-8 и Windows-1251 файлове с разделител "
+            "точка и запетая или запетая."
+        ),
+        widget=forms.ClearableFileInput(
+            attrs={"accept": ".csv,text/csv"}
+        ),
+    )
+    academic_year_start = forms.IntegerField(
+        label="Начало на учебната година",
+        min_value=2000,
+        max_value=2100,
+        initial=default_academic_year_start,
+        help_text="Например 2026 означава учебната 2026/2027 година.",
     )

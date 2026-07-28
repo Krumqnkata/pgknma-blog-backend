@@ -1,0 +1,23 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+    <div class="flex flex-row items-center">
+        <a class="border border-base-200 flex font-medium gap-2 items-center px-3 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"
+           href="{{ profile_pdf_url }}"
+           title="PDF – всички активни кодове">
+            <span class="material-symbols-outlined">picture_as_pdf</span>
+            <span>Всички кодове в PDF</span>
+        </a>
+    </div>
+    {% if can_import_profiles %}
+    <div class="flex flex-row items-center">
+        <a class="border border-base-200 flex font-medium gap-2 items-center px-3 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"
+           href="{{ profile_import_url }}"
+           title="Импортирай ученици от CSV">
+            <span class="material-symbols-outlined">upload_file</span>
+            <span>Импорт от CSV</span>
+        </a>
+    </div>
+    {% endif %}
+    {{ block.super }}
+{% endblock %}

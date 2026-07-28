@@ -5,6 +5,7 @@ from unittest.mock import patch
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -527,6 +528,139 @@ class ValentinePlatformTests(TestCase):
         }
         self.assertIn("11А клас", class_labels)
         self.assertNotIn("12А клас", class_labels)
+
+    def test_admin_can_preview_and_confirm_student_csv_import(self):
+        self.sender.is_active = False
+        self.sender.save(update_fields=("is_active",))
+        admin_user = get_user_model().objects.create_superuser(
+            username="csv-admin",
+            email="csv-admin@example.com",
+            password="test-password",
+        )
+        self.client.force_login(admin_user)
+        import_url = reverse("admin:valentine_profile_import_csv")
+        csv_content = (
+            "Име;Фамилия;Клас;Имейл;Код\n"
+            "Александра;Георгиева;8Б;;\n"
+            "Иван;Иванов;11А;ivan-new@example.com;SEND01\n"
+            "Мария;Петрова;9В;;RECV01\n"
+        )
+        upload = SimpleUploadedFile(
+            "students.csv",
+            csv_content.encode("cp1251"),
+            content_type="text/csv",
+        )
+
+        preview = self.client.post(
+            import_url,
+            {
+                "academic_year_start": "2026",
+                "csv_file": upload,
+            },
+        )
+
+        self.assertEqual(preview.status_code, 200)
+        self.assertContains(preview, "Предварителен преглед – 3 ученици")
+        self.assertContains(preview, "Нов профил")
+        self.assertContains(preview, "Възстановяване")
+        self.assertFalse(
+            Profile.objects.filter(
+                first_name="Александра",
+                last_name="Георгиева",
+            ).exists()
+        )
+        import_token = preview.context["import_token"]
+        self.assertTrue(import_token)
+
+        confirmed = self.client.post(
+            import_url,
+            {
+                "confirm": "yes",
+                "import_token": import_token,
+            },
+        )
+
+        self.assertRedirects(
+            confirmed,
+            reverse("admin:valentine_profile_changelist"),
+        )
+        imported = Profile.objects.get(
+            first_name="Александра",
+            last_name="Георгиева",
+        )
+        self.assertEqual(imported.clas, "8B")
+        self.assertEqual(imported.academic_year_start, 2026)
+        self.assertEqual(imported.email, "")
+        self.assertEqual(len(imported.code), 6)
+        self.sender.refresh_from_db()
+        self.assertTrue(self.sender.is_active)
+        self.assertEqual(self.sender.clas, "11A")
+        self.assertEqual(self.sender.email, "ivan-new@example.com")
+        self.assertEqual(self.sender.academic_year_start, 2026)
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.clas, "9V")
+        self.assertEqual(self.recipient.email, "maria@example.com")
+
+    def test_invalid_csv_import_does_not_write_partial_data(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="invalid-csv-admin",
+            email="invalid-csv@example.com",
+            password="test-password",
+        )
+        self.client.force_login(admin_user)
+        profile_count = Profile.objects.count()
+        upload = SimpleUploadedFile(
+            "students.csv",
+            (
+                "first_name,last_name,class,email\n"
+                "Валидна,Ученичка,8А,valid@example.com\n"
+                "Грешна,Ученичка,13Я,not-an-email\n"
+            ).encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("admin:valentine_profile_import_csv"),
+            {
+                "academic_year_start": "2026",
+                "csv_file": upload,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Импортът не е записан")
+        self.assertContains(response, "Ред 3")
+        self.assertEqual(Profile.objects.count(), profile_count)
+        self.assertFalse(response.context["import_token"])
+
+    def test_admin_can_download_active_profile_codes_as_pdf(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="pdf-admin",
+            email="pdf-admin@example.com",
+            password="test-password",
+        )
+        self.client.force_login(admin_user)
+
+        changelist = self.client.get(
+            reverse("admin:valentine_profile_changelist")
+        )
+        self.assertContains(changelist, "Всички кодове в PDF")
+        self.assertContains(changelist, "Импорт от CSV")
+
+        response = self.client.get(
+            reverse("admin:valentine_profile_active_codes_pdf")
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn(
+            "valentine-active-codes-",
+            response["Content-Disposition"],
+        )
+        self.assertTrue(response.content.startswith(b"%PDF-"))
+        self.assertGreater(len(response.content), 1000)
+        self.assertIn("private", response["Cache-Control"])
+        self.assertIn("no-store", response["Cache-Control"])
 
     def test_group_daily_limit_is_enforced_per_dispatch(self):
         Profile.objects.create(
