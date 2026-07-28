@@ -23,7 +23,13 @@ from .forms import (
     ValentineCreateForm,
     ValentineEditForm,
 )
-from .models import Profile, Register, Settings, Valenitines
+from .models import (
+    Profile,
+    Register,
+    Settings,
+    Valenitines,
+    normalize_class_code,
+)
 
 
 AUTH_COOKIE = "authv"
@@ -90,6 +96,7 @@ def _day_bounds(moment):
 
 
 def _class_label(class_name):
+    class_name = normalize_class_code(class_name)
     if class_name == "U":
         return "Учители"
     mapping = {"A": "А", "B": "Б", "V": "В", "G": "Г"}
@@ -145,7 +152,8 @@ def login(request):
             )
         elif form.is_valid():
             profile = Profile.objects.filter(
-                code__iexact=form.cleaned_data["code"]
+                code__iexact=form.cleaned_data["code"],
+                is_active=True,
             ).first()
             if profile is None:
                 cache.set(rate_key, attempts + 1, LOGIN_WINDOW_SECONDS)
@@ -297,6 +305,12 @@ def home(request):
                                     profile=recipient,
                                     sender_profile=profile,
                                     campaign=campaign,
+                                    recipient_class_snapshot=(
+                                        normalize_class_code(recipient.clas)
+                                    ),
+                                    sender_class_snapshot=(
+                                        normalize_class_code(profile.clas)
+                                    ),
                                     dispatch_id=dispatch_id,
                                     audience_type=target_type,
                                     audience_label=audience_label,
@@ -325,7 +339,8 @@ def home(request):
                 return redirect("valentine:home")
 
     class_names = (
-        Profile.objects.exclude(pk=profile.pk)
+        Profile.objects.filter(is_active=True)
+        .exclude(pk=profile.pk)
         .exclude(clas="U")
         .order_by("clas")
         .values_list("clas", flat=True)
@@ -336,7 +351,8 @@ def home(request):
         for class_name in class_names
     ]
     all_recipients = (
-        Profile.objects.exclude(pk=profile.pk)
+        Profile.objects.filter(is_active=True)
+        .exclude(pk=profile.pk)
         .order_by("clas", "first_name", "last_name")
     )
     teacher_count = all_recipients.filter(clas="U").count()
@@ -362,7 +378,10 @@ def home(request):
         try:
             if not selected_class:
                 selected_class = (
-                    Profile.objects.filter(pk=selected_recipient_id)
+                    Profile.objects.filter(
+                        pk=selected_recipient_id,
+                        is_active=True,
+                    )
                     .values_list("clas", flat=True)
                     .first()
                     or ""
@@ -410,7 +429,10 @@ def home(request):
 @valentine_login_required
 def get_students(request, class_name):
     students = (
-        Profile.objects.filter(clas=class_name)
+        Profile.objects.filter(
+            clas=class_name,
+            is_active=True,
+        )
         .exclude(pk=request.valentine_profile.pk)
         .order_by("first_name", "last_name")
     )

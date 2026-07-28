@@ -1,0 +1,85 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <div class="bg-white border border-base-200 p-6 rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+        <h1 class="font-semibold text-xl text-font-important-light dark:text-font-important-dark">
+            Мигриране към следващата учебна година
+        </h1>
+        <p class="mt-2 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            Провери промените преди потвърждение. Учителите, неактивните
+            профили и учениците в 12. клас няма да бъдат променени.
+            Старите валентинки ще запазят класовете си от момента на
+            изпращането.
+        </p>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <input type="hidden"
+               name="action"
+               value="promote_to_next_academic_year">
+        <input type="hidden" name="apply" value="yes">
+        <input type="hidden" name="select_across" value="0">
+
+        {% for row in profiles %}
+        <input type="hidden"
+               name="{{ action_checkbox_name }}"
+               value="{{ row.profile.pk }}">
+        {% endfor %}
+
+        <div class="bg-white border border-base-200 overflow-x-auto rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+            <table class="w-full">
+                <thead>
+                    <tr class="border-b border-base-200 dark:border-base-700">
+                        <th class="px-4 py-3 text-left">Профил</th>
+                        <th class="px-4 py-3 text-left">Сега</th>
+                        <th class="px-4 py-3 text-left">След миграцията</th>
+                        <th class="px-4 py-3 text-left">Статус</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in profiles %}
+                    <tr class="border-b border-base-100 last:border-b-0 dark:border-base-800">
+                        <td class="px-4 py-3">
+                            <strong>{{ row.profile.full_name }}</strong>
+                        </td>
+                        <td class="px-4 py-3">
+                            {{ row.profile.clas_bg }} ·
+                            {{ row.profile.academic_year_label }}
+                        </td>
+                        <td class="px-4 py-3">
+                            {% if row.target_class %}
+                                {{ row.target_class_label }} ·
+                                {{ row.target_year }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3">
+                            {% if row.note %}
+                                {{ row.note }}
+                            {% else %}
+                                Готов за мигриране
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex flex-wrap gap-3 mt-6">
+            <button class="bg-primary-600 border border-transparent font-medium px-4 py-2 rounded-default text-sm text-white hover:bg-primary-700"
+                    type="submit">
+                Потвърди миграцията
+            </button>
+            <a class="border border-base-200 font-medium px-4 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"
+               href="{% url opts|admin_urlname:'changelist' %}">
+                Отказ
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

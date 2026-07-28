@@ -1,5 +1,6 @@
 import secrets
 import string
+import unicodedata
 import uuid
 from datetime import datetime, time, timedelta
 
@@ -10,6 +11,28 @@ from django.utils import timezone
 
 
 ACCESS_CODE_ALPHABET = string.ascii_uppercase + string.digits
+CLASS_CODE_TRANSLATION = str.maketrans(
+    {
+        "А": "A",
+        "Б": "B",
+        "В": "V",
+        "Г": "G",
+        "У": "U",
+        "\u200b": None,
+        "\u200c": None,
+        "\u200d": None,
+        "\ufeff": None,
+    }
+)
+
+
+def normalize_class_code(value):
+    """Return one canonical class code, including for legacy imports."""
+    if not value:
+        return ""
+    normalized = unicodedata.normalize("NFKC", str(value))
+    normalized = normalized.upper().translate(CLASS_CODE_TRANSLATION)
+    return "".join(normalized.split())
 
 
 def generate_unique_code():
@@ -24,6 +47,11 @@ def default_session_expiry():
     return timezone.now() + timedelta(days=14)
 
 
+def default_academic_year_start():
+    today = timezone.localdate()
+    return today.year if today.month >= 9 else today.year - 1
+
+
 class Profile(models.Model):
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=6, unique=True, editable=False)
@@ -31,29 +59,49 @@ class Profile(models.Model):
     last_name = models.CharField(max_length=100)
     clas = models.CharField(max_length=4)
     email = models.EmailField()
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Активен профил",
+        help_text=(
+            "Неактивният профил не може да влиза или да получава нови "
+            "валентинки, но историята му се запазва."
+        ),
+    )
+    academic_year_start = models.PositiveSmallIntegerField(
+        default=default_academic_year_start,
+        verbose_name="Начало на учебната година",
+        help_text=(
+            "Например 2025 означава учебната 2025/2026 година."
+        ),
+    )
 
     @property
     def clas_bg(self):
+        class_code = normalize_class_code(self.clas)
         mapping = {"A": "А", "B": "Б", "V": "В", "G": "Г"}
-        if self.clas == "U":
+        if class_code == "U":
             return "Учител"
-        if not self.clas or len(self.clas) < 2:
-            return self.clas
-        grade = self.clas[:-1]
-        letter = self.clas[-1].upper()
+        if not class_code or len(class_code) < 2:
+            return class_code
+        grade = class_code[:-1]
+        letter = class_code[-1]
         return f"{grade}{mapping.get(letter, letter)}"
 
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
 
+    @property
+    def academic_year_label(self):
+        if normalize_class_code(self.clas) == "U":
+            return "—"
+        return (
+            f"{self.academic_year_start}/"
+            f"{self.academic_year_start + 1}"
+        )
+
     def save(self, *args, **kwargs):
-        cyrillic_to_latin = {"А": "A", "Б": "B", "В": "V", "Г": "G"}
-        if self.clas:
-            self.clas = self.clas.strip().upper()
-            last_char = self.clas[-1]
-            if last_char in cyrillic_to_latin:
-                self.clas = self.clas[:-1] + cyrillic_to_latin[last_char]
+        self.clas = normalize_class_code(self.clas)
         if not self.code:
             self.code = generate_unique_code()
         super().save(*args, **kwargs)
@@ -85,7 +133,11 @@ class Register(models.Model):
 
     @property
     def is_valid(self):
-        return not self.revoked and self.expires_at > timezone.now()
+        return (
+            self.profile.is_active
+            and not self.revoked
+            and self.expires_at > timezone.now()
+        )
 
     def __str__(self):
         return f"Сесия на {self.profile.full_name}"
@@ -180,6 +232,16 @@ class Valenitines(models.Model):
         related_name="valentines",
         verbose_name="Кампания",
     )
+    recipient_class_snapshot = models.CharField(
+        max_length=4,
+        blank=True,
+        verbose_name="Клас на получателя при изпращане",
+    )
+    sender_class_snapshot = models.CharField(
+        max_length=4,
+        blank=True,
+        verbose_name="Клас на изпращача при изпращане",
+    )
     dispatch_id = models.UUIDField(
         default=uuid.uuid4,
         editable=False,
@@ -228,6 +290,22 @@ class Valenitines(models.Model):
         blank=True,
         verbose_name="Последна редакция",
     )
+
+    def save(self, *args, **kwargs):
+        if not self.recipient_class_snapshot and self.profile_id:
+            self.recipient_class_snapshot = self.profile.clas
+        self.recipient_class_snapshot = normalize_class_code(
+            self.recipient_class_snapshot
+        )
+        if (
+            not self.sender_class_snapshot
+            and self.sender_profile_id
+        ):
+            self.sender_class_snapshot = self.sender_profile.clas
+        self.sender_class_snapshot = normalize_class_code(
+            self.sender_class_snapshot
+        )
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"До {self.profile.full_name} от {self.sender_profile or 'системата'}"

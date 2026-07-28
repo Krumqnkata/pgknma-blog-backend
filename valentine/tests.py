@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from .admin import (
     ArchivedValentinesAdmin,
+    ProfileAdmin,
     ValentineCampaignAdmin,
     ValentinesAdmin,
 )
@@ -81,6 +82,60 @@ class ValentinePlatformTests(TestCase):
         )
 
         self.assertRedirects(response, reverse("valentine:home"))
+
+    def test_profile_can_be_deactivated_without_losing_history(self):
+        valentine = Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            content="Историята трябва да остане",
+        )
+        self.login()
+        active_session = self.sender.sessions.get(revoked=False)
+        request = RequestFactory().post("/admin/valentine/profile/")
+        request.user = get_user_model().objects.create_superuser(
+            username="profile-admin",
+            email="profiles@example.com",
+            password="test-password",
+        )
+        model_admin = ProfileAdmin(Profile, AdminSite())
+
+        with patch.object(model_admin, "message_user"):
+            model_admin.deactivate_profiles(
+                request,
+                Profile.objects.filter(pk=self.sender.pk),
+            )
+
+        self.sender.refresh_from_db()
+        active_session.refresh_from_db()
+        valentine.refresh_from_db()
+        self.assertFalse(self.sender.is_active)
+        self.assertTrue(active_session.revoked)
+        self.assertTrue(Profile.objects.filter(pk=self.sender.pk).exists())
+        self.assertEqual(valentine.sender_profile, self.sender)
+        self.assertEqual(valentine.content, "Историята трябва да остане")
+        self.assertFalse(model_admin.has_delete_permission(request))
+
+        home_response = self.client.get(reverse("valentine:home"))
+        self.assertRedirects(
+            home_response,
+            f"{reverse('valentine:login')}?next={reverse('valentine:home')}",
+        )
+        inactive_login = self.login()
+        self.assertEqual(inactive_login.status_code, 200)
+        self.assertContains(
+            inactive_login,
+            "Кодът е невалиден или е изтекъл.",
+        )
+
+        with patch.object(model_admin, "message_user"):
+            model_admin.reactivate_profiles(
+                request,
+                Profile.objects.filter(pk=self.sender.pk),
+            )
+        self.sender.refresh_from_db()
+        self.assertTrue(self.sender.is_active)
+        self.assertRedirects(self.login(), reverse("valentine:home"))
 
     def test_unauthenticated_user_cannot_send(self):
         response = self.client.post(
@@ -326,6 +381,152 @@ class ValentinePlatformTests(TestCase):
             Valenitines.AudienceType.INDIVIDUAL,
         )
         self.assertEqual(delivery.audience_label, teacher.full_name)
+
+    def test_inactive_profile_cannot_be_selected_as_recipient(self):
+        self.recipient.is_active = False
+        self.recipient.save(update_fields=["is_active"])
+        active_classmate = Profile.objects.create(
+            code="CLASS3",
+            first_name="Десислава",
+            last_name="Маринова",
+            clas="10B",
+            email="desislava@example.com",
+        )
+        self.login()
+
+        recipient_options = self.client.get(
+            reverse("valentine:students", args=("10B",))
+        )
+        self.assertEqual(recipient_options.status_code, 200)
+        self.assertEqual(
+            recipient_options.json()["students"],
+            [
+                {
+                    "id": str(active_classmate.pk),
+                    "name": active_classmate.full_name,
+                }
+            ],
+        )
+
+        direct_response = self.client.post(
+            reverse("valentine:home"),
+            {
+                "target_type": "individual",
+                "target_class": "10B",
+                "recipient": self.recipient.pk,
+                "content": "Не трябва да бъде доставено",
+                "theme": "classic",
+            },
+        )
+        self.assertEqual(direct_response.status_code, 200)
+        self.assertFalse(
+            Valenitines.objects.filter(
+                content="Не трябва да бъде доставено"
+            ).exists()
+        )
+
+        group_response = self.client.post(
+            reverse("valentine:home"),
+            {
+                "target_type": "class",
+                "target_class": "10B",
+                "content": "Само до активните профили",
+                "theme": "classic",
+            },
+        )
+        self.assertRedirects(group_response, reverse("valentine:home"))
+        deliveries = Valenitines.objects.filter(
+            content="Само до активните профили"
+        )
+        self.assertSetEqual(
+            set(deliveries.values_list("profile_id", flat=True)),
+            {active_classmate.pk},
+        )
+
+    def test_class_migration_preserves_historical_campaign_class(self):
+        self.recipient.clas = "11A"
+        self.recipient.academic_year_start = 2025
+        self.recipient.save(
+            update_fields=("clas", "academic_year_start")
+        )
+        # Simulate a legacy bulk import which bypassed Profile.save().
+        Profile.objects.filter(pk=self.recipient.pk).update(
+            clas="11А\u00a0"
+        )
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.clas, "11А\u00a0")
+        teacher = Profile.objects.create(
+            code="TEAC04",
+            first_name="Милена",
+            last_name="Илиева",
+            clas="U",
+            email="milena@example.com",
+        )
+        historical = Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            content="Исторически клас",
+        )
+        self.assertEqual(
+            historical.recipient_class_snapshot,
+            "11A",
+        )
+        migration_admin = get_user_model().objects.create_superuser(
+            username="class-admin",
+            email="classes@example.com",
+            password="test-password",
+        )
+        self.client.force_login(migration_admin)
+        changelist_url = reverse("admin:valentine_profile_changelist")
+        selected_profiles = [str(self.recipient.pk), str(teacher.pk)]
+
+        preview = self.client.post(
+            changelist_url,
+            {
+                "action": "promote_to_next_academic_year",
+                "_selected_action": selected_profiles,
+                "select_across": "0",
+                "index": "0",
+            },
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertContains(preview, "12А клас")
+        self.assertContains(preview, "2026/2027")
+        self.assertContains(preview, "Учител – не се променя")
+
+        confirmed = self.client.post(
+            changelist_url,
+            {
+                "action": "promote_to_next_academic_year",
+                "_selected_action": selected_profiles,
+                "select_across": "0",
+                "apply": "yes",
+            },
+        )
+        self.assertEqual(confirmed.status_code, 302)
+
+        self.recipient.refresh_from_db()
+        teacher.refresh_from_db()
+        historical.refresh_from_db()
+        self.assertEqual(self.recipient.clas, "12A")
+        self.assertEqual(self.recipient.academic_year_start, 2026)
+        self.assertEqual(teacher.clas, "U")
+        self.assertEqual(
+            historical.recipient_class_snapshot,
+            "11A",
+        )
+
+        campaign_admin = ValentineCampaignAdmin(
+            ValentineCampaign,
+            AdminSite(),
+        )
+        statistics = campaign_admin.build_statistics(self.campaign)
+        class_labels = {
+            row["label"] for row in statistics["class_rows"]
+        }
+        self.assertIn("11А клас", class_labels)
+        self.assertNotIn("12А клас", class_labels)
 
     def test_group_daily_limit_is_enforced_per_dispatch(self):
         Profile.objects.create(

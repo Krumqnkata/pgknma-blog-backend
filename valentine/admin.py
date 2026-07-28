@@ -1,13 +1,16 @@
 import csv
+import re
 from datetime import date
 
 from django.contrib import admin, messages
+from django.contrib.admin import helpers
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
 from unfold.admin import ModelAdmin
@@ -20,6 +23,7 @@ from .models import (
     ValentineCampaign,
     Valenitines,
     generate_unique_code,
+    normalize_class_code,
 )
 
 
@@ -32,6 +36,7 @@ def csv_safe(value):
 
 
 def class_label(class_name):
+    class_name = normalize_class_code(class_name)
     if class_name == "U":
         return "Учители"
     mapping = {"A": "А", "B": "Б", "V": "В", "G": "Г"}
@@ -44,6 +49,7 @@ def class_label(class_name):
 
 
 def class_sort_key(class_name):
+    class_name = normalize_class_code(class_name)
     if class_name == "U":
         return (10_000, "")
     try:
@@ -52,20 +58,183 @@ def class_sort_key(class_name):
         return (9_999, class_name or "")
 
 
+STUDENT_CLASS_PATTERN = re.compile(r"^(?P<grade>\d{1,2})(?P<letter>[ABVG])$")
+
+
+def next_student_class(class_name):
+    normalized_class = normalize_class_code(class_name)
+    match = STUDENT_CLASS_PATTERN.fullmatch(normalized_class)
+    if not match:
+        return None
+    grade = int(match.group("grade"))
+    if grade >= 12:
+        return None
+    return f"{grade + 1}{match.group('letter')}"
+
+
 @admin.register(Profile)
 class ProfileAdmin(ModelAdmin):
-    list_display = ("full_name_display", "clas", "email", "code")
+    list_display = (
+        "full_name_display",
+        "clas",
+        "academic_year_display",
+        "email",
+        "code",
+        "is_active",
+    )
     search_fields = ("code", "first_name", "last_name", "email", "clas")
-    list_filter = ("clas",)
+    list_filter = ("is_active", "academic_year_start", "clas")
     readonly_fields = ("uuid", "code")
-    actions = ("send_system_valentine", "regenerate_access_codes")
+    actions = (
+        "promote_to_next_academic_year",
+        "deactivate_profiles",
+        "reactivate_profiles",
+        "send_system_valentine",
+        "regenerate_access_codes",
+    )
 
     @admin.display(description="Име")
     def full_name_display(self, obj):
         return obj.full_name
 
+    @admin.display(
+        description="Учебна година",
+        ordering="academic_year_start",
+    )
+    def academic_year_display(self, obj):
+        return obj.academic_year_label
+
+    @admin.action(
+        description="Мигрирай към следващата учебна година"
+    )
+    def promote_to_next_academic_year(self, request, queryset):
+        if request.POST.get("apply") == "yes":
+            profile_ids = list(queryset.values_list("pk", flat=True))
+            promoted = []
+            with transaction.atomic():
+                locked_profiles = list(
+                    Profile.objects.select_for_update()
+                    .filter(pk__in=profile_ids)
+                    .order_by("clas", "first_name", "last_name")
+                )
+                for profile in locked_profiles:
+                    target_class = (
+                        next_student_class(profile.clas)
+                        if profile.is_active
+                        else None
+                    )
+                    if target_class is None:
+                        continue
+                    profile.clas = target_class
+                    profile.academic_year_start += 1
+                    promoted.append(profile)
+                if promoted:
+                    Profile.objects.bulk_update(
+                        promoted,
+                        ("clas", "academic_year_start"),
+                    )
+            skipped = len(profile_ids) - len(promoted)
+            self.message_user(
+                request,
+                f"Преместени профили: {len(promoted)}."
+                + (
+                    f" Пропуснати: {skipped} "
+                    "(учители, 12. клас, неактивни или невалиден клас)."
+                    if skipped
+                    else ""
+                ),
+                messages.SUCCESS,
+            )
+            return None
+
+        preview_rows = []
+        for profile in queryset.order_by(
+            "clas",
+            "first_name",
+            "last_name",
+        ):
+            normalized_class = normalize_class_code(profile.clas)
+            target_class = (
+                next_student_class(normalized_class)
+                if profile.is_active
+                else None
+            )
+            if not profile.is_active:
+                note = "Неактивен профил"
+            elif normalized_class == "U":
+                note = "Учител – не се променя"
+            elif normalized_class.startswith("12"):
+                note = "12. клас – деактивирай след завършване"
+            elif target_class is None:
+                note = "Неподдържан формат на класа"
+            else:
+                note = ""
+            preview_rows.append(
+                {
+                    "profile": profile,
+                    "target_class": target_class,
+                    "target_class_label": (
+                        class_label(target_class)
+                        if target_class
+                        else ""
+                    ),
+                    "target_year": (
+                        f"{profile.academic_year_start + 1}/"
+                        f"{profile.academic_year_start + 2}"
+                        if target_class
+                        else ""
+                    ),
+                    "note": note,
+                }
+            )
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Мигриране към следващата учебна година",
+            "opts": self.model._meta,
+            "profiles": preview_rows,
+            "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+            "media": self.media,
+        }
+        return TemplateResponse(
+            request,
+            "admin/valentine/profile/promote_confirmation.html",
+            context,
+        )
+
+    @admin.action(
+        description="Деактивирай без изтриване на историята"
+    )
+    def deactivate_profiles(self, request, queryset):
+        profile_ids = list(queryset.values_list("pk", flat=True))
+        count = Profile.objects.filter(
+            pk__in=profile_ids,
+            is_active=True,
+        ).update(is_active=False)
+        Register.objects.filter(
+            profile_id__in=profile_ids,
+            revoked=False,
+        ).update(revoked=True)
+        self.message_user(
+            request,
+            f"Деактивирани профили: {count}. Историята е запазена.",
+            messages.SUCCESS,
+        )
+
+    @admin.action(description="Възстанови избраните профили")
+    def reactivate_profiles(self, request, queryset):
+        count = queryset.filter(is_active=False).update(is_active=True)
+        self.message_user(
+            request,
+            f"Възстановени профили: {count}. "
+            "Потребителите трябва да влязат отново.",
+            messages.SUCCESS,
+        )
+
     @admin.action(description="Изпрати позитивна системна валентинка")
     def send_system_valentine(self, request, queryset):
+        inactive_count = queryset.filter(is_active=False).count()
+        queryset = queryset.filter(is_active=True)
         platform_settings = Settings.objects.first()
         if platform_settings is None:
             self.message_user(
@@ -96,6 +265,9 @@ class ProfileAdmin(ModelAdmin):
                     profile=student,
                     sender_profile=None,
                     campaign=campaign,
+                    recipient_class_snapshot=normalize_class_code(
+                        student.clas
+                    ),
                     audience_label=student.full_name,
                     content=wishes[index % len(wishes)],
                     is_anonymous=True,
@@ -105,7 +277,12 @@ class ProfileAdmin(ModelAdmin):
         Valenitines.objects.bulk_create(rows)
         self.message_user(
             request,
-            f"Изпратени са {len(rows)} системни валентинки.",
+            f"Изпратени са {len(rows)} системни валентинки."
+            + (
+                f" Пропуснати неактивни профили: {inactive_count}."
+                if inactive_count
+                else ""
+            ),
             messages.SUCCESS,
         )
 
@@ -123,10 +300,26 @@ class ProfileAdmin(ModelAdmin):
             messages.WARNING,
         )
 
+    def save_model(self, request, obj, form, change):
+        was_active = (
+            Profile.objects.filter(pk=obj.pk)
+            .values_list("is_active", flat=True)
+            .first()
+            if change
+            else None
+        )
+        super().save_model(request, obj, form, change)
+        if was_active and not obj.is_active:
+            obj.sessions.filter(revoked=False).update(revoked=True)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Register)
 class RegisterAdmin(ModelAdmin):
     list_display = ("profile", "created_at", "expires_at", "revoked", "valid_display")
+    list_select_related = ("profile",)
     list_filter = ("revoked", "created_at", "expires_at")
     search_fields = (
         "profile__first_name",
@@ -189,6 +382,8 @@ class ValentinesAdmin(ModelAdmin):
         "profile",
         "sender_profile",
         "campaign",
+        "recipient_class_snapshot",
+        "sender_class_snapshot",
         "dispatch_id",
         "audience_type",
         "audience_label",
@@ -204,6 +399,8 @@ class ValentinesAdmin(ModelAdmin):
         "profile",
         "sender_profile",
         "campaign",
+        "recipient_class_snapshot",
+        "sender_class_snapshot",
         "dispatch_id",
         "audience_type",
         "audience_label",
@@ -293,9 +490,15 @@ class ValentinesAdmin(ModelAdmin):
                 (
                     csv_safe(valentine.campaign),
                     csv_safe(sender.full_name if sender else "Valentine екип"),
-                    csv_safe(sender.clas_bg if sender else "-"),
+                    csv_safe(
+                        class_label(valentine.sender_class_snapshot)
+                        if sender
+                        else "-"
+                    ),
                     csv_safe(valentine.profile.full_name),
-                    csv_safe(valentine.profile.clas_bg),
+                    csv_safe(
+                        class_label(valentine.recipient_class_snapshot)
+                    ),
                     csv_safe(valentine.get_report_reason_display()),
                     csv_safe(valentine.content),
                 )
@@ -319,16 +522,22 @@ class ValentinesAdmin(ModelAdmin):
             campaign_id__in=campaign_ids
         )
         received = {
-            (row["campaign__name"], row["profile__clas"]): row["total"]
+            (
+                row["campaign__name"],
+                row["recipient_class_snapshot"],
+            ): row["total"]
             for row in statistics_source.values(
                 "campaign__name",
-                "profile__clas",
+                "recipient_class_snapshot",
             ).annotate(total=Count("id"))
         }
         sent = {
-            (row["campaign__name"], row["sender_profile__clas"]): row["total"]
+            (
+                row["campaign__name"],
+                row["sender_class_snapshot"],
+            ): row["total"]
             for row in statistics_source.exclude(sender_profile=None)
-            .values("campaign__name", "sender_profile__clas")
+            .values("campaign__name", "sender_class_snapshot")
             .annotate(total=Count("id"))
         }
         for campaign_name, class_name in sorted(set(received) | set(sent)):
@@ -552,8 +761,10 @@ class ValentineCampaignAdmin(ModelAdmin):
         )
 
         received_by_class = {
-            row["profile__clas"]: row
-            for row in source.values("profile__clas").annotate(
+            row["recipient_class_snapshot"]: row
+            for row in source.values(
+                "recipient_class_snapshot"
+            ).annotate(
                 received=Count("id"),
                 reports=Count(
                     "id",
@@ -562,9 +773,9 @@ class ValentineCampaignAdmin(ModelAdmin):
             )
         }
         sent_by_class = {
-            row["sender_profile__clas"]: row
+            row["sender_class_snapshot"]: row
             for row in source.exclude(sender_profile=None)
-            .values("sender_profile__clas")
+            .values("sender_class_snapshot")
             .annotate(
                 active_senders=Count(
                     "sender_profile",

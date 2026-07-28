@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Profile, Valenitines
+from .models import Profile, Valenitines, normalize_class_code
 
 
 class AccessCodeForm(forms.Form):
@@ -66,18 +66,14 @@ class ValentineCreateForm(forms.Form):
     def __init__(self, *args, sender=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.sender = sender
-        recipients = Profile.objects.all()
+        recipients = Profile.objects.filter(is_active=True)
         if sender is not None:
             recipients = recipients.exclude(pk=sender.pk)
         self.fields["recipient"].queryset = recipients
 
     @staticmethod
     def normalize_class_name(value):
-        value = (value or "").strip().upper()
-        mapping = {"А": "A", "Б": "B", "В": "V", "Г": "G"}
-        if value and value[-1] in mapping:
-            value = value[:-1] + mapping[value[-1]]
-        return value
+        return normalize_class_code(value)
 
     def clean(self):
         cleaned_data = super().clean()
