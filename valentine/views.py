@@ -326,7 +326,6 @@ def home(request):
 
     class_names = (
         Profile.objects.exclude(pk=profile.pk)
-        .exclude(clas="U")
         .order_by("clas")
         .values_list("clas", flat=True)
         .distinct()

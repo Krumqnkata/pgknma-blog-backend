@@ -282,6 +282,50 @@ class ValentinePlatformTests(TestCase):
             1,
         )
 
+    def test_individual_teacher_can_be_selected_and_receive_message(self):
+        teacher = Profile.objects.create(
+            code="TEAC03",
+            first_name="Ралица",
+            last_name="Тодорова",
+            clas="U",
+            email="ralitsa@example.com",
+        )
+        self.login()
+
+        page = self.client.get(reverse("valentine:home"))
+        self.assertContains(page, '<option value="U"')
+
+        teacher_options = self.client.get(
+            reverse("valentine:students", args=("U",))
+        )
+        self.assertEqual(teacher_options.status_code, 200)
+        self.assertEqual(
+            teacher_options.json()["students"],
+            [{"id": str(teacher.pk), "name": teacher.full_name}],
+        )
+
+        response = self.client.post(
+            reverse("valentine:home"),
+            {
+                "target_type": "individual",
+                "target_class": "U",
+                "recipient": teacher.pk,
+                "content": "Благодаря за вдъхновението!",
+                "theme": "classic",
+            },
+        )
+
+        self.assertRedirects(response, reverse("valentine:home"))
+        delivery = Valenitines.objects.get(
+            content="Благодаря за вдъхновението!"
+        )
+        self.assertEqual(delivery.profile, teacher)
+        self.assertEqual(
+            delivery.audience_type,
+            Valenitines.AudienceType.INDIVIDUAL,
+        )
+        self.assertEqual(delivery.audience_label, teacher.full_name)
+
     def test_group_daily_limit_is_enforced_per_dispatch(self):
         Profile.objects.create(
             code="CLASS2",

@@ -59,6 +59,9 @@
             "[data-audience-summary]"
         );
         const teacherCount = Number(composer.dataset.teacherCount || 0);
+        const teacherClassOption = Array.from(classSelect.options).find(
+            (option) => option.value === "U"
+        );
         const fallbackRecipientOptions = recipientSelect.innerHTML;
         let studentsRequest = 0;
 
@@ -95,6 +98,17 @@
         const loadStudents = async () => {
             const requestId = ++studentsRequest;
             const targetType = getTargetType();
+            const canSelectIndividualTeacher = targetType === "individual";
+            if (teacherClassOption) {
+                teacherClassOption.hidden = !canSelectIndividualTeacher;
+                teacherClassOption.disabled = !canSelectIndividualTeacher;
+                if (
+                    !canSelectIndividualTeacher &&
+                    classSelect.value === "U"
+                ) {
+                    classSelect.value = "";
+                }
+            }
             const className =
                 targetType === "teachers" ? "U" : classSelect.value;
             const selected = recipientSelect.dataset.selected;
@@ -162,10 +176,17 @@
                     });
                     recipientSelect.disabled = false;
                     recipientSelect.dataset.selected = "";
-                    audienceSummary.textContent =
-                        data.students.length === 1
-                            ? "В класа има 1 наличен получател."
-                            : `В класа има ${data.students.length} налични получатели.`;
+                    if (className === "U") {
+                        audienceSummary.textContent =
+                            data.students.length === 1
+                                ? "Има 1 наличен учител."
+                                : `Има ${data.students.length} налични учители.`;
+                    } else {
+                        audienceSummary.textContent =
+                            data.students.length === 1
+                                ? "В класа има 1 наличен получател."
+                                : `В класа има ${data.students.length} налични получатели.`;
+                    }
                 } else {
                     recipientSelect.disabled = true;
                     audienceSummary.textContent =
