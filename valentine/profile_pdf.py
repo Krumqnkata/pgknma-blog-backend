@@ -1,3 +1,4 @@
+from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -5,9 +6,61 @@ from xml.sax.saxutils import escape
 from django.conf import settings
 from django.utils import timezone
 
+from .models import normalize_class_code
+
 
 class ProfilePdfError(Exception):
     pass
+
+
+CLASS_LETTER_ORDER = {"A": 0, "B": 1, "V": 2, "G": 3}
+CLASS_LETTER_LABELS = {"A": "А", "B": "Б", "V": "В", "G": "Г"}
+
+
+def _class_sort_key(class_code):
+    class_code = normalize_class_code(class_code)
+    if class_code == "U":
+        return (2, 0, 0)
+    try:
+        grade = int(class_code[:-1])
+        letter_order = CLASS_LETTER_ORDER[class_code[-1]]
+    except (KeyError, TypeError, ValueError):
+        return (1, class_code, 0)
+    return (0, grade, letter_order)
+
+
+def _class_page_label(class_code):
+    class_code = normalize_class_code(class_code)
+    if class_code == "U":
+        return "Учители"
+    if (
+        len(class_code) >= 2
+        and class_code[-1] in CLASS_LETTER_LABELS
+    ):
+        return (
+            f"{class_code[:-1]}"
+            f"{CLASS_LETTER_LABELS[class_code[-1]]} клас"
+        )
+    return class_code or "Без клас"
+
+
+def group_profiles_by_class(profiles):
+    grouped = defaultdict(list)
+    for profile in profiles:
+        grouped[normalize_class_code(profile.clas)].append(profile)
+    return [
+        (
+            class_code,
+            sorted(
+                grouped[class_code],
+                key=lambda profile: (
+                    profile.first_name.casefold(),
+                    profile.last_name.casefold(),
+                ),
+            ),
+        )
+        for class_code in sorted(grouped, key=_class_sort_key)
+    ]
 
 
 def _find_font_pair():
@@ -70,6 +123,7 @@ def build_profiles_pdf(profiles, title="Кодове за Valentine платфо
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import mm
     from reportlab.platypus import (
+        PageBreak,
         Paragraph,
         SimpleDocTemplate,
         Spacer,
@@ -79,6 +133,7 @@ def build_profiles_pdf(profiles, title="Кодове за Valentine платфо
 
     regular_font, bold_font = _register_fonts()
     profiles = list(profiles)
+    profile_groups = group_profiles_by_class(profiles)
     buffer = BytesIO()
     document = SimpleDocTemplate(
         buffer,
@@ -99,6 +154,13 @@ def build_profiles_pdf(profiles, title="Кодове за Valentine платфо
         leading=20,
         alignment=TA_CENTER,
         textColor=colors.HexColor("#9f1239"),
+    )
+    class_title_style = ParagraphStyle(
+        "ValentineClassTitle",
+        parent=title_style,
+        fontSize=20,
+        leading=24,
+        spaceBefore=2 * mm,
     )
     note_style = ParagraphStyle(
         "ValentineNote",
@@ -125,77 +187,124 @@ def build_profiles_pdf(profiles, title="Кодове за Valentine платфо
     )
 
     generated_at = timezone.localtime(timezone.now())
-    story = [
-        Paragraph(escape(title), title_style),
-        Spacer(1, 3 * mm),
-        Paragraph(
-            "Поверителен документ. Раздавай всеки код само на "
-            "съответния човек.",
-            note_style,
-        ),
-        Paragraph(
-            f"Генериран на {generated_at:%d.%m.%Y %H:%M} · "
-            f"Общо профили: {len(profiles)}",
-            note_style,
-        ),
-        Spacer(1, 5 * mm),
-    ]
+    story = []
+    if not profile_groups:
+        story.extend(
+            [
+                Paragraph(escape(title), title_style),
+                Spacer(1, 5 * mm),
+                Paragraph("Няма профили за експортиране.", note_style),
+            ]
+        )
 
-    data = [
-        [
-            "#",
-            "Име",
-            "Клас",
-            "Учебна година",
-            "Код",
-            "Статус",
+    for group_index, (class_code, class_profiles) in enumerate(
+        profile_groups
+    ):
+        if group_index:
+            story.append(PageBreak())
+        class_label = _class_page_label(class_code)
+        story.extend(
+            [
+                Paragraph(escape(title), title_style),
+                Paragraph(escape(class_label), class_title_style),
+                Spacer(1, 2 * mm),
+                Paragraph(
+                    "Поверителен документ. Раздавай всеки код само на "
+                    "съответния човек.",
+                    note_style,
+                ),
+                Paragraph(
+                    f"Генериран на {generated_at:%d.%m.%Y %H:%M} · "
+                    f"Профили в секцията: {len(class_profiles)}",
+                    note_style,
+                ),
+                Spacer(1, 5 * mm),
+            ]
+        )
+
+        data = [
+            [
+                "#",
+                "Име",
+                "Клас",
+                "Учебна година",
+                "Код",
+                "Статус",
+            ]
         ]
-    ]
-    for index, profile in enumerate(profiles, start=1):
-        data.append(
-            [
-                str(index),
-                Paragraph(escape(profile.full_name), cell_style),
-                Paragraph(escape(profile.clas_bg), cell_style),
-                Paragraph(
-                    escape(profile.academic_year_label),
-                    cell_style,
-                ),
-                Paragraph(escape(profile.code), code_style),
-                Paragraph(
-                    "Активен" if profile.is_active else "Неактивен",
-                    cell_style,
-                ),
-            ]
-        )
+        for index, profile in enumerate(class_profiles, start=1):
+            data.append(
+                [
+                    str(index),
+                    Paragraph(escape(profile.full_name), cell_style),
+                    Paragraph(escape(profile.clas_bg), cell_style),
+                    Paragraph(
+                        escape(profile.academic_year_label),
+                        cell_style,
+                    ),
+                    Paragraph(escape(profile.code), code_style),
+                    Paragraph(
+                        "Активен" if profile.is_active else "Неактивен",
+                        cell_style,
+                    ),
+                ]
+            )
 
-    table = Table(
-        data,
-        repeatRows=1,
-        colWidths=(9 * mm, 67 * mm, 20 * mm, 32 * mm, 27 * mm, 25 * mm),
-        hAlign="CENTER",
-    )
-    table.setStyle(
-        TableStyle(
-            [
-                ("FONTNAME", (0, 0), (-1, 0), bold_font),
-                ("FONTSIZE", (0, 0), (-1, 0), 8),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#ffe4e6")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#881337")),
-                ("ALIGN", (0, 0), (0, -1), "CENTER"),
-                ("ALIGN", (2, 1), (-1, -1), "CENTER"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e1")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), (
-                    colors.white,
-                    colors.HexColor("#fff7f8"),
-                )),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]
+        table = Table(
+            data,
+            repeatRows=1,
+            colWidths=(
+                9 * mm,
+                67 * mm,
+                20 * mm,
+                32 * mm,
+                27 * mm,
+                25 * mm,
+            ),
+            hAlign="CENTER",
         )
-    )
-    story.append(table)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, 0), bold_font),
+                    ("FONTSIZE", (0, 0), (-1, 0), 8),
+                    (
+                        "BACKGROUND",
+                        (0, 0),
+                        (-1, 0),
+                        colors.HexColor("#ffe4e6"),
+                    ),
+                    (
+                        "TEXTCOLOR",
+                        (0, 0),
+                        (-1, 0),
+                        colors.HexColor("#881337"),
+                    ),
+                    ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                    ("ALIGN", (2, 1), (-1, -1), "CENTER"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    (
+                        "GRID",
+                        (0, 0),
+                        (-1, -1),
+                        0.3,
+                        colors.HexColor("#cbd5e1"),
+                    ),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        (
+                            colors.white,
+                            colors.HexColor("#fff7f8"),
+                        ),
+                    ),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]
+            )
+        )
+        story.append(table)
 
     def add_page_number(canvas, doc):
         canvas.saveState()

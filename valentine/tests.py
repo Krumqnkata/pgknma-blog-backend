@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import date, timedelta
 from unittest.mock import patch
@@ -23,6 +24,7 @@ from .models import (
     ValentineCampaign,
     Valenitines,
 )
+from .profile_pdf import group_profiles_by_class
 
 
 @override_settings(DEBUG=False)
@@ -634,6 +636,13 @@ class ValentinePlatformTests(TestCase):
         self.assertFalse(response.context["import_token"])
 
     def test_admin_can_download_active_profile_codes_as_pdf(self):
+        teacher = Profile.objects.create(
+            code="PDFT01",
+            first_name="Анелия",
+            last_name="Тодорова",
+            clas="U",
+            email="anelia@example.com",
+        )
         admin_user = get_user_model().objects.create_superuser(
             username="pdf-admin",
             email="pdf-admin@example.com",
@@ -661,6 +670,28 @@ class ValentinePlatformTests(TestCase):
         self.assertGreater(len(response.content), 1000)
         self.assertIn("private", response["Cache-Control"])
         self.assertIn("no-store", response["Cache-Control"])
+        grouped_codes = [
+            class_code
+            for class_code, _profiles in group_profiles_by_class(
+                Profile.objects.filter(is_active=True)
+            )
+        ]
+        self.assertEqual(grouped_codes, ["10A", "10B", "11A", "U"])
+        self.assertIn(
+            teacher,
+            dict(
+                group_profiles_by_class(
+                    Profile.objects.filter(is_active=True)
+                )
+            )["U"],
+        )
+        page_count = len(
+            re.findall(
+                rb"/Type\s*/Page(?!s)\b",
+                response.content,
+            )
+        )
+        self.assertEqual(page_count, 4)
 
     def test_group_daily_limit_is_enforced_per_dispatch(self):
         Profile.objects.create(
