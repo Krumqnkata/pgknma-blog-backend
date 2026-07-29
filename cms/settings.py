@@ -10,9 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
-import os
 from pathlib import Path
-from django.core.exceptions import ImproperlyConfigured
 from django.templatetags.static import static
 from datetime import timedelta
 
@@ -25,30 +23,11 @@ STATIC_ROOT = BASE_DIR / "staticfiles_collected"
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SQLite is the temporary local database. MySQL is selected explicitly in
-# production through DB_ENGINE=mysql.
-DB_ENGINE = os.getenv("DB_ENGINE", "sqlite").lower()
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = r"D4QYg%II%i89QXsnqRV8FRrDPDT&i=&J=9Mx3bT#v8klcb^c@LTfVXsU!Yl-cVA%jDHhpki$5*(P9SQ0O!x@3e&$fXuhM*eR-KtD6^^tvQm!14R@q(nME8sLOo4EuGA4^xYFVYraUzFSJeBScxK+N(ZR1US$Dtdfomt@bWtJH&oQ-YzU&U1CbOfs^BB0x)4sJQjY!xPICuEp8zbOF8xu7J^J=QMSM(EePpztF!hCjuNDlx!UM%^O!FYBmX*SZ3Pa"
 
-# Never keep the production key in source control. A predictable fallback is
-# acceptable only for the disposable local SQLite environment.
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
-if not SECRET_KEY:
-    if DB_ENGINE == "sqlite":
-        SECRET_KEY = "django-insecure-local-valentine-development-only"
-    else:
-        raise ImproperlyConfigured(
-            "DJANGO_SECRET_KEY must be configured outside local SQLite mode."
-        )
-
-# SQLite is the temporary local database, so development static files should
-# work out of the box. MySQL remains production-safe with DEBUG disabled unless
-# DJANGO_DEBUG is explicitly enabled.
-_debug_override = os.getenv("DJANGO_DEBUG")
-DEBUG = (
-    _debug_override.lower() in {"1", "true", "yes", "on"}
-    if _debug_override is not None
-    else DB_ENGINE == "sqlite"
-)
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = False
 
 ALLOWED_HOSTS = ['*']
 
@@ -60,7 +39,6 @@ DJANGO_ADMIN_LOGS_ENABLED = True
 # Application definition
 
 GOOGLE_CLIENT_ID = "784969481905-m7uvr8if93bt70o7rqk2hlplp7lj6tl6.apps.googleusercontent.com"
-TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")
 
 INSTALLED_APPS = [
     'unfold',
@@ -76,7 +54,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
-    'UserDB',
     'blog',
     'valentine',
     'django_cleanup.apps.CleanupConfig',
@@ -98,20 +75,12 @@ MIDDLEWARE = [
 ]
 
 CORS_ALLOWED_ORIGINS = [
-'http://127.0.0.1', 'http://localhost:8680',  "https://127.0.0.1:8680", "https://localhost:8680",
-"http://188.138.29.7:8680", 
-"https://188.138.29.7:8680",
-"https://euvds5037x19.startdedicated.net:8680",
-"http://euvds5037x19.startdedicated.net:8680",
-"https://pgknma.space"
+    "http://127.0.0.1",
+    "https://pgknma.space",
 ]
 
-CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8680', 'http://localhost:8680',  "https://127.0.0.1:8680", "https://localhost:8680",
-"http://188.138.29.7:8680", 
-"https://188.138.29.7:8680",
-"https://euvds5037x19.startdedicated.net:8680",
-"http://euvds5037x19.startdedicated.net:8680",
-"https://pgknma.space"
+CSRF_TRUSTED_ORIGINS = [
+    "https://pgknma.space",
 ]
 
 INTERNAL_IPS = [
@@ -142,29 +111,22 @@ WSGI_APPLICATION = 'cms.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-if DB_ENGINE == "mysql":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.mysql",
-            "NAME": os.getenv("DB_NAME", "pgknma_blog"),
-            "USER": os.getenv("DB_USER", "django_prod"),
-            "PASSWORD": os.getenv("DB_PASSWORD", ""),
-            "HOST": os.getenv("DB_HOST", "/var/run/mysqld/mysqld.sock"),
-            "PORT": os.getenv("DB_PORT", ""),
-            "OPTIONS": {
-                "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
-                "charset": "utf8mb4",
-            },
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',  # Указва, че ползваме MySQL
+        'NAME': 'pgknma_blog',  # Например: my_custom_blog
+        'USER': 'django_prod',  # Например: root
+        'PASSWORD': 'X$}QnTO^J{+cH(w2n{WB4Y!Im',
+        'HOST': '/var/run/mysqld/mysqld.sock',  # Или IP адреса на сървъра
+        'PORT': '',  # Стандартният порт за MySQL
+
+        # Задължително кодиране за кирилица
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+            'charset': 'utf8mb4',
         }
     }
-else:
-    # Temporary/local mode: zero-configuration SQLite database.
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -232,7 +194,6 @@ SIMPLE_JWT={
 	"BLACKLIST_AFTER_ROTATION": True,
 	"UPDATE_LAST_LOGIN": True,
 }
-
 UNFOLD = {
     "SITE_DROPDOWN": [
             {
@@ -244,7 +205,7 @@ UNFOLD = {
                 "icon": "folder",
                 "title": ("Официален сайт"),
                 "link": "https://pgknma.com/",
-            }
+            },
         ],
     "SITE_TITLE": "Админ панел - ПГКНМА",
     "SITE_HEADER": "CMS ПГКНМА Блог",
@@ -515,3 +476,5 @@ UNFOLD = {
     """
 ],
 }
+
+

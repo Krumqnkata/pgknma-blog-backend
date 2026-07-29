@@ -19,6 +19,8 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,)
+from django.views.generic.base import RedirectView
+from valentine import views
 from blog.views import hqs
 from django.contrib.sitemaps.views import sitemap
 from blog.sitemaps import PostSitemap, StaticSitemap
@@ -38,7 +40,7 @@ urlpatterns = [
     path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
-    path('valentines/', include('valentine.urls')),
+    path('valentines/', include(('valentine.urls', 'valentine'), namespace='valentine')),
     path('hqs/<str:video_name>/', hqs, name='video'),
     path('sitemap/', sitemap, {'sitemaps': sitemaps},
          name='django.contrib.sitemaps.views.sitemap'),

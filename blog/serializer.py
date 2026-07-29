@@ -3,7 +3,6 @@ from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, Poll
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
-from django.conf import settings
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -114,11 +113,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         # 2. Вземаме токена и Secret Key
         captcha_token = attrs.get('captcha_answer')
-        secret_key = settings.TURNSTILE_SECRET_KEY
-        if not secret_key:
-            raise serializers.ValidationError(
-                {"captcha": "Защитата не е конфигурирана на сървъра."}
-            )
+        secret_key = "0x4AAAAAACoCbI9bzSF0MSGWHUtu8hrJBgs"
 
         # 3. Валидация през API-то на Cloudflare
         try:
@@ -397,12 +392,7 @@ class MyTokenObtainPairView(TokenObtainPairView):
         captcha_token = request.data.get('captcha_answer')
         
         # Твоят таен ключ (същият като в RegisterSerializer)
-        secret_key = settings.TURNSTILE_SECRET_KEY
-        if not secret_key:
-            return Response(
-                {"detail": "Защитата не е конфигурирана на сървъра."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
+        secret_key = "0x4AAAAAACoCbI9bzSF0MSGWHUtu8hrJBgs"
 
         if not captcha_token:
             return Response(
