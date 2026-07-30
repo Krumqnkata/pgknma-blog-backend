@@ -205,10 +205,13 @@
                 }
                 if (targetType === "individual") {
                     recipientSelect.innerHTML = fallbackRecipientOptions;
-                    recipientSelect.disabled = false;
+                    recipientSelect.disabled =
+                        recipientSelect.options.length <= 1;
                 }
                 audienceSummary.textContent =
-                    "Броят не можа да се зареди. Формулярът все още може да бъде изпратен.";
+                    targetType === "individual"
+                        ? "Получателите не можаха да се заредят. Опитай отново."
+                        : "Броят не можа да се зареди. Опитай отново.";
                 console.error(error);
                 updatePreview();
             }

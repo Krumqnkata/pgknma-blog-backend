@@ -1,0 +1,52 @@
+{% extends "admin/base_site.html" %}
+{% load admin_urls %}
+
+{% block content %}
+<div class="flex flex-col gap-6">
+    <div class="bg-white border border-base-200 p-6 rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+        <h1 class="font-semibold text-xl text-font-important-light dark:text-font-important-dark">
+            Активиране на {{ campaign }}
+        </h1>
+        <p class="mt-2 text-sm text-font-subtle-light dark:text-font-subtle-dark">
+            Задай датите за кампания {{ campaign.year }}. Предишната активна
+            кампания ще бъде архивирана едновременно с активирането на тази.
+        </p>
+    </div>
+
+    <form method="post"
+          class="bg-white border border-base-200 p-6 rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="make_active">
+        <input type="hidden" name="apply" value="yes">
+        <input type="hidden" name="select_across" value="0">
+        <input type="hidden"
+               name="{{ action_checkbox_name }}"
+               value="{{ campaign.pk }}">
+
+        {{ activation_form.non_field_errors }}
+        <div class="grid gap-5 md:grid-cols-3">
+            {% for field in activation_form %}
+            <div>
+                <label class="block font-medium mb-2 text-sm"
+                       for="{{ field.id_for_label }}">
+                    {{ field.label }}
+                </label>
+                {{ field }}
+                {{ field.errors }}
+            </div>
+            {% endfor %}
+        </div>
+
+        <div class="flex flex-wrap gap-3 mt-6">
+            <button class="bg-primary-600 border border-transparent font-medium px-4 py-2 rounded-default text-sm text-white hover:bg-primary-700"
+                    type="submit">
+                Активирай кампанията
+            </button>
+            <a class="border border-base-200 font-medium px-4 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"
+               href="{% url opts|admin_urlname:'changelist' %}">
+                Отказ
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -34,7 +34,7 @@
 </section>
 
 <section class="stats-strip wrap" aria-label="Статистика">
-    <div><strong>{{ total_sent }}</strong><span>послания в училището</span></div>
+    <div><strong>{{ total_sent }}</strong><span>пратки в училището</span></div>
     <div><strong>{{ sent_today }}</strong><span>изпратени от теб днес</span></div>
     <div><strong>{{ remaining_today }}</strong><span>остават за днес</span></div>
     <div>
@@ -96,15 +96,14 @@
                     <select id="recipient" name="recipient"
                             data-selected="{{ selected_recipient_id }}">
                         <option value="">Избери получател</option>
-                        {% for recipient in all_recipients %}
-                            {% with recipient_id=recipient.pk|stringformat:"s" %}
+                        {% if selected_recipient %}
+                            {% with recipient_id=selected_recipient.pk|stringformat:"s" %}
                             <option value="{{ recipient_id }}"
-                                    data-class="{{ recipient.clas }}"
-                                    {% if selected_recipient_id == recipient_id %}selected{% endif %}>
-                                {{ recipient.full_name }} · {{ recipient.clas_bg }}
+                                    selected>
+                                {{ selected_recipient.full_name }} · {{ selected_recipient.clas_bg }}
                             </option>
                             {% endwith %}
-                        {% endfor %}
+                        {% endif %}
                     </select>
                     {% if form.recipient.errors %}<div class="field-error">{{ form.recipient.errors }}</div>{% endif %}
                 </div>

@@ -10,35 +10,118 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
 from django.templatetags.static import static
 from datetime import timedelta
+from dotenv import load_dotenv
+
+
+def env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ImproperlyConfigured(
+        f"{name} must be one of: true, false, 1, 0, yes, no, on, off."
+    )
+
+
+def env_int(name, default):
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ImproperlyConfigured(
+            f"{name} must be an integer."
+        ) from exc
+
+
+def env_list(name, default=()):
+    value = os.getenv(name)
+    if value is None:
+        return list(default)
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def required_env(name):
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        raise ImproperlyConfigured(
+            f"{name} must be configured in this environment."
+        )
+    return value.strip()
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 STATIC_ROOT = BASE_DIR / "staticfiles_collected"
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = r"D4QYg%II%i89QXsnqRV8FRrDPDT&i=&J=9Mx3bT#v8klcb^c@LTfVXsU!Yl-cVA%jDHhpki$5*(P9SQ0O!x@3e&$fXuhM*eR-KtD6^^tvQm!14R@q(nME8sLOo4EuGA4^xYFVYraUzFSJeBScxK+N(ZR1US$Dtdfomt@bWtJH&oQ-YzU&U1CbOfs^BB0x)4sJQjY!xPICuEp8zbOF8xu7J^J=QMSM(EePpztF!hCjuNDlx!UM%^O!FYBmX*SZ3Pa"
+# Local development is SQLite/DEBUG by default. Production must opt in and
+# provide every secret explicitly through the process environment.
+DEBUG = env_bool("DJANGO_DEBUG", True)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip()
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = "django-insecure-local-development-only-change-me"
+    else:
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY is required when DJANGO_DEBUG is false."
+        )
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = env_list(
+    "DJANGO_ALLOWED_HOSTS",
+    ("127.0.0.1", "localhost", "testserver")
+    if DEBUG
+    else ("pgknma.space", "www.pgknma.space"),
+)
 
-# Settings for running behind a reverse proxy
-USE_X_FORWARDED_HOST = True
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Forwarded headers are trusted only when the deployment explicitly enables
+# them and the application server is unreachable except through that proxy.
+USE_X_FORWARDED_HOST = env_bool("DJANGO_USE_X_FORWARDED_HOST", False)
+if env_bool("DJANGO_TRUST_X_FORWARDED_PROTO", False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+TRUSTED_PROXY_IPS = env_list(
+    "TRUSTED_PROXY_IPS",
+    () if DEBUG else ("127.0.0.1", "::1"),
+)
 
 DJANGO_ADMIN_LOGS_ENABLED = True
 # Application definition
 
-GOOGLE_CLIENT_ID = "784969481905-m7uvr8if93bt70o7rqk2hlplp7lj6tl6.apps.googleusercontent.com"
+ENABLE_GOOGLE_AUTH = env_bool("ENABLE_GOOGLE_AUTH", False)
+configured_google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+if ENABLE_GOOGLE_AUTH and not configured_google_client_id:
+    raise ImproperlyConfigured(
+        "GOOGLE_CLIENT_ID is required when ENABLE_GOOGLE_AUTH is true."
+    )
+# GoogleAuthView already fails closed when this setting is empty. Clearing the
+# value while the feature flag is disabled makes the flag authoritative.
+GOOGLE_CLIENT_ID = (
+    configured_google_client_id if ENABLE_GOOGLE_AUTH else ""
+)
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
+if not DEBUG and not TURNSTILE_SECRET_KEY:
+    raise ImproperlyConfigured(
+        "TURNSTILE_SECRET_KEY is required when DJANGO_DEBUG is false."
+    )
+TURNSTILE_VERIFY_URL = (
+    "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+)
 
 INSTALLED_APPS = [
     'unfold',
@@ -54,14 +137,13 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'blog',
     'valentine',
     'django_cleanup.apps.CleanupConfig',
     'django_admin_logs',
     'django.contrib.sitemaps',
-    'django.contrib.sites',
 ]
-SITE_ID=1
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
@@ -74,14 +156,32 @@ MIDDLEWARE = [
 
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://127.0.0.1",
-    "https://pgknma.space",
-]
+CORS_ALLOWED_ORIGINS = env_list(
+    "CORS_ALLOWED_ORIGINS",
+    (
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "https://pgknma.space",
+    )
+    if DEBUG
+    else (
+        "https://pgknma.space",
+        "https://www.pgknma.space",
+    ),
+)
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", False)
+CORS_URLS_REGEX = r"^/api/.*$"
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://pgknma.space",
-]
+CSRF_TRUSTED_ORIGINS = env_list(
+    "CSRF_TRUSTED_ORIGINS",
+    (
+        "https://pgknma.space",
+        "https://www.pgknma.space",
+    ),
+)
 
 INTERNAL_IPS = [
     '127.0.0.1',
@@ -111,22 +211,62 @@ WSGI_APPLICATION = 'cms.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.mysql',  # Указва, че ползваме MySQL
-        'NAME': 'pgknma_blog',  # Например: my_custom_blog
-        'USER': 'django_prod',  # Например: root
-        'PASSWORD': 'X$}QnTO^J{+cH(w2n{WB4Y!Im',
-        'HOST': '/var/run/mysqld/mysqld.sock',  # Или IP адреса на сървъра
-        'PORT': '',  # Стандартният порт за MySQL
+DB_ENGINE_ALIASES = {
+    "sqlite": "django.db.backends.sqlite3",
+    "sqlite3": "django.db.backends.sqlite3",
+    "mysql": "django.db.backends.mysql",
+}
+configured_db_engine = os.getenv("DB_ENGINE")
+if configured_db_engine is None or not configured_db_engine.strip():
+    if DEBUG:
+        DB_ENGINE_RAW = "sqlite"
+    else:
+        raise ImproperlyConfigured(
+            "DB_ENGINE must be explicitly configured when "
+            "DJANGO_DEBUG is false."
+        )
+else:
+    DB_ENGINE_RAW = configured_db_engine.strip()
+DB_ENGINE = DB_ENGINE_ALIASES.get(DB_ENGINE_RAW, DB_ENGINE_RAW)
+ALLOW_PRODUCTION_SQLITE = env_bool("ALLOW_PRODUCTION_SQLITE", False)
+IS_PRODUCTION_SQLITE = (
+    not DEBUG and DB_ENGINE == "django.db.backends.sqlite3"
+)
 
-        # Задължително кодиране за кирилица
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-            'charset': 'utf8mb4',
+if IS_PRODUCTION_SQLITE and not ALLOW_PRODUCTION_SQLITE:
+    raise ImproperlyConfigured(
+        "SQLite in production requires the explicit "
+        "ALLOW_PRODUCTION_SQLITE=true opt-in. Read DEPLOYMENT.md first."
+    )
+
+if DB_ENGINE == "django.db.backends.sqlite3":
+    sqlite_name = os.getenv("DB_NAME", "").strip()
+    DATABASES = {
+        "default": {
+            "ENGINE": DB_ENGINE,
+            "NAME": sqlite_name or BASE_DIR / "db.sqlite3",
+            "OPTIONS": {
+                "timeout": env_int("SQLITE_TIMEOUT_SECONDS", 30),
+            },
         }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": DB_ENGINE,
+            "NAME": required_env("DB_NAME"),
+            "USER": required_env("DB_USER"),
+            "PASSWORD": required_env("DB_PASSWORD"),
+            "HOST": os.getenv("DB_HOST", "localhost").strip(),
+            "PORT": os.getenv("DB_PORT", "").strip(),
+            "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 60),
+        }
+    }
+    if DB_ENGINE == "django.db.backends.mysql":
+        DATABASES["default"]["OPTIONS"] = {
+            "init_command": "SET sql_mode='STRICT_TRANS_TABLES'",
+            "charset": "utf8mb4",
+        }
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -152,7 +292,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'bg'
 
-TIME_ZONE = 'EET'
+TIME_ZONE = 'Europe/Sofia'
 
 USE_I18N = True
 
@@ -162,7 +302,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 
 STATICFILES_DIRS = [
     BASE_DIR / "static",
@@ -172,28 +312,165 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
+    'DEFAULT_PAGINATION_CLASS': (
+        'rest_framework.pagination.PageNumberPagination'
+    ),
+    'PAGE_SIZE': env_int("API_PAGE_SIZE", 25),
+    'DEFAULT_THROTTLE_CLASSES': (
+        'blog.throttling.TrustedProxyAnonRateThrottle',
+        'blog.throttling.TrustedProxyUserRateThrottle',
+        'blog.throttling.TrustedProxyScopedRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': os.getenv("THROTTLE_ANON", "60/minute"),
+        'user': os.getenv("THROTTLE_USER", "300/minute"),
+        'login': os.getenv("THROTTLE_LOGIN", "5/minute"),
+        'register': os.getenv("THROTTLE_REGISTER", "5/hour"),
+        'google_auth': os.getenv("THROTTLE_GOOGLE_AUTH", "10/minute"),
+        'contact': os.getenv("THROTTLE_CONTACT", "5/hour"),
+        'consent': os.getenv("THROTTLE_CONSENT", "30/hour"),
+        'username_check': os.getenv(
+            "THROTTLE_USERNAME_CHECK",
+            "30/minute",
+        ),
+        'password_validate': os.getenv(
+            "THROTTLE_PASSWORD_VALIDATE",
+            "20/minute",
+        ),
+        'song_submit': os.getenv("THROTTLE_SONG_SUBMIT", "5/day"),
+        'meme_submit': os.getenv("THROTTLE_MEME_SUBMIT", "5/day"),
+        'vote': os.getenv("THROTTLE_VOTE", "60/hour"),
+    },
 }
 
-# CORS settings for debugging - CAN BE TIGHTENED LATER
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
-# CORS_ALLOW_HEADERS = [
-#     'Authorization',
-#     'Content-Type',
-# ]
 MEDIA_URL = '/files/'
 MEDIA_ROOT = BASE_DIR / 'files'
 
-SIMPLE_JWT={
-	"ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
-	"REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-	"ROTATE_REFRESH_TOKENS": True,
-	"BLACKLIST_AFTER_ROTATION": True,
-	"UPDATE_LAST_LOGIN": True,
+JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "").strip()
+if not JWT_SIGNING_KEY:
+    if DEBUG:
+        JWT_SIGNING_KEY = f"local-jwt-only-{SECRET_KEY}"
+    else:
+        raise ImproperlyConfigured(
+            "JWT_SIGNING_KEY is required when DJANGO_DEBUG is false."
+        )
+
+SIMPLE_JWT = {
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": JWT_SIGNING_KEY,
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "CHECK_REVOKE_TOKEN": True,
+    "REVOKE_TOKEN_CLAIM": "hash_password",
 }
+
+CACHE_BACKEND = os.getenv(
+    "CACHE_BACKEND",
+    (
+        "django.core.cache.backends.locmem.LocMemCache"
+        if DEBUG or IS_PRODUCTION_SQLITE
+        else "django.core.cache.backends.db.DatabaseCache"
+    ),
+)
+CACHE_MAX_ENTRIES = env_int(
+    "CACHE_MAX_ENTRIES",
+    1_000 if DEBUG else 100_000,
+)
+CACHE_CULL_FREQUENCY = env_int("CACHE_CULL_FREQUENCY", 3)
+if CACHE_MAX_ENTRIES < 1:
+    raise ImproperlyConfigured("CACHE_MAX_ENTRIES must be at least 1.")
+if CACHE_CULL_FREQUENCY < 1:
+    raise ImproperlyConfigured("CACHE_CULL_FREQUENCY must be at least 1.")
+if (
+    IS_PRODUCTION_SQLITE
+    and CACHE_BACKEND
+    == "django.core.cache.backends.db.DatabaseCache"
+):
+    raise ImproperlyConfigured(
+        "Do not use DatabaseCache with production SQLite. Use one worker "
+        "with LocMemCache temporarily, or configure a shared Redis cache."
+    )
+CACHES = {
+    "default": {
+        "BACKEND": CACHE_BACKEND,
+        "LOCATION": os.getenv(
+            "CACHE_LOCATION",
+            (
+                "pgknma-local-cache"
+                if DEBUG or IS_PRODUCTION_SQLITE
+                else "django_cache"
+            ),
+        ),
+        "TIMEOUT": env_int("CACHE_DEFAULT_TIMEOUT", 900),
+        "OPTIONS": {
+            "MAX_ENTRIES": CACHE_MAX_ENTRIES,
+            "CULL_FREQUENCY": CACHE_CULL_FREQUENCY,
+        },
+    }
+}
+
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
+SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
+CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
+SESSION_COOKIE_HTTPONLY = True
+SECURE_HSTS_SECONDS = env_int(
+    "SECURE_HSTS_SECONDS",
+    0 if DEBUG else 3600,
+)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+    "SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    False,
+)
+SECURE_HSTS_PRELOAD = env_bool("SECURE_HSTS_PRELOAD", False)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+
+FILE_UPLOAD_MAX_MEMORY_SIZE = env_int(
+    "FILE_UPLOAD_MAX_MEMORY_SIZE",
+    5 * 1024 * 1024,
+)
+DATA_UPLOAD_MAX_MEMORY_SIZE = env_int(
+    "DATA_UPLOAD_MAX_MEMORY_SIZE",
+    10 * 1024 * 1024,
+)
+DATA_UPLOAD_MAX_NUMBER_FILES = env_int(
+    "DATA_UPLOAD_MAX_NUMBER_FILES",
+    25,
+)
+MAX_MEME_UPLOAD_SIZE = env_int(
+    "MAX_MEME_UPLOAD_SIZE",
+    5 * 1024 * 1024,
+)
+MAX_IMAGE_UPLOAD_SIZE = env_int(
+    "MAX_IMAGE_UPLOAD_SIZE",
+    10 * 1024 * 1024,
+)
+MAX_DOCUMENT_UPLOAD_SIZE = env_int(
+    "MAX_DOCUMENT_UPLOAD_SIZE",
+    25 * 1024 * 1024,
+)
+
+VALENTINE_TRUSTED_PROXY_IPS = env_list(
+    "VALENTINE_TRUSTED_PROXY_IPS",
+    () if DEBUG else ("127.0.0.1", "::1"),
+)
+VALENTINE_LOGIN_MAX_ATTEMPTS = env_int(
+    "VALENTINE_LOGIN_MAX_ATTEMPTS",
+    5,
+)
+VALENTINE_LOGIN_WINDOW_SECONDS = env_int(
+    "VALENTINE_LOGIN_WINDOW_SECONDS",
+    15 * 60,
+)
 UNFOLD = {
     "SITE_DROPDOWN": [
             {
@@ -476,5 +753,3 @@ UNFOLD = {
     """
 ],
 }
-
-

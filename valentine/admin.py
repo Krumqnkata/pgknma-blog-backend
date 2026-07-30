@@ -1,6 +1,6 @@
 import csv
 import re
-from datetime import date
+from datetime import datetime
 
 from django.contrib import admin, messages
 from django.contrib.admin import helpers
@@ -16,13 +16,18 @@ from django.urls import path, reverse
 from django.utils import timezone
 from unfold.admin import ModelAdmin
 
-from .forms import ProfileCsvImportForm
+from .forms import (
+    CampaignActivationForm,
+    ProfileCsvImportForm,
+    ProfilePromotionForm,
+)
 from .models import (
     ArchivedValentine,
     Profile,
     Register,
     Settings,
     ValentineCampaign,
+    ValentineModerationEvent,
     Valenitines,
     generate_unique_code,
     normalize_class_code,
@@ -94,7 +99,7 @@ class ProfileAdmin(ModelAdmin):
     )
     search_fields = ("code", "first_name", "last_name", "email", "clas")
     list_filter = ("is_active", "academic_year_start", "clas")
-    readonly_fields = ("uuid", "code")
+    readonly_fields = ("uuid",)
     actions = (
         "promote_to_next_academic_year",
         "deactivate_profiles",
@@ -114,6 +119,34 @@ class ProfileAdmin(ModelAdmin):
     )
     def academic_year_display(self, obj):
         return obj.academic_year_label
+
+    def has_view_codes_permission(self, request):
+        return request.user.has_perm("valentine.view_profile_codes")
+
+    def get_list_display(self, request):
+        display = list(super().get_list_display(request))
+        if not self.has_view_codes_permission(request):
+            display.remove("code")
+        return tuple(display)
+
+    def get_search_fields(self, request):
+        fields = list(super().get_search_fields(request))
+        if not self.has_view_codes_permission(request):
+            fields.remove("code")
+        return tuple(fields)
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if self.has_view_codes_permission(request):
+            fields.append("code")
+        return tuple(fields)
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not self.has_view_codes_permission(request):
+            actions.pop("export_selected_profiles_pdf", None)
+            actions.pop("regenerate_access_codes", None)
+        return actions
 
     def get_urls(self):
         custom_urls = [
@@ -146,6 +179,9 @@ class ProfileAdmin(ModelAdmin):
                     "admin:valentine_profile_active_codes_pdf"
                 ),
                 "can_import_profiles": self.has_add_permission(request),
+                "can_view_profile_codes": (
+                    self.has_view_codes_permission(request)
+                ),
             }
         )
         return super().changelist_view(request, extra_context)
@@ -164,8 +200,13 @@ class ProfileAdmin(ModelAdmin):
         response["Cache-Control"] = "private, no-store"
         return response
 
-    @admin.action(description="Изтегли избраните профили като PDF")
+    @admin.action(
+        description="Изтегли избраните профили като PDF",
+        permissions=("view_codes",),
+    )
     def export_selected_profiles_pdf(self, request, queryset):
+        if not self.has_view_codes_permission(request):
+            raise PermissionDenied
         queryset = queryset.order_by(
             "clas",
             "first_name",
@@ -179,7 +220,10 @@ class ProfileAdmin(ModelAdmin):
         )
 
     def export_active_profiles_pdf(self, request):
-        if not self.has_view_permission(request):
+        if (
+            not self.has_view_permission(request)
+            or not self.has_view_codes_permission(request)
+        ):
             raise PermissionDenied
         queryset = Profile.objects.filter(is_active=True).order_by(
             "clas",
@@ -236,6 +280,9 @@ class ProfileAdmin(ModelAdmin):
                 result = apply_profile_import(
                     payload["rows"],
                     payload["academic_year_start"],
+                    allow_existing_updates=self.has_change_permission(
+                        request
+                    ),
                 )
             except signing.SignatureExpired:
                 import_errors.append(
@@ -276,6 +323,17 @@ class ProfileAdmin(ModelAdmin):
                 plans, plan_errors = build_profile_import_plan(rows)
                 import_errors.extend(parse_errors)
                 import_errors.extend(plan_errors)
+                if (
+                    not self.has_change_permission(request)
+                    and any(
+                        plan["action"] != "create"
+                        for plan in plans
+                    )
+                ):
+                    import_errors.append(
+                        "Нямаш право да обновяваш или възстановяваш "
+                        "съществуващи профили."
+                    )
                 if not import_errors:
                     action_labels = {
                         "create": "Нов профил",
@@ -286,7 +344,16 @@ class ProfileAdmin(ModelAdmin):
                         {
                             **plan["row"],
                             "action_label": action_labels[plan["action"]],
-                            "display_code": plan["display_code"],
+                            "display_code": (
+                                plan["display_code"]
+                                if self.has_view_codes_permission(request)
+                                else (
+                                    "генерира се при запис"
+                                    if plan["action"] == "create"
+                                    and not plan["row"]["code"]
+                                    else "••••••"
+                                )
+                            ),
                             "display_email": plan["display_email"],
                         }
                         for plan in plans
@@ -329,7 +396,29 @@ class ProfileAdmin(ModelAdmin):
         description="Мигрирай към следващата учебна година"
     )
     def promote_to_next_academic_year(self, request, queryset):
-        if request.POST.get("apply") == "yes":
+        selected_years = list(
+            queryset.exclude(clas="U").values_list(
+                "academic_year_start",
+                flat=True,
+            )
+        )
+        default_target_year = (
+            max(selected_years) + 1
+            if selected_years
+            else timezone.localdate().year
+        )
+        is_confirmation = request.POST.get("apply") == "yes"
+        promotion_form = ProfilePromotionForm(
+            request.POST if is_confirmation else None,
+            initial={
+                "target_academic_year_start": default_target_year,
+            },
+        )
+        target_year = default_target_year
+        if is_confirmation and promotion_form.is_valid():
+            target_year = promotion_form.cleaned_data[
+                "target_academic_year_start"
+            ]
             profile_ids = list(queryset.values_list("pk", flat=True))
             promoted = []
             with transaction.atomic():
@@ -339,6 +428,8 @@ class ProfileAdmin(ModelAdmin):
                     .order_by("clas", "first_name", "last_name")
                 )
                 for profile in locked_profiles:
+                    if profile.academic_year_start != target_year - 1:
+                        continue
                     target_class = (
                         next_student_class(profile.clas)
                         if profile.is_active
@@ -347,7 +438,7 @@ class ProfileAdmin(ModelAdmin):
                     if target_class is None:
                         continue
                     profile.clas = target_class
-                    profile.academic_year_start += 1
+                    profile.academic_year_start = target_year
                     promoted.append(profile)
                 if promoted:
                     Profile.objects.bulk_update(
@@ -360,7 +451,8 @@ class ProfileAdmin(ModelAdmin):
                 f"Преместени профили: {len(promoted)}."
                 + (
                     f" Пропуснати: {skipped} "
-                    "(учители, 12. клас, неактивни или невалиден клас)."
+                    "(вече мигрирани, от друга учебна година, учители, "
+                    "12. клас, неактивни или невалиден клас)."
                     if skipped
                     else ""
                 ),
@@ -377,13 +469,20 @@ class ProfileAdmin(ModelAdmin):
             normalized_class = normalize_class_code(profile.clas)
             target_class = (
                 next_student_class(normalized_class)
-                if profile.is_active
+                if (
+                    profile.is_active
+                    and profile.academic_year_start == target_year - 1
+                )
                 else None
             )
             if not profile.is_active:
                 note = "Неактивен профил"
             elif normalized_class == "U":
                 note = "Учител – не се променя"
+            elif profile.academic_year_start >= target_year:
+                note = "Вече е мигриран за тази или по-нова учебна година"
+            elif profile.academic_year_start < target_year - 1:
+                note = "Профилът е от по-стара учебна година"
             elif normalized_class.startswith("12"):
                 note = "12. клас – деактивирай след завършване"
             elif target_class is None:
@@ -400,8 +499,8 @@ class ProfileAdmin(ModelAdmin):
                         else ""
                     ),
                     "target_year": (
-                        f"{profile.academic_year_start + 1}/"
-                        f"{profile.academic_year_start + 2}"
+                        f"{target_year}/"
+                        f"{target_year + 1}"
                         if target_class
                         else ""
                     ),
@@ -414,6 +513,7 @@ class ProfileAdmin(ModelAdmin):
             "title": "Мигриране към следващата учебна година",
             "opts": self.model._meta,
             "profiles": preview_rows,
+            "promotion_form": promotion_form,
             "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
             "media": self.media,
         }
@@ -509,6 +609,8 @@ class ProfileAdmin(ModelAdmin):
 
     @admin.action(description="Генерирай нов код за достъп")
     def regenerate_access_codes(self, request, queryset):
+        if not self.has_view_codes_permission(request):
+            raise PermissionDenied
         updated = 0
         for profile in queryset:
             profile.code = generate_unique_code()
@@ -554,12 +656,21 @@ class RegisterAdmin(ModelAdmin):
     def valid_display(self, obj):
         return obj.is_valid
 
+    def get_search_fields(self, request):
+        fields = list(super().get_search_fields(request))
+        if not request.user.has_perm("valentine.view_profile_codes"):
+            fields.remove("profile__code")
+        return tuple(fields)
+
     @admin.action(description="Прекрати избраните сесии")
     def revoke_sessions(self, request, queryset):
         count = queryset.update(revoked=True)
         self.message_user(request, f"Прекратени сесии: {count}.")
 
-    @admin.action(description="Изтрий всички изтекли сесии")
+    @admin.action(
+        description="Изтрий всички изтекли сесии",
+        permissions=("delete",),
+    )
     def delete_expired_sessions(self, request, queryset):
         count, _ = Register.objects.filter(expires_at__lte=timezone.now()).delete()
         self.message_user(request, f"Изтрити изтекли сесии: {count}.")
@@ -656,6 +767,12 @@ class ValentinesAdmin(ModelAdmin):
             campaign_id=active_campaign_id,
         )
 
+    def get_search_fields(self, request):
+        fields = list(super().get_search_fields(request))
+        if not request.user.has_perm("valentine.view_profile_codes"):
+            fields.remove("profile__code")
+        return tuple(fields)
+
     @admin.display(description="Изпращач")
     def sender_display(self, obj):
         return obj.sender_profile or "Valentine екип"
@@ -666,19 +783,78 @@ class ValentinesAdmin(ModelAdmin):
 
     @admin.action(description="Скрий избраните сигнали")
     def hide_reported(self, request, queryset):
-        count = queryset.update(
+        dispatch_count, delivery_count = self._moderate_dispatches(
+            request,
+            queryset,
+            status=Valenitines.ModerationStatus.HIDDEN,
             is_reported=True,
-            moderation_status=Valenitines.ModerationStatus.HIDDEN,
+            event_type=ValentineModerationEvent.EventType.HIDDEN,
         )
-        self.message_user(request, f"Скрити послания: {count}.")
+        self.message_user(
+            request,
+            f"Скрити пратки: {dispatch_count} "
+            f"({delivery_count} доставки).",
+        )
 
     @admin.action(description="Възстанови избраните послания")
     def restore_messages(self, request, queryset):
-        count = queryset.update(
+        dispatch_count, delivery_count = self._moderate_dispatches(
+            request,
+            queryset,
+            status=Valenitines.ModerationStatus.RESTORED,
             is_reported=False,
-            moderation_status=Valenitines.ModerationStatus.RESTORED,
+            event_type=ValentineModerationEvent.EventType.RESTORED,
         )
-        self.message_user(request, f"Възстановени послания: {count}.")
+        self.message_user(
+            request,
+            f"Възстановени пратки: {dispatch_count} "
+            f"({delivery_count} доставки).",
+        )
+
+    @staticmethod
+    def _moderate_dispatches(
+        request,
+        queryset,
+        *,
+        status,
+        is_reported,
+        event_type,
+    ):
+        dispatch_keys = list(
+            queryset.values_list("campaign_id", "dispatch_id").distinct()
+        )
+        if not dispatch_keys:
+            return 0, 0
+        dispatch_filter = Q()
+        for campaign_id, dispatch_id in dispatch_keys:
+            dispatch_filter |= Q(
+                campaign_id=campaign_id,
+                dispatch_id=dispatch_id,
+            )
+        now = timezone.now()
+        with transaction.atomic():
+            delivery_ids = list(
+                Valenitines.objects.select_for_update()
+                .filter(dispatch_filter)
+                .values_list("pk", flat=True)
+            )
+            Valenitines.objects.filter(pk__in=delivery_ids).update(
+                is_reported=is_reported,
+                moderation_status=status,
+            )
+            ValentineModerationEvent.objects.bulk_create(
+                [
+                    ValentineModerationEvent(
+                        campaign_id=campaign_id,
+                        dispatch_id=dispatch_id,
+                        event_type=event_type,
+                        moderator=request.user,
+                        created_at=now,
+                    )
+                    for campaign_id, dispatch_id in dispatch_keys
+                ]
+            )
+        return len(dispatch_keys), len(delivery_ids)
 
     @admin.action(description="Експорт на модерираните (CSV)")
     def export_reported_valentines(self, request, queryset):
@@ -782,14 +958,56 @@ class ValentinesAdmin(ModelAdmin):
 @admin.register(ArchivedValentine)
 class ArchivedValentinesAdmin(ValentinesAdmin):
     def get_queryset(self, request):
+        active_campaign_id = Settings.objects.values_list(
+            "active_campaign_id",
+            flat=True,
+        ).first()
         return ModelAdmin.get_queryset(self, request).filter(
             moderation_status__in=(
                 Valenitines.ModerationStatus.PENDING,
                 Valenitines.ModerationStatus.HIDDEN,
                 Valenitines.ModerationStatus.RESTORED,
             ),
-            campaign__is_archived=True,
-        )
+        ).exclude(campaign_id=active_campaign_id)
+
+
+@admin.register(ValentineModerationEvent)
+class ValentineModerationEventAdmin(ModelAdmin):
+    list_display = (
+        "event_type",
+        "campaign",
+        "dispatch_id",
+        "reporter_profile",
+        "moderator",
+        "reason",
+        "created_at",
+    )
+    list_filter = ("event_type", "campaign", "reason", "created_at")
+    search_fields = (
+        "=dispatch_id",
+        "reporter_profile__first_name",
+        "reporter_profile__last_name",
+        "moderator__username",
+    )
+    list_select_related = ("campaign", "reporter_profile", "moderator")
+    readonly_fields = (
+        "campaign",
+        "dispatch_id",
+        "event_type",
+        "reporter_profile",
+        "moderator",
+        "reason",
+        "created_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(ValentineCampaign)
@@ -826,6 +1044,12 @@ class ValentineCampaignAdmin(ModelAdmin):
         css = {
             "all": ("valentines/admin_campaign.css",),
         }
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None:
+            fields.append("year")
+        return tuple(fields)
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
@@ -947,6 +1171,11 @@ class ValentineCampaignAdmin(ModelAdmin):
                 ),
             ),
             reports=Count(
+                "dispatch_id",
+                distinct=True,
+                filter=Q(reported_at__isnull=False),
+            ),
+            reported_deliveries=Count(
                 "id",
                 filter=Q(reported_at__isnull=False),
             ),
@@ -956,7 +1185,8 @@ class ValentineCampaignAdmin(ModelAdmin):
                 filter=Q(reported_at__isnull=False),
             ),
             pending=Count(
-                "id",
+                "dispatch_id",
+                distinct=True,
                 filter=Q(
                     moderation_status=(
                         Valenitines.ModerationStatus.PENDING
@@ -964,7 +1194,8 @@ class ValentineCampaignAdmin(ModelAdmin):
                 ),
             ),
             hidden=Count(
-                "id",
+                "dispatch_id",
+                distinct=True,
                 filter=Q(
                     moderation_status=(
                         Valenitines.ModerationStatus.HIDDEN
@@ -972,7 +1203,8 @@ class ValentineCampaignAdmin(ModelAdmin):
                 ),
             ),
             restored=Count(
-                "id",
+                "dispatch_id",
+                distinct=True,
                 filter=Q(
                     moderation_status=(
                         Valenitines.ModerationStatus.RESTORED
@@ -988,7 +1220,8 @@ class ValentineCampaignAdmin(ModelAdmin):
             ).annotate(
                 received=Count("id"),
                 reports=Count(
-                    "id",
+                    "dispatch_id",
+                    distinct=True,
                     filter=Q(reported_at__isnull=False),
                 ),
             )
@@ -1037,7 +1270,8 @@ class ValentineCampaignAdmin(ModelAdmin):
                 dispatches=Count("dispatch_id", distinct=True),
                 deliveries=Count("id"),
                 reports=Count(
-                    "id",
+                    "dispatch_id",
+                    distinct=True,
                     filter=Q(reported_at__isnull=False),
                 ),
             )
@@ -1060,7 +1294,7 @@ class ValentineCampaignAdmin(ModelAdmin):
             for row in source.filter(reported_at__isnull=False)
             .exclude(report_reason="")
             .values("report_reason")
-            .annotate(total=Count("id"))
+            .annotate(total=Count("dispatch_id", distinct=True))
             .order_by("-total", "report_reason")
         ]
 
@@ -1103,7 +1337,7 @@ class ValentineCampaignAdmin(ModelAdmin):
                 "label": "Сигнали",
                 "value": totals["reports"],
                 "description": (
-                    f"{totals['reported_dispatches']} засегнати пратки"
+                    f"{totals['reported_deliveries']} засегнати доставки"
                 ),
             },
             {
@@ -1258,31 +1492,94 @@ class ValentineCampaignAdmin(ModelAdmin):
             )
             return
         campaign = queryset.first()
+        current_settings = Settings.objects.first()
+        generated_initial = {
+            "sending_starts_at": timezone.make_aware(
+                datetime(campaign.year, 1, 15, 8, 0),
+                timezone.get_current_timezone(),
+            ),
+            "sending_ends_at": timezone.make_aware(
+                datetime(campaign.year, 2, 13, 23, 59),
+                timezone.get_current_timezone(),
+            ),
+            "reveal_at": timezone.make_aware(
+                datetime(campaign.year, 2, 14, 8, 0),
+                timezone.get_current_timezone(),
+            ),
+        }
+        if current_settings:
+            for field_name in tuple(generated_initial):
+                value = getattr(current_settings, field_name)
+                if (
+                    value
+                    and timezone.localtime(value).year == campaign.year
+                ):
+                    generated_initial[field_name] = value
+        is_confirmation = request.POST.get("apply") == "yes"
+        activation_form = CampaignActivationForm(
+            request.POST if is_confirmation else None,
+            campaign=campaign,
+            initial=generated_initial,
+        )
+        if not (is_confirmation and activation_form.is_valid()):
+            context = {
+                **self.admin_site.each_context(request),
+                "title": f"Активиране на {campaign}",
+                "opts": self.model._meta,
+                "campaign": campaign,
+                "activation_form": activation_form,
+                "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+                "media": self.media + activation_form.media,
+            }
+            return TemplateResponse(
+                request,
+                (
+                    "admin/valentine/valentinecampaign/"
+                    "activate_confirmation.html"
+                ),
+                context,
+            )
+
+        starts_at = activation_form.cleaned_data["sending_starts_at"]
+        ends_at = activation_form.cleaned_data["sending_ends_at"]
+        reveal_at = activation_form.cleaned_data["reveal_at"]
         with transaction.atomic():
+            campaign = ValentineCampaign.objects.select_for_update().get(
+                pk=campaign.pk
+            )
             campaign.is_archived = False
             campaign.archived_at = None
             campaign.save(update_fields=["is_archived", "archived_at"])
 
-            platform_settings = Settings.objects.select_for_update().first()
-            if platform_settings is None:
-                platform_settings = Settings.objects.create(
-                    reveal_date=date(campaign.year, 2, 14),
-                    active_campaign=campaign,
+            platform_settings, settings_created = (
+                Settings.objects.select_for_update().get_or_create(
+                    singleton_key="default",
+                    defaults={
+                        "reveal_date": timezone.localdate(reveal_at),
+                        "reveal_at": reveal_at,
+                        "sending_starts_at": starts_at,
+                        "sending_ends_at": ends_at,
+                        "active_campaign": campaign,
+                    },
                 )
-            else:
+            )
+            if not settings_created:
                 previous = platform_settings.active_campaign
                 if previous and previous.pk != campaign.pk:
-                    previous.is_archived = True
-                    previous.archived_at = timezone.now()
-                    previous.save(
-                        update_fields=["is_archived", "archived_at"]
+                    ValentineCampaign.objects.filter(pk=previous.pk).update(
+                        is_archived=True,
+                        archived_at=timezone.now(),
                     )
-                Settings.objects.filter(pk=platform_settings.pk).update(
-                    active_campaign=campaign
-                )
+                platform_settings.active_campaign = campaign
+                platform_settings.sending_starts_at = starts_at
+                platform_settings.sending_ends_at = ends_at
+                platform_settings.reveal_at = reveal_at
+                platform_settings.reveal_date = timezone.localdate(reveal_at)
+                platform_settings.save()
         self.message_user(
             request,
-            f"{campaign} вече е активната кампания.",
+            f"{campaign} вече е активната кампания. "
+            "Датите за изпращане и разкриване са обновени.",
             messages.SUCCESS,
         )
 
@@ -1377,7 +1674,10 @@ class SettingsAdmin(ModelAdmin):
         return super().changelist_view(request, extra_context)
 
     def has_add_permission(self, request):
-        return not Settings.objects.exists()
+        return (
+            super().has_add_permission(request)
+            and not Settings.objects.exists()
+        )
 
     def has_delete_permission(self, request, obj=None):
         return False

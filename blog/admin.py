@@ -1,24 +1,26 @@
 from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog
 from django.contrib import admin
-from django.utils.safestring import mark_safe
-from django.db import models
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import models, transaction
 from django import forms
-from django.http import HttpResponseRedirect
-from django.urls import reverse
-import markdown
-import re # Import regex module
+from django.http import Http404, HttpResponseNotAllowed
+from django.urls import path, reverse
+from django.utils.html import format_html
+from django.utils.text import Truncator
+import re
 from unfold_markdown.widgets import MarkdownWidget
 from unfold.widgets import UnfoldBooleanSwitchWidget
-from .forms import MemeSelectionForm, PostAdminForm
-from unfold.admin import ModelAdmin
-from django.contrib.auth.models import User
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from unfold.forms import UserChangeForm, UserCreationForm
-# Може да ти потрябва и TabularInline от Unfold, ако правиш Inlines
+from .forms import (
+    MemeSelectionForm,
+    PollQuestionSelectionForm,
+    PostAdminForm,
+    SongSuggestionSelectionForm,
+)
 from unfold.admin import ModelAdmin, TabularInline
-from django.contrib.auth.models import User, Group 
+from django.contrib.auth.models import User, Group
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
+from unfold.forms import UserChangeForm, UserCreationForm
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
@@ -86,28 +88,38 @@ class PostsAdmin(ModelAdmin):
         return tuple(base_fields)
 
     def save_model(self, request, obj, form, change):
+        images_to_delete = form.cleaned_data.get('delete_images') or []
+        documents_to_delete = form.cleaned_data.get('delete_documents') or []
+        if images_to_delete and not request.user.has_perm('blog.delete_postimage'):
+            raise PermissionDenied
+        if documents_to_delete and not request.user.has_perm('blog.delete_postdocument'):
+            raise PermissionDenied
+
         if not obj.pk:
             obj.author = request.user
         super().save_model(request, obj, form, change)
 
-        # Handle multiple image uploads
-        images = request.FILES.getlist('gallery_images')
+        # Use the form's cleaned values so image/content and size validation
+        # cannot be bypassed by reading request.FILES directly.
+        images = form.cleaned_data.get('gallery_images') or []
+        if not isinstance(images, (list, tuple)):
+            images = [images]
         for image in images:
             PostImage.objects.create(post=obj, image=image)
 
         # Handle image deletion
-        if 'delete_images' in form.cleaned_data:
-            images_to_delete = form.cleaned_data['delete_images']
+        if images_to_delete:
             PostImage.objects.filter(pk__in=images_to_delete, post=obj).delete()
 
         # Handle multiple document uploads
-        documents = request.FILES.getlist('gallery_documents')
+        documents = form.cleaned_data.get('gallery_documents') or []
+        if not isinstance(documents, (list, tuple)):
+            documents = [documents]
         for document in documents:
             PostDocument.objects.create(post=obj, file=document)
 
         # Handle document deletion
-        if 'delete_documents' in form.cleaned_data:
-            documents_to_delete = form.cleaned_data['delete_documents']
+        if documents_to_delete:
             PostDocument.objects.filter(pk__in=documents_to_delete, post=obj).delete()
 
 
@@ -132,9 +144,9 @@ class CategoryAdmin(ModelAdmin):
 
 @admin.register(Comments)
 class CommentsAdmin(ModelAdmin):
-    readonly_fields_base = ('user', 'content' ,'created_at', 'post')
+    readonly_fields = ('user', 'content', 'created_at', 'post', 'parent')
     list_display = ('user', 'content', 'created_at', 'post')
-    search_fields = ('user', 'content')
+    search_fields = ('user__username', 'content')
     def has_add_permission(self, request):
         return False
 
@@ -149,7 +161,10 @@ class PollOptionInline(admin.TabularInline):
 
     def image_preview(self, obj):
         if obj.image:
-            return mark_safe(f'<img src="{obj.image.url}" style="max-width: 100px; max-height: 100px;" />')
+            return format_html(
+                '<img src="{}" style="max-width: 100px; max-height: 100px;" alt="" />',
+                obj.image.url,
+            )
         return "Няма"
     image_preview.short_description = "Преглед"
 
@@ -164,7 +179,10 @@ class PollQuestionAdmin(ModelAdmin):
 
     def image_preview(self, obj):
         if obj.image:
-            return mark_safe(f'<img src="{obj.image.url}" style="max-width: 200px; max-height: 200px;" />')
+            return format_html(
+                '<img src="{}" style="max-width: 200px; max-height: 200px;" alt="" />',
+                obj.image.url,
+            )
         return "Няма изображение"
     image_preview.short_description = "Преглед на изображението"
 
@@ -174,26 +192,55 @@ class PollQuestionAdmin(ModelAdmin):
         return super().formfield_for_dbfield(db_field, request, **kwargs)
 
     def save_formset(self, request, form, formset, change):
-        # Получаваме инстанциите, без да записваме в базата
-        instances = formset.save(commit=False)
+        # Populate deleted_objects/save_m2m without persisting partial changes.
+        formset.save(commit=False)
+        active_forms = [
+            inline_form
+            for inline_form in formset.forms
+            if inline_form.cleaned_data
+            and not inline_form.cleaned_data.get("DELETE")
+            and (inline_form.instance.pk or inline_form.has_changed())
+        ]
+        letters = ("a", "b", "c", "d")
 
-        # Задаваме ключовете на опциите преди да запишем в базата
-        for i, instance in enumerate(instances):
-            if i < 4:  # Максимален брой опции
-                letters = ['a', 'b', 'c', 'd']
-                instance.key = letters[i]
-            instance.question = form.instance  # Уверяваме се, че въпросът е зададен
-            instance.save()
+        if len(active_forms) > len(letters):
+            raise ValidationError("Анкетата може да има най-много 4 опции.")
 
-        # Изтриваме останалите връзки
-        formset.save_m2m()
+        with transaction.atomic():
+            for deleted_object in formset.deleted_objects:
+                deleted_object.delete()
 
-        # Enforce single correct answer
-        if form.instance.pk:
-            correct_options = form.instance.options.filter(is_correct=True)
-            if correct_options.count() > 1:
-                last_correct_option = correct_options.order_by('-id').first()
-                form.instance.options.exclude(pk=last_correct_option.pk).update(is_correct=False)
+            # Move persisted keys out of the a-d range first. This avoids a
+            # transient unique(question, key) collision while gaps are closed.
+            persisted_options = list(
+                form.instance.options.order_by("key", "pk")
+            )
+            temporary_keys = ("W", "X", "Y", "Z")
+            for index, option in enumerate(persisted_options):
+                PollOption.objects.filter(pk=option.pk).update(
+                    key=temporary_keys[index]
+                )
+
+            saved_options = []
+            for index, inline_form in enumerate(active_forms):
+                option = inline_form.save(commit=False)
+                option.question = form.instance
+                option.key = letters[index]
+                option.save()
+                saved_options.append(option)
+
+            formset.save_m2m()
+
+            # Preserve the previous behaviour: if several answers are marked,
+            # the last visible one wins.
+            correct_options = [
+                option for option in saved_options if option.is_correct
+            ]
+            if len(correct_options) > 1:
+                correct_option = correct_options[-1]
+                form.instance.options.exclude(pk=correct_option.pk).update(
+                    is_correct=False
+                )
 
 @admin.register(PollAnswer)
 class PollAnswerAdmin(ModelAdmin):
@@ -219,19 +266,33 @@ class BellSongSuggestionAdmin(ModelAdmin):
     actions = ['approve_selected', 'reject_selected', 'delete_by_date']
 
     
-    @admin.action(description='Изтрий записи по дата (преди...)')
+    @admin.action(
+        description='Изтрий избраните записи по дата (преди...)',
+        permissions=['delete'],
+    )
     def delete_by_date(self, request, queryset):
-        # Ако формата е изпратена
+        if not self.has_delete_permission(request):
+            raise PermissionDenied
+
         if 'apply' in request.POST:
             form = DateSelectionForm(request.POST)
             if form.is_valid():
                 date = form.cleaned_data['delete_before_date']
-                # Изтриваме всички записи преди тази дата (независимо от селекцията в списъка)
-                deleted_count, _ = self.model.objects.filter(submitted_at__lt=date).delete()
+                selected_for_deletion = queryset.filter(
+                    submitted_at__date__lt=date
+                )
+                selected_objects = list(selected_for_deletion)
+
+                with transaction.atomic():
+                    self.log_deletions(request, selected_for_deletion)
+                    selected_for_deletion.delete()
                 
                 self.message_user(
-                    request, 
-                    f'Успешно бяха изтрити {deleted_count} записа преди дата {date}.',
+                    request,
+                    (
+                        f'Успешно бяха изтрити {len(selected_objects)} от '
+                        f'избраните записи преди дата {date}.'
+                    ),
                     messages.SUCCESS
                 )
                 return redirect(request.get_full_path())
@@ -249,18 +310,29 @@ class BellSongSuggestionAdmin(ModelAdmin):
                 'opts': self.model._meta,
                 'queryset': queryset,
                 'action': 'delete_by_date',
+                'selected_count': queryset.count(),
             }
         )
 
     # 2. Функция за масово одобряване
-    @admin.action(description='Одобри избраните предложения')
+    @admin.action(
+        description='Одобри избраните предложения',
+        permissions=['change'],
+    )
     def approve_selected(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         updated = queryset.update(status='approved')
         self.message_user(request, f'Успешно одобрихте {updated} предложения за песни.')
 
     # 3. Функция за масово отхвърляне
-    @admin.action(description='Отхвърли избраните предложения')
+    @admin.action(
+        description='Отхвърли избраните предложения',
+        permissions=['change'],
+    )
     def reject_selected(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         updated = queryset.update(status='rejected')
         self.message_user(request, f'Успешно отхвърлихте {updated} предложения за песни.')
 
@@ -283,12 +355,29 @@ class BellSongSuggestionAdmin(ModelAdmin):
         if youtube_match:
             video_id = youtube_match.group(1)
             youtube_direct_url = f"https://www.youtube.com/watch?v={video_id}"
-            return mark_safe(f'<a href="{youtube_direct_url}" target="_blank">Гледай в YouTube: {obj.title}</a>')
+            return format_html(
+                '<a href="{}" target="_blank" rel="noopener noreferrer">'
+                'Гледай в YouTube: {}</a>',
+                youtube_direct_url,
+                obj.title,
+            )
         elif spotify_match:
             track_id = spotify_match.group(1)
-            return mark_safe(f'<iframe src="https://open.spotify.com/embed/track/{track_id}" width="300" height="152" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>')
+            return format_html(
+                '<iframe src="https://open.spotify.com/embed/track/{}" '
+                'width="300" height="152" frameborder="0" '
+                'allowtransparency="true" allow="encrypted-media" '
+                'loading="lazy" title="Spotify: {}"></iframe>',
+                track_id,
+                obj.title,
+            )
         else:
-            return mark_safe(f'<a href="{obj.link}" target="_blank">{obj.link}</a> (Неподдържан формат)')
+            return format_html(
+                '<a href="{}" target="_blank" rel="noopener noreferrer">{}</a> '
+                '(Неподдържан формат)',
+                obj.link,
+                obj.link,
+            )
 
     embedded_media_display.short_description = "Медия"
 
@@ -338,8 +427,7 @@ class TermsOfServiceAdmin(ModelAdmin):
 
     def content_preview(self, obj):
         if obj.content:
-            html = markdown.markdown(obj.content)
-            return mark_safe(html[:150] + "..." if len(html) > 150 else html)
+            return format_html("{}", Truncator(obj.content).chars(150))
         return "-"
     content_preview.short_description = 'Преглед'
 
@@ -361,8 +449,7 @@ class PrivacyPolicyAdmin(ModelAdmin):
 
     def content_preview(self, obj):
         if obj.content:
-            html = markdown.markdown(obj.content)
-            return mark_safe(html[:150] + "..." if len(html) > 150 else html)
+            return format_html("{}", Truncator(obj.content).chars(150))
         return "-"
     content_preview.short_description = 'Преглед'
 
@@ -397,8 +484,10 @@ class PostImageAdmin(ModelAdmin):
 
     def image_preview(self, obj):
         if obj.image:
-            # Assuming MEDIA_URL is correctly configured, adjust width/height as needed
-            return mark_safe(f'<img src="{obj.image.url}" style="max-width: 150px; max-height: 150px;" />')
+            return format_html(
+                '<img src="{}" style="max-width: 150px; max-height: 150px;" alt="" />',
+                obj.image.url,
+            )
         return "Няма изображение"
     image_preview.short_description = "Преглед на изображението"
     def has_add_permission(self, request):
@@ -430,8 +519,11 @@ class MemeOfWeekAdmin(ModelAdmin):
     exclude = ('voted_by',)
 
     def image_preview(self, obj):
-        if obj.image:
-            return mark_safe(f'<img src="{obj.image.url}" style="max-width: 150px; max-height: 150px;" />')
+        if obj.pk and obj.image:
+            return format_html(
+                '<img src="{}" style="max-width: 150px; max-height: 150px;" alt="" />',
+                reverse('meme-image', kwargs={'pk': obj.pk}),
+            )
         return "Няма изображение"
     image_preview.short_description = "Изображение"
 
@@ -457,7 +549,7 @@ class ConsentRecordAdmin(ModelAdmin):
 
 @admin.register(SiteSettings)
 class SiteSettingsAdmin(ModelAdmin):
-    change_form_template = 'admin/site_settings_change_form.html'  # Custom template
+    change_form_template = 'admin/site_settings_change_form.html'
     list_display = ('__str__', 'maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'enable_program_page')
 
     class Media:
@@ -466,59 +558,206 @@ class SiteSettingsAdmin(ModelAdmin):
         }
         js = ('admin/js/meme_deletion.js',)
 
-    def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
-        from .forms import SongSuggestionSelectionForm, PollQuestionSelectionForm  # Import here to avoid circular import
-        extra_context = extra_context or {}
+    def get_urls(self):
+        opts = self.model._meta
+        custom_urls = [
+            path(
+                '<path:object_id>/delete-memes/',
+                self.admin_site.admin_view(self.delete_memes_view),
+                name=f'{opts.app_label}_{opts.model_name}_delete_memes',
+            ),
+            path(
+                '<path:object_id>/delete-suggestions/',
+                self.admin_site.admin_view(self.delete_suggestions_view),
+                name=f'{opts.app_label}_{opts.model_name}_delete_suggestions',
+            ),
+            path(
+                '<path:object_id>/delete-polls/',
+                self.admin_site.admin_view(self.delete_polls_view),
+                name=f'{opts.app_label}_{opts.model_name}_delete_polls',
+            ),
+        ]
+        return custom_urls + super().get_urls()
 
-        # Handle meme deletion
-        if request.method == 'POST' and 'delete_selected_memes' in request.POST:
-            meme_form = MemeSelectionForm(request.POST, prefix='memes')
-            if meme_form.is_valid():
-                deleted_count = meme_form.delete_selected_memes()
-                self.message_user(request, f'Изтрити са {deleted_count} мем(а).')
+    def _has_related_delete_permission(self, request, model):
+        model_admin = self.admin_site._registry.get(model)
+        if model_admin is not None:
+            return model_admin.has_delete_permission(request)
+        opts = model._meta
+        return request.user.has_perm(f'{opts.app_label}.delete_{opts.model_name}')
 
-                # Redirect to avoid re-submission
-                return HttpResponseRedirect(request.get_full_path())
+    def _get_change_object(self, request, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404
+        if not self.has_change_permission(request, obj):
+            raise PermissionDenied
+        return obj
 
-        # Handle song suggestion deletion
-        if request.method == 'POST' and 'delete_selected_suggestions' in request.POST:
-            suggestion_form = SongSuggestionSelectionForm(request.POST, prefix='suggestions')
-            if suggestion_form.is_valid():
-                deleted_count = suggestion_form.delete_selected_suggestions()
-                self.message_user(request, f'Изтрити са {deleted_count} предложени(е) за песни.')
+    def _delete_selected_view(
+        self,
+        request,
+        object_id,
+        *,
+        form_class,
+        prefix,
+        model,
+        object_label,
+    ):
+        if request.method != 'POST':
+            return HttpResponseNotAllowed(['POST'])
 
-                # Redirect to avoid re-submission
-                return HttpResponseRedirect(request.get_full_path())
+        obj = self._get_change_object(request, object_id)
+        if not self._has_related_delete_permission(request, model):
+            raise PermissionDenied
 
-        # Handle poll question deletion
-        if request.method == 'POST' and 'delete_selected_polls' in request.POST:
-            poll_form = PollQuestionSelectionForm(request.POST, prefix='polls')
-            if poll_form.is_valid():
-                deleted_count = poll_form.delete_selected_polls()
-                self.message_user(request, f'Изтрити са {deleted_count} анкета(и).')
+        form = form_class(request.POST, prefix=prefix)
+        if not form.is_valid():
+            self.message_user(
+                request,
+                'Избраните записи не са валидни. Нищо не беше изтрито.',
+                messages.ERROR,
+            )
+            return redirect(
+                reverse(
+                    'admin:blog_sitesettings_change',
+                    args=(obj.pk,),
+                )
+            )
 
-                # Redirect to avoid re-submission
-                return HttpResponseRedirect(request.get_full_path())
+        selected_objects = list(form.get_selected_queryset())
+        if not selected_objects:
+            self.message_user(
+                request,
+                'Не сте избрали записи за изтриване.',
+                messages.WARNING,
+            )
+            return redirect(
+                reverse(
+                    'admin:blog_sitesettings_change',
+                    args=(obj.pk,),
+                )
+            )
 
-        # Pass the forms to the template
-        extra_context['meme_selection_form'] = MemeSelectionForm(prefix='memes')
-        extra_context['suggestion_selection_form'] = SongSuggestionSelectionForm(prefix='suggestions')
-        extra_context['poll_selection_form'] = PollQuestionSelectionForm(prefix='polls')
+        selected_ids = [
+            selected_object.pk for selected_object in selected_objects
+        ]
+        with transaction.atomic():
+            selected_queryset = model.objects.filter(pk__in=selected_ids)
+            related_admin = self.admin_site._registry.get(model)
+            if related_admin is not None:
+                related_admin.log_deletions(request, selected_queryset)
+            selected_queryset.delete()
+        self.message_user(
+            request,
+            f'Изтрити са {len(selected_objects)} {object_label}.',
+            messages.SUCCESS,
+        )
+        return redirect(
+            reverse(
+                'admin:blog_sitesettings_change',
+                args=(obj.pk,),
+            )
+        )
 
-        return super().changeform_view(request, object_id, form_url, extra_context)
+    def delete_memes_view(self, request, object_id):
+        return self._delete_selected_view(
+            request,
+            object_id,
+            form_class=MemeSelectionForm,
+            prefix='memes',
+            model=MemeOfWeek,
+            object_label='мем(а)',
+        )
+
+    def delete_suggestions_view(self, request, object_id):
+        return self._delete_selected_view(
+            request,
+            object_id,
+            form_class=SongSuggestionSelectionForm,
+            prefix='suggestions',
+            model=BellSongSuggestion,
+            object_label='предложени(я) за песни',
+        )
+
+    def delete_polls_view(self, request, object_id):
+        return self._delete_selected_view(
+            request,
+            object_id,
+            form_class=PollQuestionSelectionForm,
+            prefix='polls',
+            model=PollQuestion,
+            object_label='анкет(и)',
+        )
+
+    def render_change_form(
+        self,
+        request,
+        context,
+        add=False,
+        change=False,
+        form_url='',
+        obj=None,
+    ):
+        # Django reaches render_change_form only after its normal object-level
+        # view/change checks. Destructive controls are shown solely to users
+        # who also hold delete permission for the related model.
+        context['can_delete_memes'] = self._has_related_delete_permission(
+            request,
+            MemeOfWeek,
+        )
+        context['can_delete_suggestions'] = (
+            self._has_related_delete_permission(request, BellSongSuggestion)
+        )
+        context['can_delete_polls'] = self._has_related_delete_permission(
+            request,
+            PollQuestion,
+        )
+        context['meme_selection_form'] = (
+            MemeSelectionForm(prefix='memes')
+            if context['can_delete_memes']
+            else None
+        )
+        context['suggestion_selection_form'] = (
+            SongSuggestionSelectionForm(prefix='suggestions')
+            if context['can_delete_suggestions']
+            else None
+        )
+        context['poll_selection_form'] = (
+            PollQuestionSelectionForm(prefix='polls')
+            if context['can_delete_polls']
+            else None
+        )
+        return super().render_change_form(
+            request,
+            context,
+            add=add,
+            change=change,
+            form_url=form_url,
+            obj=obj,
+        )
 
     def __str__(self):
         return "Настройки на сайта"
 
     def changelist_view(self, request, extra_context=None):
-        from django.http import HttpResponseRedirect
-        from django.urls import reverse
+        if not self.has_view_or_change_permission(request):
+            raise PermissionDenied
 
-        obj, created = SiteSettings.objects.get_or_create(pk=1)
-        return HttpResponseRedirect(reverse('admin:blog_sitesettings_change', args=(obj.pk,)))
+        obj = SiteSettings.objects.order_by('pk').first()
+        if obj is None:
+            if not super().has_add_permission(request):
+                raise PermissionDenied
+            obj = SiteSettings.objects.create()
+        return redirect(
+            reverse('admin:blog_sitesettings_change', args=(obj.pk,))
+        )
 
     def has_add_permission(self, request):
-        return False
+        return (
+            not SiteSettings.objects.exists()
+            and super().has_add_permission(request)
+        )
 
     def has_delete_permission(self, request, obj=None):
         return False

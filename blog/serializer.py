@@ -1,17 +1,21 @@
 from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
-    Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog
+    Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, \
+    validate_meme_image_size
+from django.conf import settings
 from django.contrib.auth.models import User
+from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
+from django.urls import reverse
 import requests
-from bs4 import BeautifulSoup
 import re
-import markdown # New import
-from django.utils.safestring import mark_safe # New import
-import requests
+from django.utils.html import escape
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.response import Response
 from rest_framework import status
+from .network import get_client_ip
 
 class PostImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -68,7 +72,7 @@ class PostSerializer(serializers.ModelSerializer):
         return None
 
     def get_author_username(self, obj):
-        return obj.author.username
+        return obj.author.username if obj.author else None
 
     def get_images(self, obj):
         images = obj.images.all()
@@ -80,10 +84,29 @@ class PostSerializer(serializers.ModelSerializer):
         return [PostDocumentSerializer(doc, context={'request': request}).data for doc in documents]
 
 class RegisterSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=User._meta.get_field('username').max_length,
+        trim_whitespace=True,
+        validators=[UnicodeUsernameValidator()],
+    )
+    email = serializers.EmailField(required=True, allow_blank=False)
+    first_name = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=User._meta.get_field('first_name').max_length,
+        trim_whitespace=True,
+    )
+    last_name = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=User._meta.get_field('last_name').max_length,
+        trim_whitespace=True,
+    )
     password = serializers.CharField(
         write_only=True,
         required=True,
-        validators=[validate_password]
     )
 
     password2 = serializers.CharField(
@@ -100,38 +123,73 @@ class RegisterSerializer(serializers.ModelSerializer):
             'username', 'password', 'password2', 'email', 
             'first_name', 'last_name', 'captcha_answer'
         )
-        extra_kwargs = {
-            'first_name': {'required': True},
-            'last_name': {'required': True},
-            'email': {'required': True},
-        }
+    def validate_username(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Потребителското име е задължително.")
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError("Това потребителско име вече е заето.")
+        return value
+
+    def validate_email(self, value):
+        email = User.objects.normalize_email(value).strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError(
+                "Вече съществува акаунт с този имейл адрес."
+            )
+        return email
 
     def validate(self, attrs):
         # 1. Проверка на паролите
         if attrs['password'] != attrs['password2']:
             raise serializers.ValidationError({"password": "Паролите не съвпадат."})
 
+        candidate = User(
+            username=attrs['username'],
+            email=attrs['email'],
+            first_name=attrs['first_name'],
+            last_name=attrs['last_name'],
+        )
+        try:
+            validate_password(attrs['password'], user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'password': exc.messages})
+
         # 2. Вземаме токена и Secret Key
         captcha_token = attrs.get('captcha_answer')
-        secret_key = "0x4AAAAAACoCbI9bzSF0MSGWHUtu8hrJBgs"
+        secret_key = getattr(settings, 'TURNSTILE_SECRET_KEY', '').strip()
+        verify_url = getattr(
+            settings,
+            'TURNSTILE_VERIFY_URL',
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+        )
+        if not secret_key:
+            raise serializers.ValidationError({
+                "captcha": "Защитата срещу ботове не е конфигурирана."
+            })
 
         # 3. Валидация през API-то на Cloudflare
         try:
+            request = self.context.get('request')
+            remote_ip = get_client_ip(request) if request else None
+            payload = {
+                'secret': secret_key,
+                'response': captcha_token,
+            }
+            if remote_ip:
+                payload['remoteip'] = remote_ip
             verify_response = requests.post(
-                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-                data={
-                    'secret': secret_key,
-                    'response': captcha_token,
-                },
-                timeout=5 # Добра практика е да има таймаут
+                verify_url,
+                data=payload,
+                timeout=5,
             )
-            
+            verify_response.raise_for_status()
             result = verify_response.json()
-            
+
             if not result.get('success'):
                 raise serializers.ValidationError({"captcha": "Неуспешна проверка за ботове. Опитайте пак."})
-                
-        except requests.exceptions.RequestException:
+
+        except (requests.exceptions.RequestException, ValueError):
             raise serializers.ValidationError({"captcha": "Грешка при връзка със защитната система."})
 
         # Премахваме помощните полета
@@ -140,18 +198,49 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        # Създаваме потребителя
-        user = User.objects.create(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            first_name=validated_data['first_name'],
-            last_name=validated_data['last_name']
-        )
-        user.set_password(validated_data['password'])
-        user.save()
+        # Serialize all account creation paths on the singleton settings row.
+        # This closes the gap between case-insensitive e-mail validation and
+        # insert even though Django's built-in User.email is not DB-unique.
+        try:
+            with transaction.atomic():
+                site_settings, _ = (
+                    SiteSettings.objects.select_for_update()
+                    .get_or_create(pk=1)
+                )
+                if not site_settings.enable_user_registration:
+                    raise serializers.ValidationError({
+                        'detail': "Регистрацията временно е деактивирана."
+                    })
+                if User.objects.filter(
+                    email__iexact=validated_data['email']
+                ).exists():
+                    raise serializers.ValidationError({
+                        'email': "Вече съществува акаунт с този имейл адрес."
+                    })
+                if User.objects.filter(
+                    username__iexact=validated_data['username']
+                ).exists():
+                    raise serializers.ValidationError({
+                        'username': "Това потребителско име вече е заето."
+                    })
+                user = User(
+                    username=validated_data['username'],
+                    email=validated_data['email'],
+                    first_name=validated_data['first_name'],
+                    last_name=validated_data['last_name']
+                )
+                user.set_password(validated_data['password'])
+                user.save()
 
-        # Създаваме свързания UserProfile
-        UserProfile.objects.get_or_create(user=user)
+                # Създаваме свързания UserProfile
+                UserProfile.objects.get_or_create(user=user)
+        except IntegrityError:
+            raise serializers.ValidationError({
+                'detail': (
+                    "Акаунт с тези данни вече съществува. "
+                    "Проверете потребителското име и имейла."
+                )
+            })
 
         return user
 
@@ -162,7 +251,9 @@ class PasswordChangeSerializer(serializers.Serializer):
     new_password_confirm = serializers.CharField(style={"input_type": "password"}, required=True)
 
     def validate_new_password(self, value):
-        validate_password(value)
+        request = self.context.get('request')
+        user = request.user if request else None
+        validate_password(value, user=user)
         return value
 
     def validate(self, data):
@@ -173,9 +264,16 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 class UsernameChangeSerializer(serializers.Serializer):
     current_password = serializers.CharField(style={"input_type": "password"}, required=True)
-    new_username = serializers.CharField(required=True)
+    new_username = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=User._meta.get_field('username').max_length,
+        trim_whitespace=True,
+        validators=[UnicodeUsernameValidator()],
+    )
 
     def validate_new_username(self, value):
+        value = value.strip()
         user = self.context['request'].user
         if User.objects.exclude(pk=user.pk).filter(username__iexact=value).exists():
             raise serializers.ValidationError("Това потребителско име вече е заето.")
@@ -186,7 +284,13 @@ class UsernameChangeSerializer(serializers.Serializer):
 
 
 class CommentSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(source='user.username', read_only=True)
+    content = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=5000,
+        trim_whitespace=True,
+    )
+    username = serializers.SerializerMethodField()
     post_id = serializers.IntegerField(source='post.id', read_only=True)
     parent_id = serializers.PrimaryKeyRelatedField(source='parent', read_only=True)
     parent_username = serializers.SerializerMethodField()
@@ -202,13 +306,27 @@ class CommentSerializer(serializers.ModelSerializer):
 
     def get_parent_username(self, obj):
         if obj.parent:
-            return obj.parent.user.username
+            return obj.parent.user.username if obj.parent.user else None
         return None
+
+    def get_username(self, obj):
+        return obj.user.username if obj.user else None
 
     def get_reply_count(self, obj):
         if obj.parent is None:
+            annotated_count = getattr(obj, 'reply_count_value', None)
+            if annotated_count is not None:
+                return annotated_count
             return obj.replies.count()
         return 0
+
+    def validate_parent(self, parent):
+        post = self.context.get('post')
+        if post and parent and parent.post_id != post.pk:
+            raise serializers.ValidationError(
+                "Родителският коментар не принадлежи към тази публикация."
+            )
+        return parent
 
     def create(self, validated_data):
         parent = validated_data.get('parent')
@@ -233,7 +351,7 @@ class PollOptionSerializer(serializers.ModelSerializer):
 
 class PollQuestionSerializer(serializers.ModelSerializer):
     options = PollOptionSerializer(many=True, read_only=True)
-    id = serializers.IntegerField(read_only=False)
+    id = serializers.IntegerField(read_only=True)
     image_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -250,6 +368,19 @@ class PollAnswerSerializer(serializers.ModelSerializer):
         model = PollAnswer
         fields = ['question', 'selected_option']
 
+    def validate(self, attrs):
+        question = attrs.get('question')
+        selected_option = attrs.get('selected_option')
+        if (
+            question
+            and selected_option
+            and selected_option.question_id != question.pk
+        ):
+            raise serializers.ValidationError({
+                'selected_option': "Избраната опция не принадлежи към въпроса."
+            })
+        return attrs
+
 
 class UserPollStatusSerializer(serializers.Serializer):
     is_locked = serializers.BooleanField()
@@ -258,28 +389,20 @@ class UserPollStatusSerializer(serializers.Serializer):
     question = PollQuestionSerializer(allow_null=True)
 
 
-class LeaderboardEntrySerializer(serializers.ModelSerializer):
-    correct_answers = serializers.IntegerField()
-
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'correct_answers']
-
-
-class RecentParticipantSerializer(serializers.ModelSerializer):
-    last_answered = serializers.DateTimeField()
-
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'last_answered']
-
-
 class PollStatisticsSerializer(serializers.Serializer):
-    leaderboard = LeaderboardEntrySerializer(many=True)
-    recent_participants = RecentParticipantSerializer(many=True)
+    total_participants = serializers.IntegerField()
+    total_answers = serializers.IntegerField()
+    correct_answers = serializers.IntegerField()
 
 
 class ContactSubmissionSerializer(serializers.ModelSerializer):
+    message = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=5000,
+        trim_whitespace=True,
+    )
+
     class Meta:
         model = ContactSubmission
         fields = ['name', 'email', 'message', 'reason']
@@ -293,7 +416,9 @@ class NotificationSerializer(serializers.ModelSerializer):
         read_only_fields = ['html_text']
 
     def get_html_text(self, obj):
-        return mark_safe(markdown.markdown(obj.text, extensions=['nl2br']))
+        # Notifications are rendered as escaped plaintext. Only line breaks are
+        # converted, so Markdown cannot synthesize javascript: links.
+        return '<br>'.join(escape(obj.text).splitlines())
 
 
 class EventSerializer(serializers.ModelSerializer):
@@ -320,8 +445,20 @@ class PrivacyPolicySerializer(serializers.ModelSerializer):
 
 
 class BellSongSuggestionSerializer(serializers.ModelSerializer):
-    title = serializers.CharField(required=True)
-    user_username = serializers.CharField(source='user.username', read_only=True)
+    title = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=255,
+        trim_whitespace=True,
+    )
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        max_length=1000,
+        trim_whitespace=True,
+    )
+    user_username = serializers.SerializerMethodField()
     has_voted = serializers.SerializerMethodField()
 
     class Meta:
@@ -330,10 +467,19 @@ class BellSongSuggestionSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'status', 'submitted_at', 'votes', 'user_username', 'has_voted']
 
     def get_has_voted(self, obj):
-        user = self.context['request'].user
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user:
+            return False
         if user.is_authenticated:
+            annotated = getattr(obj, 'user_has_voted', None)
+            if annotated is not None:
+                return annotated
             return obj.voted_by.filter(id=user.id).exists()
         return False
+
+    def get_user_username(self, obj):
+        return obj.user.username if obj.user else None
 
 
     def validate_link(self, value):
@@ -348,7 +494,20 @@ class BellSongSuggestionSerializer(serializers.ModelSerializer):
 
 
 class MemeOfWeekSerializer(serializers.ModelSerializer):
-    user_username = serializers.CharField(source='user.username', read_only=True)
+    title = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        allow_null=False,
+        max_length=100,
+        trim_whitespace=True,
+    )
+    image = serializers.ImageField(
+        write_only=True,
+        required=True,
+        allow_null=False,
+        validators=[validate_meme_image_size],
+    )
+    user_username = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     has_voted = serializers.SerializerMethodField()
 
@@ -356,26 +515,30 @@ class MemeOfWeekSerializer(serializers.ModelSerializer):
         model = MemeOfWeek
         fields = ['id', 'title', 'image', 'image_url', 'user_username', 'created_at', 'is_approved', 'votes', 'has_voted']
         read_only_fields = ['id', 'user_username', 'created_at', 'image_url', 'is_approved', 'votes', 'has_voted']
-        # 'image' is write-only, the URL is for reading
-        extra_kwargs = {
-            'image': {'write_only': True, 'required': True},
-            'title': {'required': True}
-        }
 
     def get_image_url(self, obj):
-        if obj.image and hasattr(obj.image, 'url'):
-            return obj.image.url
+        if obj.pk and obj.image:
+            return reverse('meme-image', kwargs={'pk': obj.pk})
         return None
 
     def get_has_voted(self, obj):
-        user = self.context['request'].user
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user:
+            return False
         if user.is_authenticated:
+            annotated = getattr(obj, 'user_has_voted', None)
+            if annotated is not None:
+                return annotated
             return obj.voted_by.filter(id=user.id).exists()
         return False
 
+    def get_user_username(self, obj):
+        return obj.user.username if obj.user else None
+
 class ConsentRecordSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Cookie.ConsentRecord
+        model = ConsentRecord
         fields = ['consent_status', 'policy_version']
         read_only_fields = ['id', 'timestamp', 'user', 'ip_address']
 
@@ -387,12 +550,24 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
 
 
 class MyTokenObtainPairView(TokenObtainPairView):
+    throttle_scope = 'login'
+
     def post(self, request, *args, **kwargs):
         # 1. Взимаме токена от React (captcha_answer)
         captcha_token = request.data.get('captcha_answer')
         
-        # Твоят таен ключ (същият като в RegisterSerializer)
-        secret_key = "0x4AAAAAACoCbI9bzSF0MSGWHUtu8hrJBgs"
+        secret_key = getattr(settings, 'TURNSTILE_SECRET_KEY', '').strip()
+        verify_url = getattr(
+            settings,
+            'TURNSTILE_VERIFY_URL',
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+        )
+
+        if not secret_key:
+            return Response(
+                {"detail": "Входът временно не е достъпен."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         if not captcha_token:
             return Response(
@@ -402,21 +577,25 @@ class MyTokenObtainPairView(TokenObtainPairView):
 
         # 2. Проверка към Cloudflare
         try:
+            payload = {
+                'secret': secret_key,
+                'response': captcha_token,
+            }
+            remote_ip = get_client_ip(request)
+            if remote_ip:
+                payload['remoteip'] = remote_ip
             verify_res = requests.post(
-                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-                data={
-                    'secret': secret_key,
-                    'response': captcha_token,
-                },
+                verify_url,
+                data=payload,
                 timeout=5
             )
-            
+            verify_res.raise_for_status()
             if not verify_res.json().get('success'):
                 return Response(
                     {"detail": "Защитата засича автоматизирана дейност (Бот)."}, 
                     status=status.HTTP_403_FORBIDDEN
                 )
-        except requests.exceptions.RequestException:
+        except (requests.exceptions.RequestException, ValueError):
             return Response(
                 {"detail": "Грешка при връзка със защитната система."}, 
                 status=status.HTTP_503_SERVICE_UNAVAILABLE

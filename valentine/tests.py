@@ -1,12 +1,14 @@
 import re
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone as datetime_timezone
 from unittest.mock import patch
 
 from django.contrib.admin.sites import AdminSite
 from django.contrib.auth import get_user_model
-from django.core.cache import cache
+from django.contrib.auth.models import Permission
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError, transaction
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -14,23 +16,36 @@ from django.utils import timezone
 from .admin import (
     ArchivedValentinesAdmin,
     ProfileAdmin,
+    RegisterAdmin,
     ValentineCampaignAdmin,
     ValentinesAdmin,
 )
 from .models import (
     ArchivedValentine,
     Profile,
+    Register,
     Settings,
     ValentineCampaign,
+    ValentineLoginAttempt,
+    ValentineModerationEvent,
     Valenitines,
 )
+from .profile_import import (
+    ProfileImportError,
+    apply_profile_import,
+    build_profile_import_plan,
+)
 from .profile_pdf import group_profiles_by_class
+from .views import (
+    LOGIN_STATUS_INVALID,
+    _authenticate_login,
+    _client_ip,
+)
 
 
 @override_settings(DEBUG=False)
 class ValentinePlatformTests(TestCase):
     def setUp(self):
-        cache.clear()
         self.sender = Profile.objects.create(
             code="SEND01",
             first_name="Иван",
@@ -68,6 +83,16 @@ class ValentinePlatformTests(TestCase):
 
     def login(self, code="SEND01"):
         return self.client.post(reverse("valentine:login"), {"code": code})
+
+    def reveal_campaign(self):
+        self.platform_settings.sending_ends_at = (
+            timezone.now() - timedelta(minutes=2)
+        )
+        self.platform_settings.reveal_at = (
+            timezone.now() - timedelta(minutes=1)
+        )
+        self.platform_settings.reveal_date = timezone.localdate()
+        self.platform_settings.save()
 
     def test_login_creates_hardened_cookie(self):
         response = self.login()
@@ -243,6 +268,7 @@ class ValentinePlatformTests(TestCase):
             campaign=self.campaign,
             content="Чуждо",
         )
+        self.reveal_campaign()
         self.login()
 
         response = self.client.post(
@@ -259,6 +285,33 @@ class ValentinePlatformTests(TestCase):
             {"reason": "other"},
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_message_cannot_be_reported_before_reveal(self):
+        received = Valenitines.objects.create(
+            profile=self.sender,
+            sender_profile=self.recipient,
+            campaign=self.campaign,
+            content="Все още запечатано",
+        )
+        self.login()
+
+        response = self.client.post(
+            reverse("valentine:report", args=(received.pk,)),
+            {"reason": Valenitines.ReportReason.OTHER},
+        )
+
+        self.assertRedirects(response, reverse("valentine:inbox"))
+        received.refresh_from_db()
+        self.assertEqual(
+            received.moderation_status,
+            Valenitines.ModerationStatus.CLEAR,
+        )
+        self.assertFalse(received.is_reported)
+        self.assertFalse(
+            ValentineModerationEvent.objects.filter(
+                dispatch_id=received.dispatch_id
+            ).exists()
+        )
 
     def test_group_message_reaches_everyone_in_selected_class(self):
         classmate = Profile.objects.create(
@@ -505,6 +558,7 @@ class ValentinePlatformTests(TestCase):
                 "_selected_action": selected_profiles,
                 "select_across": "0",
                 "apply": "yes",
+                "target_academic_year_start": "2026",
             },
         )
         self.assertEqual(confirmed.status_code, 302)
@@ -948,12 +1002,32 @@ class ValentinePlatformTests(TestCase):
         self.assertNotIn(archived_clear.pk, archive_ids)
         self.assertNotIn(current_pending.pk, archive_ids)
 
+        archived_campaign.is_archived = False
+        archived_campaign.archived_at = None
+        archived_campaign.save(
+            update_fields=("is_archived", "archived_at")
+        )
+        restored_campaign_ids = set(
+            archive_admin.get_queryset(request).values_list("pk", flat=True)
+        )
+        self.assertIn(archived_pending.pk, restored_campaign_ids)
+
     def test_activating_new_campaign_archives_previous_one(self):
         next_campaign = ValentineCampaign.objects.create(
             year=self.campaign.year + 1,
         )
         request = RequestFactory().post(
-            "/admin/valentine/valentinecampaign/"
+            "/admin/valentine/valentinecampaign/",
+            {
+                "apply": "yes",
+                "sending_starts_at": (
+                    f"{next_campaign.year}-01-15T08:00"
+                ),
+                "sending_ends_at": (
+                    f"{next_campaign.year}-02-13T23:59"
+                ),
+                "reveal_at": f"{next_campaign.year}-02-14T08:00",
+            },
         )
         request.user = get_user_model().objects.create_superuser(
             username="campaign-admin",
@@ -1117,3 +1191,679 @@ class ValentinePlatformTests(TestCase):
         self.assertContains(response, "data-download-card")
         self.assertContains(response, "data-download-image")
         self.assertContains(response, "Изтегли като снимка")
+
+    def test_group_report_and_admin_moderation_apply_to_entire_dispatch(self):
+        dispatch_id = uuid.uuid4()
+        first = Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            dispatch_id=dispatch_id,
+            audience_type=Valenitines.AudienceType.CLASS,
+            audience_label="10Б клас",
+            content="Една групова пратка",
+        )
+        second = Valenitines.objects.create(
+            profile=self.same_name_recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            dispatch_id=dispatch_id,
+            audience_type=Valenitines.AudienceType.CLASS,
+            audience_label="10Б клас",
+            content="Една групова пратка",
+        )
+        self.reveal_campaign()
+        self.login(code=self.recipient.code)
+
+        response = self.client.post(
+            reverse("valentine:report", args=(first.pk,)),
+            {"reason": Valenitines.ReportReason.HARASSMENT},
+        )
+
+        self.assertRedirects(response, reverse("valentine:inbox"))
+        deliveries = Valenitines.objects.filter(dispatch_id=dispatch_id)
+        self.assertEqual(
+            deliveries.filter(
+                moderation_status=Valenitines.ModerationStatus.PENDING,
+                is_reported=True,
+                report_reason=Valenitines.ReportReason.HARASSMENT,
+            ).count(),
+            2,
+        )
+        self.assertEqual(
+            ValentineModerationEvent.objects.filter(
+                dispatch_id=dispatch_id,
+                event_type=(
+                    ValentineModerationEvent.EventType.REPORTED
+                ),
+                reporter_profile=self.recipient,
+            ).count(),
+            1,
+        )
+
+        moderator = get_user_model().objects.create_superuser(
+            username="dispatch-moderator",
+            email="dispatch-moderator@example.com",
+            password="test-password",
+        )
+        request = RequestFactory().post("/admin/")
+        request.user = moderator
+        model_admin = ValentinesAdmin(Valenitines, AdminSite())
+        with patch.object(model_admin, "message_user"):
+            model_admin.hide_reported(
+                request,
+                Valenitines.objects.filter(pk=first.pk),
+            )
+        self.assertEqual(
+            deliveries.filter(
+                moderation_status=Valenitines.ModerationStatus.HIDDEN,
+                is_reported=True,
+            ).count(),
+            2,
+        )
+
+        with patch.object(model_admin, "message_user"):
+            model_admin.restore_messages(
+                request,
+                Valenitines.objects.filter(pk=second.pk),
+            )
+        self.assertEqual(
+            deliveries.filter(
+                moderation_status=Valenitines.ModerationStatus.RESTORED,
+                is_reported=False,
+            ).count(),
+            2,
+        )
+        self.assertEqual(
+            ValentineModerationEvent.objects.filter(
+                dispatch_id=dispatch_id,
+                moderator=moderator,
+            ).count(),
+            2,
+        )
+
+        self.client.post(reverse("valentine:logout"))
+        self.login(code=self.same_name_recipient.code)
+        repeat = self.client.post(
+            reverse("valentine:report", args=(second.pk,)),
+            {"reason": Valenitines.ReportReason.SPAM},
+        )
+        self.assertRedirects(repeat, reverse("valentine:inbox"))
+        self.assertEqual(
+            deliveries.filter(
+                moderation_status=Valenitines.ModerationStatus.RESTORED,
+                is_reported=False,
+            ).count(),
+            2,
+        )
+        first.refresh_from_db()
+        self.assertEqual(
+            first.report_reason,
+            Valenitines.ReportReason.HARASSMENT,
+        )
+
+    def test_outbox_only_offers_edit_for_unmoderated_dispatches(self):
+        editable = Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            content="Може да се редактира",
+        )
+        moderated = Valenitines.objects.create(
+            profile=self.same_name_recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            content="Не може да се редактира",
+            is_reported=True,
+            report_reason=Valenitines.ReportReason.OTHER,
+            reported_at=timezone.now(),
+            moderation_status=Valenitines.ModerationStatus.PENDING,
+        )
+        self.login()
+
+        response = self.client.get(reverse("valentine:outbox"))
+
+        self.assertContains(
+            response,
+            reverse("valentine:edit", args=(editable.dispatch_id,)),
+        )
+        self.assertNotContains(
+            response,
+            reverse("valentine:edit", args=(moderated.dispatch_id,)),
+        )
+
+    def test_home_does_not_embed_the_full_recipient_directory(self):
+        extra = Profile.objects.create(
+            code="PRIV01",
+            first_name="Скрито",
+            last_name="ИмеВДиректорията",
+            clas="10B",
+            email="private-directory@example.com",
+        )
+        dispatch_id = uuid.uuid4()
+        Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            dispatch_id=dispatch_id,
+            audience_type=Valenitines.AudienceType.CLASS,
+            content="Групова",
+        )
+        Valenitines.objects.create(
+            profile=extra,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            dispatch_id=dispatch_id,
+            audience_type=Valenitines.AudienceType.CLASS,
+            content="Групова",
+        )
+        self.login()
+
+        response = self.client.get(reverse("valentine:home"))
+
+        self.assertNotContains(response, extra.full_name)
+        self.assertNotContains(response, self.recipient.full_name)
+        self.assertEqual(response.context["total_sent"], 1)
+        self.assertContains(response, "пратки в училището")
+
+    def test_profile_class_is_validated_and_normalized_by_the_model(self):
+        cyrillic = Profile.objects.create(
+            code="VALID1",
+            first_name="Валиден",
+            last_name="Клас",
+            clas="8Б",
+        )
+        self.assertEqual(cyrillic.clas, "8B")
+
+        with self.assertRaises(ValidationError):
+            Profile.objects.create(
+                code="BAD001",
+                first_name="Невалиден",
+                last_name="Клас",
+                clas="13A",
+            )
+
+    def test_csv_never_updates_a_profile_by_name_only(self):
+        row = {
+            "row_number": 2,
+            "first_name": self.recipient.first_name,
+            "last_name": self.recipient.last_name,
+            "clas": "9A",
+            "email": "",
+            "code": "",
+        }
+
+        plans, errors = build_profile_import_plan([row])
+
+        self.assertFalse(errors)
+        self.assertEqual(plans[0]["action"], "create")
+        apply_profile_import([row], 2026)
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.clas, "10B")
+        self.assertEqual(
+            Profile.objects.filter(
+                first_name=self.recipient.first_name,
+                last_name=self.recipient.last_name,
+            ).count(),
+            3,
+        )
+
+    def test_csv_requires_exact_code_when_email_is_not_unique(self):
+        Profile.objects.create(
+            code="DUPL01",
+            first_name="Друг",
+            last_name="Профил",
+            clas="9A",
+            email=self.recipient.email,
+        )
+        row = {
+            "row_number": 2,
+            "first_name": "Ново",
+            "last_name": "Име",
+            "clas": "9B",
+            "email": self.recipient.email,
+            "code": "",
+        }
+
+        _plans, errors = build_profile_import_plan([row])
+
+        self.assertTrue(errors)
+        self.assertIn("няколко профила", errors[0])
+        with self.assertRaises(ProfileImportError):
+            apply_profile_import([row], 2026)
+
+    def test_csv_add_permission_cannot_update_or_reveal_existing_code(self):
+        user = get_user_model().objects.create_user(
+            username="limited-importer",
+            password="test-password",
+            is_staff=True,
+        )
+        user.user_permissions.add(
+            Permission.objects.get(
+                codename="add_profile",
+                content_type__app_label="valentine",
+            ),
+            Permission.objects.get(
+                codename="view_profile",
+                content_type__app_label="valentine",
+            ),
+        )
+        self.client.force_login(user)
+        upload = SimpleUploadedFile(
+            "students.csv",
+            (
+                "first_name,last_name,class,email,code\n"
+                "Променено,Име,8A,,SEND01\n"
+            ).encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("admin:valentine_profile_import_csv"),
+            {
+                "academic_year_start": "2026",
+                "csv_file": upload,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "Нямаш право да обновяваш или възстановяваш",
+        )
+        self.assertNotContains(response, "SEND01")
+        self.sender.refresh_from_db()
+        self.assertEqual(self.sender.first_name, "Иван")
+
+        changelist = self.client.get(
+            reverse("admin:valentine_profile_changelist")
+        )
+        self.assertNotContains(changelist, "Всички кодове в PDF")
+        pdf = self.client.get(
+            reverse("admin:valentine_profile_active_codes_pdf")
+        )
+        self.assertEqual(pdf.status_code, 403)
+
+    def test_profile_code_export_requires_dedicated_permission(self):
+        user = get_user_model().objects.create_user(
+            username="code-exporter",
+            password="test-password",
+            is_staff=True,
+        )
+        user.user_permissions.add(
+            Permission.objects.get(
+                codename="view_profile",
+                content_type__app_label="valentine",
+            ),
+            Permission.objects.get(
+                codename="view_profile_codes",
+                content_type__app_label="valentine",
+            ),
+        )
+        self.client.force_login(user)
+
+        changelist = self.client.get(
+            reverse("admin:valentine_profile_changelist")
+        )
+        self.assertContains(changelist, "Всички кодове в PDF")
+        pdf = self.client.get(
+            reverse("admin:valentine_profile_active_codes_pdf")
+        )
+        self.assertEqual(pdf.status_code, 200)
+
+    def test_class_promotion_cannot_repeat_for_same_target_year(self):
+        source_year = self.recipient.academic_year_start
+        target_year = source_year + 1
+        admin_user = get_user_model().objects.create_superuser(
+            username="repeat-promotion-admin",
+            email="repeat-promotion@example.com",
+            password="test-password",
+        )
+        request = RequestFactory().post(
+            "/admin/valentine/profile/",
+            {
+                "apply": "yes",
+                "target_academic_year_start": str(target_year),
+            },
+        )
+        request.user = admin_user
+        model_admin = ProfileAdmin(Profile, AdminSite())
+        queryset = Profile.objects.filter(pk=self.recipient.pk)
+
+        with patch.object(model_admin, "message_user"):
+            model_admin.promote_to_next_academic_year(request, queryset)
+            model_admin.promote_to_next_academic_year(request, queryset)
+
+        self.recipient.refresh_from_db()
+        self.assertEqual(self.recipient.clas, "11B")
+        self.assertEqual(
+            self.recipient.academic_year_start,
+            target_year,
+        )
+
+    def test_campaign_activation_rejects_dates_from_another_year(self):
+        next_campaign = ValentineCampaign.objects.create(
+            year=self.campaign.year + 1,
+        )
+        request = RequestFactory().post(
+            "/admin/valentine/valentinecampaign/",
+            {
+                "apply": "yes",
+                "sending_starts_at": (
+                    f"{next_campaign.year - 1}-01-15T08:00"
+                ),
+                "sending_ends_at": (
+                    f"{next_campaign.year - 1}-02-13T23:59"
+                ),
+                "reveal_at": (
+                    f"{next_campaign.year - 1}-02-14T08:00"
+                ),
+            },
+        )
+        request.user = get_user_model().objects.create_superuser(
+            username="invalid-campaign-admin",
+            email="invalid-campaign@example.com",
+            password="test-password",
+        )
+        model_admin = ValentineCampaignAdmin(
+            ValentineCampaign,
+            AdminSite(),
+        )
+
+        response = model_admin.make_active(
+            request,
+            ValentineCampaign.objects.filter(pk=next_campaign.pk),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context_data["activation_form"].errors)
+        self.platform_settings.refresh_from_db()
+        self.assertEqual(
+            self.platform_settings.active_campaign,
+            self.campaign,
+        )
+
+    def test_settings_reveal_year_must_match_active_campaign(self):
+        wrong_year = self.campaign.year + 1
+        self.platform_settings.reveal_at = timezone.make_aware(
+            datetime(wrong_year, 2, 14, 8, 0),
+            timezone.get_current_timezone(),
+        )
+        self.platform_settings.reveal_date = date(wrong_year, 2, 14)
+
+        with self.assertRaisesMessage(
+            ValidationError,
+            "Годината на разкриване трябва да съвпада",
+        ):
+            self.platform_settings.save()
+
+    @override_settings(TIME_ZONE="Europe/Sofia")
+    def test_campaign_year_uses_local_reveal_time_not_utc_year(self):
+        target_year = self.campaign.year + 2
+        self.platform_settings.active_campaign = None
+        self.platform_settings.sending_starts_at = None
+        self.platform_settings.sending_ends_at = None
+        self.platform_settings.reveal_at = datetime(
+            target_year - 1,
+            12,
+            31,
+            22,
+            30,
+            tzinfo=datetime_timezone.utc,
+        )
+        self.platform_settings.reveal_date = date(target_year, 1, 1)
+        self.platform_settings.save()
+
+        campaign = self.platform_settings.ensure_active_campaign()
+
+        self.assertEqual(campaign.year, target_year)
+
+    def test_settings_singleton_and_admin_add_permission(self):
+        with self.assertRaises(ValidationError):
+            Settings.objects.create(
+                reveal_date=date.today() + timedelta(days=10),
+            )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Settings.objects.bulk_create([
+                Settings(
+                    singleton_key="other",
+                    reveal_date=date.today() + timedelta(days=10),
+                )
+            ])
+
+        user = get_user_model().objects.create_user(
+            username="settings-viewer",
+            password="test-password",
+            is_staff=True,
+        )
+        request = RequestFactory().get("/admin/valentine/settings/")
+        request.user = user
+        from .admin import SettingsAdmin
+
+        model_admin = SettingsAdmin(Settings, AdminSite())
+        with patch(
+            "valentine.admin.Settings.objects.exists",
+            return_value=False,
+        ):
+            self.assertFalse(model_admin.has_add_permission(request))
+
+        user.user_permissions.add(
+            Permission.objects.get(
+                codename="add_settings",
+                content_type__app_label="valentine",
+            )
+        )
+        user = get_user_model().objects.get(pk=user.pk)
+        request.user = user
+        with patch(
+            "valentine.admin.Settings.objects.exists",
+            return_value=False,
+        ):
+            self.assertTrue(model_admin.has_add_permission(request))
+
+    @override_settings(
+        VALENTINE_TRUSTED_PROXY_IPS=("10.0.0.10", "10.0.0.11")
+    )
+    def test_client_ip_only_trusts_forwarding_from_configured_proxies(self):
+        factory = RequestFactory()
+        untrusted = factory.get(
+            "/valentines/",
+            REMOTE_ADDR="203.0.113.20",
+            HTTP_X_FORWARDED_FOR="198.51.100.40",
+        )
+        trusted_chain = factory.get(
+            "/valentines/",
+            REMOTE_ADDR="10.0.0.10",
+            HTTP_X_FORWARDED_FOR=(
+                "192.0.2.99, 198.51.100.40, 10.0.0.11"
+            ),
+        )
+
+        self.assertEqual(_client_ip(untrusted), "203.0.113.20")
+        self.assertEqual(_client_ip(trusted_chain), "198.51.100.40")
+
+    def test_login_throttle_blocks_after_the_configured_failures(self):
+        for _index in range(5):
+            response = self.client.post(
+                reverse("valentine:login"),
+                {"code": "WRONG1"},
+                REMOTE_ADDR="192.0.2.10",
+            )
+            self.assertContains(response, "Кодът е невалиден")
+
+        blocked = self.client.post(
+            reverse("valentine:login"),
+            {"code": self.sender.code},
+            REMOTE_ADDR="192.0.2.10",
+        )
+
+        self.assertEqual(blocked.status_code, 200)
+        self.assertContains(blocked, "твърде много опити")
+        self.assertNotIn("authv", blocked.cookies)
+
+    def test_successful_login_does_not_reset_ip_failure_counter(self):
+        remote_addr = "192.0.2.11"
+        for _index in range(4):
+            self.client.post(
+                reverse("valentine:login"),
+                {"code": "WRONG1"},
+                REMOTE_ADDR=remote_addr,
+            )
+
+        successful = self.client.post(
+            reverse("valentine:login"),
+            {"code": self.sender.code},
+            REMOTE_ADDR=remote_addr,
+        )
+        self.assertRedirects(successful, reverse("valentine:home"))
+        self.client.post(
+            reverse("valentine:logout"),
+            REMOTE_ADDR=remote_addr,
+        )
+        fifth_failure = self.client.post(
+            reverse("valentine:login"),
+            {"code": "WRONG1"},
+            REMOTE_ADDR=remote_addr,
+        )
+        self.assertContains(fifth_failure, "Кодът е невалиден")
+
+        blocked = self.client.post(
+            reverse("valentine:login"),
+            {"code": "WRONG1"},
+            REMOTE_ADDR=remote_addr,
+        )
+        self.assertContains(blocked, "твърде много опити")
+
+    def test_login_failure_window_resets_after_ttl(self):
+        remote_addr = "192.0.2.12"
+        for _index in range(5):
+            self.client.post(
+                reverse("valentine:login"),
+                {"code": "WRONG1"},
+                REMOTE_ADDR=remote_addr,
+            )
+        counter = ValentineLoginAttempt.objects.get()
+        counter.window_expires = timezone.now() - timedelta(seconds=1)
+        counter.save(update_fields=("window_expires",))
+
+        response = self.client.post(
+            reverse("valentine:login"),
+            {"code": "WRONG1"},
+            REMOTE_ADDR=remote_addr,
+        )
+
+        self.assertContains(response, "Кодът е невалиден")
+        counter.refresh_from_db()
+        self.assertEqual(counter.attempts, 1)
+        self.assertGreater(counter.window_expires, timezone.now())
+
+    def test_login_counter_retries_a_simultaneous_first_create_race(self):
+        original_create = ValentineLoginAttempt.objects.create
+        calls = 0
+
+        def race_once(**kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise IntegrityError("simulated unique-key race")
+            return original_create(**kwargs)
+
+        with patch.object(
+            ValentineLoginAttempt.objects,
+            "create",
+            side_effect=race_once,
+        ):
+            status, session = _authenticate_login(
+                "WRONG1",
+                "first-create-race-key",
+            )
+
+        self.assertEqual(status, LOGIN_STATUS_INVALID)
+        self.assertIsNone(session)
+        self.assertEqual(calls, 2)
+        counter = ValentineLoginAttempt.objects.get(
+            client_key="first-create-race-key"
+        )
+        self.assertEqual(counter.attempts, 1)
+
+    def test_expired_session_delete_action_requires_delete_permission(self):
+        user = get_user_model().objects.create_user(
+            username="session-manager",
+            password="test-password",
+            is_staff=True,
+        )
+        user.user_permissions.add(
+            Permission.objects.get(
+                codename="view_register",
+                content_type__app_label="valentine",
+            ),
+            Permission.objects.get(
+                codename="change_register",
+                content_type__app_label="valentine",
+            ),
+        )
+        request = RequestFactory().get("/admin/valentine/register/")
+        request.user = user
+        model_admin = RegisterAdmin(Register, AdminSite())
+
+        self.assertNotIn(
+            "delete_expired_sessions",
+            model_admin.get_actions(request),
+        )
+
+    def test_profile_codes_are_not_admin_search_fields_without_permission(self):
+        user = get_user_model().objects.create_user(
+            username="search-without-codes",
+            password="test-password",
+            is_staff=True,
+        )
+        request = RequestFactory().get("/admin/")
+        request.user = user
+        register_admin = RegisterAdmin(Register, AdminSite())
+        valentine_admin = ValentinesAdmin(Valenitines, AdminSite())
+
+        self.assertNotIn(
+            "profile__code",
+            register_admin.get_search_fields(request),
+        )
+        self.assertNotIn(
+            "profile__code",
+            valentine_admin.get_search_fields(request),
+        )
+
+        user.user_permissions.add(
+            Permission.objects.get(
+                codename="view_profile_codes",
+                content_type__app_label="valentine",
+            )
+        )
+        request.user = get_user_model().objects.get(pk=user.pk)
+        self.assertIn(
+            "profile__code",
+            register_admin.get_search_fields(request),
+        )
+        self.assertIn(
+            "profile__code",
+            valentine_admin.get_search_fields(request),
+        )
+
+    def test_campaign_year_is_immutable_after_creation(self):
+        request = RequestFactory().get("/admin/")
+        request.user = get_user_model().objects.create_superuser(
+            username="immutable-campaign-year",
+            email="immutable-year@example.com",
+            password="test-password",
+        )
+        model_admin = ValentineCampaignAdmin(
+            ValentineCampaign,
+            AdminSite(),
+        )
+
+        self.assertNotIn(
+            "year",
+            model_admin.get_readonly_fields(request),
+        )
+        self.assertIn(
+            "year",
+            model_admin.get_readonly_fields(request, self.campaign),
+        )

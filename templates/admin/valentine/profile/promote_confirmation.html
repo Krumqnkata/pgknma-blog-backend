@@ -23,6 +23,21 @@
         <input type="hidden" name="apply" value="yes">
         <input type="hidden" name="select_across" value="0">
 
+        <div class="bg-white border border-base-200 mb-6 p-6 rounded-default shadow-xs dark:bg-base-900 dark:border-base-700">
+            {{ promotion_form.non_field_errors }}
+            <label class="block font-medium mb-2 text-sm"
+                   for="{{ promotion_form.target_academic_year_start.id_for_label }}">
+                {{ promotion_form.target_academic_year_start.label }}
+            </label>
+            {{ promotion_form.target_academic_year_start }}
+            {% if promotion_form.target_academic_year_start.help_text %}
+            <p class="mt-1 text-xs text-font-subtle-light dark:text-font-subtle-dark">
+                {{ promotion_form.target_academic_year_start.help_text }}
+            </p>
+            {% endif %}
+            {{ promotion_form.target_academic_year_start.errors }}
+        </div>
+
         {% for row in profiles %}
         <input type="hidden"
                name="{{ action_checkbox_name }}"

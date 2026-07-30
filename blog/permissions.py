@@ -1,4 +1,35 @@
 from rest_framework import permissions
+from rest_framework.exceptions import APIException
+
+
+class SiteUnderMaintenance(APIException):
+    status_code = 503
+    default_detail = "Сайтът временно е в режим на поддръжка."
+    default_code = 'site_maintenance'
+
+
+class SiteIsAvailable(permissions.BasePermission):
+    """Block non-staff API traffic while the global maintenance flag is active."""
+
+    message = "Сайтът временно е в режим на поддръжка."
+
+    def has_permission(self, request, view):
+        if request.user and request.user.is_authenticated and request.user.is_staff:
+            return True
+
+        # Import lazily so permission module loading cannot create an app-registry
+        # cycle during Django startup and migrations.
+        from .models import SiteSettings
+
+        site_settings = (
+            SiteSettings.objects.filter(pk=1)
+            .only('maintenance_mode')
+            .first()
+        )
+        if site_settings and site_settings.maintenance_mode:
+            raise SiteUnderMaintenance()
+        return True
+
 
 class IsOwner(permissions.BasePermission):
     """
@@ -11,4 +42,4 @@ class IsOwner(permissions.BasePermission):
             return True
 
         # Write permissions are only allowed to the owner of the content.
-        return obj.user == request.user
+        return bool(obj.user_id and obj.user_id == request.user.pk)

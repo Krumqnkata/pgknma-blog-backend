@@ -4,6 +4,7 @@ import unicodedata
 import uuid
 from datetime import datetime, time, timedelta
 
+from django.conf import settings as django_settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxLengthValidator
 from django.db import models
@@ -24,6 +25,11 @@ CLASS_CODE_TRANSLATION = str.maketrans(
         "\ufeff": None,
     }
 )
+VALID_STUDENT_CLASSES = {
+    f"{grade}{letter}"
+    for grade in range(1, 13)
+    for letter in "ABVG"
+}
 
 
 def normalize_class_code(value):
@@ -33,6 +39,15 @@ def normalize_class_code(value):
     normalized = unicodedata.normalize("NFKC", str(value))
     normalized = normalized.upper().translate(CLASS_CODE_TRANSLATION)
     return "".join(normalized.split())
+
+
+def validate_class_code(value):
+    """Accept teachers or Bulgarian school classes from 1A through 12G."""
+    normalized = normalize_class_code(value)
+    if normalized != "U" and normalized not in VALID_STUDENT_CLASSES:
+        raise ValidationError(
+            "Класът трябва да е между 1А и 12Г или „U“ за учител."
+        )
 
 
 def generate_unique_code():
@@ -100,10 +115,18 @@ class Profile(models.Model):
             f"{self.academic_year_start + 1}"
         )
 
+    def clean_fields(self, exclude=None):
+        # ModelForm runs field validation before ``clean()``, so normalize here.
+        self.clas = normalize_class_code(self.clas)
+        super().clean_fields(exclude=exclude)
+        if not exclude or "clas" not in exclude:
+            validate_class_code(self.clas)
+
     def save(self, *args, **kwargs):
         self.clas = normalize_class_code(self.clas)
         if not self.code:
             self.code = generate_unique_code()
+        self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -113,6 +136,12 @@ class Profile(models.Model):
         ordering = ("clas", "first_name", "last_name")
         verbose_name = "Valentine профил"
         verbose_name_plural = "Valentine профили"
+        permissions = (
+            (
+                "view_profile_codes",
+                "Може да вижда и експортира Valentine кодове",
+            ),
+        )
 
 
 class Register(models.Model):
@@ -146,6 +175,34 @@ class Register(models.Model):
         ordering = ("-created_at",)
         verbose_name = "Valentine сесия"
         verbose_name_plural = "Valentine сесии"
+
+
+class ValentineLoginAttempt(models.Model):
+    client_key = models.CharField(
+        max_length=24,
+        unique=True,
+        verbose_name="Хеш на клиент",
+    )
+    attempts = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Неуспешни опити",
+    )
+    window_expires = models.DateTimeField(
+        db_index=True,
+        verbose_name="Край на прозореца",
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Обновено на",
+    )
+
+    def __str__(self):
+        return f"{self.client_key} · {self.attempts} опита"
+
+    class Meta:
+        ordering = ("-updated_at",)
+        verbose_name = "Ограничение за Valentine вход"
+        verbose_name_plural = "Ограничения за Valentine вход"
 
 
 class ValentineCampaign(models.Model):
@@ -337,11 +394,88 @@ class Valenitines(models.Model):
 class ArchivedValentine(Valenitines):
     class Meta:
         proxy = True
-        verbose_name = "Архивирана валентинка"
-        verbose_name_plural = "Архивирани валентинки"
+        verbose_name = "Валентинка от минала кампания"
+        verbose_name_plural = "Валентинки от минали кампании"
+
+
+class ValentineModerationEvent(models.Model):
+    class EventType(models.TextChoices):
+        REPORTED = "reported", "Докладвано от получател"
+        HIDDEN = "hidden", "Скрито от модератор"
+        RESTORED = "restored", "Възстановено от модератор"
+
+    campaign = models.ForeignKey(
+        ValentineCampaign,
+        on_delete=models.PROTECT,
+        related_name="moderation_events",
+        verbose_name="Кампания",
+    )
+    dispatch_id = models.UUIDField(
+        db_index=True,
+        verbose_name="Пратка",
+    )
+    event_type = models.CharField(
+        max_length=20,
+        choices=EventType.choices,
+        verbose_name="Действие",
+    )
+    reporter_profile = models.ForeignKey(
+        Profile,
+        on_delete=models.PROTECT,
+        related_name="submitted_valentine_reports",
+        null=True,
+        blank=True,
+        verbose_name="Докладвал получател",
+    )
+    moderator = models.ForeignKey(
+        django_settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="valentine_moderation_events",
+        null=True,
+        blank=True,
+        verbose_name="Модератор",
+    )
+    reason = models.CharField(
+        max_length=20,
+        choices=Valenitines.ReportReason.choices,
+        blank=True,
+        verbose_name="Причина",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Дата",
+    )
+
+    def __str__(self):
+        return (
+            f"{self.get_event_type_display()} · "
+            f"{self.campaign} · {self.dispatch_id}"
+        )
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = "Събитие по модерация"
+        verbose_name_plural = "История на модерацията"
+        constraints = (
+            models.UniqueConstraint(
+                fields=(
+                    "campaign",
+                    "dispatch_id",
+                    "reporter_profile",
+                    "event_type",
+                ),
+                name="unique_recipient_report_per_dispatch",
+            ),
+        )
 
 
 class Settings(models.Model):
+    singleton_key = models.CharField(
+        max_length=20,
+        default="default",
+        unique=True,
+        editable=False,
+    )
     active_campaign = models.ForeignKey(
         ValentineCampaign,
         on_delete=models.PROTECT,
@@ -396,6 +530,21 @@ class Settings(models.Model):
             raise ValidationError(
                 "Архивирана кампания не може да бъде активна."
             )
+        if self.active_campaign_id:
+            effective_reveal_at = self.get_reveal_at()
+            if timezone.is_naive(effective_reveal_at):
+                effective_reveal_at = timezone.make_aware(
+                    effective_reveal_at,
+                    timezone.get_current_timezone(),
+                )
+            if (
+                timezone.localtime(effective_reveal_at).year
+                != self.active_campaign.year
+            ):
+                raise ValidationError(
+                    "Годината на разкриване трябва да съвпада с "
+                    "годината на активната кампания."
+                )
         if (
             self.sending_starts_at
             and self.sending_ends_at
@@ -433,7 +582,12 @@ class Settings(models.Model):
             )
 
     def save(self, *args, **kwargs):
-        if not self.pk and Settings.objects.exists():
+        self.singleton_key = "default"
+        if (
+            not self.pk
+            and Settings.objects.filter(singleton_key=self.singleton_key)
+            .exists()
+        ):
             raise ValidationError("Може да има само един Valentine конфигурационен запис.")
         self.full_clean()
         return super().save(*args, **kwargs)
@@ -447,7 +601,13 @@ class Settings(models.Model):
     def ensure_active_campaign(self):
         if self.active_campaign_id:
             return self.active_campaign
-        year = self.get_reveal_at().year
+        reveal_at = self.get_reveal_at()
+        if timezone.is_naive(reveal_at):
+            reveal_at = timezone.make_aware(
+                reveal_at,
+                timezone.get_current_timezone(),
+            )
+        year = timezone.localtime(reveal_at).year
         campaign, _ = ValentineCampaign.objects.get_or_create(
             year=year,
             defaults={"name": f"Valentine {year}"},
@@ -483,3 +643,9 @@ class Settings(models.Model):
     class Meta:
         verbose_name = "Настройки"
         verbose_name_plural = "Настройки"
+        constraints = (
+            models.CheckConstraint(
+                condition=models.Q(singleton_key="default"),
+                name="valentine_settings_singleton_key",
+            ),
+        )

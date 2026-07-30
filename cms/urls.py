@@ -16,12 +16,11 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,)
+from rest_framework_simplejwt.views import TokenRefreshView
 from django.views.generic.base import RedirectView
 from valentine import views
-from blog.views import hqs
+from blog.serializer import MyTokenObtainPairView
+from blog.views import blocked_meme_media, hqs
 from django.contrib.sitemaps.views import sitemap
 from blog.sitemaps import PostSitemap, StaticSitemap
 
@@ -37,8 +36,17 @@ urlpatterns = [
     path('api/', include('blog.urls')),
 
     # Пътища за автентикация с JWT
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/auth/token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+
+    # Meme files are served only through the authorization-aware API endpoint.
+    # These patterns must remain before the DEBUG static-media patterns below.
+    path('files/memes/', blocked_meme_media, name='blocked-meme-media-root'),
+    path(
+        'files/memes/<path:media_path>',
+        blocked_meme_media,
+        name='blocked-meme-media',
+    ),
 
     path('valentines/', include(('valentine.urls', 'valentine'), namespace='valentine')),
     path('hqs/<str:video_name>/', hqs, name='video'),

@@ -1,14 +1,14 @@
 import hashlib
+import ipaddress
 import uuid
 from datetime import date, timedelta
 from functools import wraps
 
 from django.conf import settings as django_settings
 from django.contrib import messages
-from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.db.models import Count, Max
+from django.db import IntegrityError, OperationalError, transaction
+from django.db.models import Count, Max, Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -27,6 +27,8 @@ from .models import (
     Profile,
     Register,
     Settings,
+    ValentineLoginAttempt,
+    ValentineModerationEvent,
     Valenitines,
     normalize_class_code,
 )
@@ -35,6 +37,10 @@ from .models import (
 AUTH_COOKIE = "authv"
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_MAX_ATTEMPTS = 5
+LOGIN_DATABASE_RETRIES = 3
+LOGIN_STATUS_BLOCKED = "blocked"
+LOGIN_STATUS_INVALID = "invalid"
+LOGIN_STATUS_SUCCESS = "success"
 GROUP_AUDIENCE_TYPES = (
     Valenitines.AudienceType.CLASS,
     Valenitines.AudienceType.TEACHERS,
@@ -48,13 +54,18 @@ def _default_reveal_date():
 
 
 def get_platform_settings():
-    platform_settings = Settings.objects.first()
-    if platform_settings:
-        platform_settings.ensure_active_campaign()
-        return platform_settings
-    platform_settings = Settings.objects.create(
-        reveal_date=_default_reveal_date()
-    )
+    try:
+        platform_settings = Settings.objects.get(singleton_key="default")
+    except Settings.DoesNotExist:
+        try:
+            with transaction.atomic():
+                platform_settings = Settings.objects.create(
+                    singleton_key="default",
+                    reveal_date=_default_reveal_date(),
+                )
+        except IntegrityError:
+            # Another worker created the singleton after our first lookup.
+            platform_settings = Settings.objects.get(singleton_key="default")
     platform_settings.ensure_active_campaign()
     return platform_settings
 
@@ -84,9 +95,162 @@ def valentine_login_required(view_func):
     return wrapped
 
 
+def _normalized_ip(value):
+    try:
+        return str(ipaddress.ip_address(str(value or "").strip()))
+    except ValueError:
+        return ""
+
+
+def _trusted_proxy_ips():
+    configured = getattr(
+        django_settings,
+        "VALENTINE_TRUSTED_PROXY_IPS",
+        (),
+    )
+    if isinstance(configured, str):
+        configured = configured.split(",")
+    return {
+        normalized
+        for value in configured
+        if (normalized := _normalized_ip(value))
+    }
+
+
+def _client_ip(request):
+    remote_addr = _normalized_ip(request.META.get("REMOTE_ADDR"))
+    if not remote_addr:
+        return "unknown"
+    trusted_proxies = _trusted_proxy_ips()
+    if remote_addr not in trusted_proxies:
+        return remote_addr
+    forwarded = [
+        _normalized_ip(value)
+        for value in request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")
+    ]
+    if not forwarded or any(not value for value in forwarded):
+        return remote_addr
+    # Walk from the trusted application-facing proxy towards the client.
+    for candidate in reversed(forwarded):
+        if candidate not in trusted_proxies:
+            return candidate
+    return forwarded[0]
+
+
 def _client_key(request):
-    raw_ip = request.META.get("REMOTE_ADDR", "unknown")
+    raw_ip = _client_ip(request)
     return hashlib.sha256(raw_ip.encode("utf-8")).hexdigest()[:24]
+
+
+def _login_limit():
+    try:
+        configured = int(
+            getattr(
+                django_settings,
+                "VALENTINE_LOGIN_MAX_ATTEMPTS",
+                LOGIN_MAX_ATTEMPTS,
+            )
+        )
+    except (TypeError, ValueError):
+        configured = LOGIN_MAX_ATTEMPTS
+    return max(1, configured)
+
+
+def _login_window():
+    try:
+        configured = int(
+            getattr(
+                django_settings,
+                "VALENTINE_LOGIN_WINDOW_SECONDS",
+                LOGIN_WINDOW_SECONDS,
+            )
+        )
+    except (TypeError, ValueError):
+        configured = LOGIN_WINDOW_SECONDS
+    return max(60, configured)
+
+
+def _authenticate_login(code, client_key, *, now=None):
+    """Authenticate and update the DB-authoritative failure window.
+
+    A row lock serializes attempts for an existing client key. The unique
+    key plus a short retry loop handles two workers racing to create the
+    first row. Exhausted/deadlocked retries fail closed.
+    """
+    now = now or timezone.now()
+    window_expires = now + timedelta(seconds=_login_window())
+    for _retry in range(LOGIN_DATABASE_RETRIES):
+        try:
+            with transaction.atomic():
+                counter = (
+                    ValentineLoginAttempt.objects.select_for_update()
+                    .filter(client_key=client_key)
+                    .first()
+                )
+                if counter is None:
+                    try:
+                        with transaction.atomic():
+                            counter = ValentineLoginAttempt.objects.create(
+                                client_key=client_key,
+                                attempts=0,
+                                window_expires=window_expires,
+                            )
+                    except IntegrityError:
+                        # A concurrent transaction won the unique-key race.
+                        # Leave this transaction and retry with a row lock.
+                        continue
+
+                window_was_reset = counter.window_expires <= now
+                if window_was_reset:
+                    counter.attempts = 0
+                    counter.window_expires = window_expires
+
+                if counter.attempts >= _login_limit():
+                    if window_was_reset:
+                        counter.save(
+                            update_fields=(
+                                "attempts",
+                                "window_expires",
+                                "updated_at",
+                            )
+                        )
+                    return LOGIN_STATUS_BLOCKED, None
+
+                profile = (
+                    Profile.objects.select_for_update()
+                    .filter(code__iexact=code, is_active=True)
+                    .first()
+                )
+                if profile is None:
+                    counter.attempts += 1
+                    counter.save(
+                        update_fields=(
+                            "attempts",
+                            "window_expires",
+                            "updated_at",
+                        )
+                    )
+                    return LOGIN_STATUS_INVALID, None
+
+                if window_was_reset:
+                    counter.save(
+                        update_fields=(
+                            "attempts",
+                            "window_expires",
+                            "updated_at",
+                        )
+                    )
+                Register.objects.filter(
+                    profile=profile,
+                    revoked=False,
+                ).update(revoked=True)
+                session = Register.objects.create(profile=profile)
+                return LOGIN_STATUS_SUCCESS, session
+        except OperationalError:
+            # Deadlock/table-lock retries are bounded and ultimately fail
+            # closed instead of allowing an uncounted authentication attempt.
+            continue
+    return LOGIN_STATUS_BLOCKED, None
 
 
 def _day_bounds(moment):
@@ -141,32 +305,21 @@ def login(request):
         return redirect("valentine:home")
 
     form = AccessCodeForm(request.POST or None)
-    rate_key = f"valentine-login:{_client_key(request)}"
-    attempts = cache.get(rate_key, 0)
 
     if request.method == "POST":
-        if attempts >= LOGIN_MAX_ATTEMPTS:
-            form.add_error(
-                None,
-                "Има твърде много опити. Опитай отново след 15 минути.",
+        if form.is_valid():
+            status, session = _authenticate_login(
+                form.cleaned_data["code"],
+                _client_key(request),
             )
-        elif form.is_valid():
-            profile = Profile.objects.filter(
-                code__iexact=form.cleaned_data["code"],
-                is_active=True,
-            ).first()
-            if profile is None:
-                cache.set(rate_key, attempts + 1, LOGIN_WINDOW_SECONDS)
+            if status == LOGIN_STATUS_BLOCKED:
+                form.add_error(
+                    None,
+                    "Има твърде много опити. Опитай отново по-късно.",
+                )
+            elif status == LOGIN_STATUS_INVALID:
                 form.add_error(None, "Кодът е невалиден или е изтекъл.")
             else:
-                cache.delete(rate_key)
-                with transaction.atomic():
-                    Profile.objects.select_for_update().get(pk=profile.pk)
-                    Register.objects.filter(
-                        profile=profile,
-                        revoked=False,
-                    ).update(revoked=True)
-                    session = Register.objects.create(profile=profile)
                 next_url = request.GET.get("next")
                 if not next_url or not url_has_allowed_host_and_scheme(
                     next_url,
@@ -350,12 +503,11 @@ def home(request):
         {"value": class_name, "label": _class_label(class_name)}
         for class_name in class_names
     ]
-    all_recipients = (
-        Profile.objects.filter(is_active=True)
+    teacher_count = (
+        Profile.objects.filter(is_active=True, clas="U")
         .exclude(pk=profile.pk)
-        .order_by("clas", "first_name", "last_name")
+        .count()
     )
-    teacher_count = all_recipients.filter(clas="U").count()
     reveal_at = platform_settings.get_reveal_at()
     received_count = Valenitines.objects.filter(
         profile=profile,
@@ -376,18 +528,23 @@ def home(request):
     )
     if selected_recipient_id:
         try:
-            if not selected_class:
-                selected_class = (
-                    Profile.objects.filter(
-                        pk=selected_recipient_id,
-                        is_active=True,
-                    )
-                    .values_list("clas", flat=True)
-                    .first()
-                    or ""
+            selected_recipient = (
+                Profile.objects.filter(
+                    pk=selected_recipient_id,
+                    is_active=True,
                 )
+                .exclude(pk=profile.pk)
+                .first()
+            )
+            if selected_recipient is None:
+                selected_recipient_id = ""
+            elif not selected_class:
+                selected_class = selected_recipient.clas
         except (ValidationError, ValueError):
             selected_recipient_id = ""
+            selected_recipient = None
+    else:
+        selected_recipient = None
 
     return render(
         request,
@@ -396,7 +553,7 @@ def home(request):
             "form": form,
             "profile": profile,
             "classes": classes,
-            "all_recipients": all_recipients,
+            "selected_recipient": selected_recipient,
             "teacher_count": teacher_count,
             "platform_settings": platform_settings,
             "campaign": campaign,
@@ -414,9 +571,12 @@ def home(request):
                 platform_settings.group_daily_limit - group_sent_today,
                 0,
             ),
-            "total_sent": Valenitines.objects.filter(
-                campaign=campaign
-            ).count(),
+            "total_sent": (
+                Valenitines.objects.filter(campaign=campaign)
+                .values("dispatch_id")
+                .distinct()
+                .count()
+            ),
             "selected_recipient_id": selected_recipient_id,
             "selected_class": selected_class,
             "selected_target_type": selected_target_type,
@@ -428,6 +588,7 @@ def home(request):
 @require_GET
 @valentine_login_required
 def get_students(request, class_name):
+    class_name = normalize_class_code(class_name)
     students = (
         Profile.objects.filter(
             clas=class_name,
@@ -506,6 +667,14 @@ def outbox(request):
             sent_at=Max("date"),
             edited_at=Max("edited_at"),
             recipient_count=Count("id"),
+            moderated_count=Count(
+                "id",
+                filter=~Q(
+                    moderation_status=(
+                        Valenitines.ModerationStatus.CLEAR
+                    )
+                ),
+            ),
         )
         .order_by("-sent_at")
     )
@@ -612,34 +781,94 @@ def edit_valentine(request, dispatch_id):
 @require_POST
 @valentine_login_required
 def report_valentine(request, valentine_id):
-    campaign = get_platform_settings().active_campaign
+    platform_settings = get_platform_settings()
+    campaign = platform_settings.active_campaign
+    if timezone.now() < platform_settings.get_reveal_at():
+        messages.error(
+            request,
+            "Валентинките могат да се докладват след разкриването.",
+        )
+        return redirect("valentine:inbox")
+    form = ReportValentineForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, "Избери причина за сигнала.")
+        return redirect("valentine:inbox")
     valentine = get_object_or_404(
         Valenitines,
         pk=valentine_id,
         profile=request.valentine_profile,
         campaign=campaign,
     )
-    form = ReportValentineForm(request.POST)
-    if not form.is_valid():
-        messages.error(request, "Избери причина за сигнала.")
-        return redirect("valentine:inbox")
-
-    valentine.is_reported = True
-    valentine.report_reason = form.cleaned_data["reason"]
-    valentine.reported_at = timezone.now()
-    valentine.moderation_status = Valenitines.ModerationStatus.PENDING
-    valentine.save(
-        update_fields=[
-            "is_reported",
-            "report_reason",
-            "reported_at",
-            "moderation_status",
-        ]
-    )
-    messages.success(
-        request,
-        "Съобщението е скрито и изпратено за преглед.",
-    )
+    with transaction.atomic():
+        dispatch = list(
+            Valenitines.objects.select_for_update()
+            .filter(
+                campaign=campaign,
+                dispatch_id=valentine.dispatch_id,
+            )
+            .order_by("pk")
+        )
+        if not any(
+            delivery.pk == valentine.pk
+            and delivery.profile_id == request.valentine_profile.pk
+            for delivery in dispatch
+        ):
+            raise Http404
+        ValentineModerationEvent.objects.get_or_create(
+            campaign=campaign,
+            dispatch_id=valentine.dispatch_id,
+            reporter_profile=request.valentine_profile,
+            event_type=ValentineModerationEvent.EventType.REPORTED,
+            defaults={"reason": form.cleaned_data["reason"]},
+        )
+        terminal_statuses = {
+            Valenitines.ModerationStatus.HIDDEN,
+            Valenitines.ModerationStatus.RESTORED,
+        }
+        if any(
+            delivery.moderation_status in terminal_statuses
+            for delivery in dispatch
+        ):
+            moderator_already_decided = True
+        else:
+            moderator_already_decided = False
+            existing_report = next(
+                (
+                    delivery
+                    for delivery in dispatch
+                    if delivery.reported_at is not None
+                ),
+                None,
+            )
+            reported_at = (
+                existing_report.reported_at
+                if existing_report
+                else timezone.now()
+            )
+            report_reason = (
+                existing_report.report_reason
+                if existing_report and existing_report.report_reason
+                else form.cleaned_data["reason"]
+            )
+            Valenitines.objects.filter(
+                pk__in=[delivery.pk for delivery in dispatch]
+            ).update(
+                is_reported=True,
+                report_reason=report_reason,
+                reported_at=reported_at,
+                moderation_status=Valenitines.ModerationStatus.PENDING,
+            )
+    if moderator_already_decided:
+        messages.info(
+            request,
+            "Сигналът е записан, но модератор вече е прегледал тази "
+            "пратка и статусът му не е променен.",
+        )
+    else:
+        messages.success(
+            request,
+            "Цялата пратка е скрита и изпратена за преглед.",
+        )
     return redirect("valentine:inbox")
 
 

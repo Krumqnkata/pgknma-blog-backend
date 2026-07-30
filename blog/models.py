@@ -1,9 +1,14 @@
 import uuid
+from datetime import timedelta
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models
 from django.db.models import BooleanField
+from django.db.models.signals import m2m_changed, post_delete, pre_delete
+from django.dispatch import receiver
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator
 
 def post_media_upload_path(instance, filename, field_type):
     """
@@ -37,7 +42,63 @@ def post_document_upload_path(instance, filename):
     return post_media_upload_path(instance, filename, 'documents')
 
 def meme_upload_path(instance, filename):
-    return f'memes/{instance.user.username}/{filename}'
+    owner = f'user-{instance.user_id}' if instance.user_id else 'anonymous'
+    return f'memes/{owner}/{filename}'
+
+
+def validate_meme_image_size(image):
+    """Keep public meme uploads within a reasonable, configurable size."""
+    max_size = getattr(settings, 'MAX_MEME_UPLOAD_SIZE', 5 * 1024 * 1024)
+    if image and image.size > max_size:
+        max_size_mb = max_size / (1024 * 1024)
+        raise ValidationError(
+            f"Изображението не може да е по-голямо от {max_size_mb:g} MB."
+        )
+
+
+DOCUMENT_EXTENSIONS = (
+    'pdf',
+    'docx',
+    'doc',
+    'xlsx',
+    'xls',
+    'pptx',
+    'ppt',
+    'zip',
+    'rar',
+    '7z',
+    'csv',
+    'txt',
+    'json',
+    'rtf',
+)
+
+
+def validate_image_upload_size(image):
+    max_size = getattr(settings, 'MAX_IMAGE_UPLOAD_SIZE', 10 * 1024 * 1024)
+    if image and image.size > max_size:
+        max_size_mb = max_size / (1024 * 1024)
+        raise ValidationError(
+            f"Изображението не може да е по-голямо от {max_size_mb:g} MB."
+        )
+
+
+def validate_document_upload_size(document):
+    max_size = getattr(
+        settings,
+        'MAX_DOCUMENT_UPLOAD_SIZE',
+        25 * 1024 * 1024,
+    )
+    if document and document.size > max_size:
+        max_size_mb = max_size / (1024 * 1024)
+        raise ValidationError(
+            f"Документът не може да е по-голям от {max_size_mb:g} MB."
+        )
+
+
+def default_poll_end_date():
+    return timezone.now() + timedelta(days=7)
+
 
 def poll_media_upload_path(instance, filename):
     """
@@ -65,11 +126,17 @@ class Category(models.Model):
 
 class Posts(models.Model):
     title = models.CharField(max_length=100, blank=False, help_text="Заглавието на публикацията до 100 символа.")
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, help_text="Категорията, към която принадлежи публикацията.")
-    banner = models.ImageField(upload_to=post_banner_upload_path, blank=True, null=True, help_text="Банер изображение, което ще се показва в горната част на публикацията.")
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, help_text="Категорията, към която принадлежи публикацията.")
+    banner = models.ImageField(upload_to=post_banner_upload_path, blank=True, null=True, validators=[validate_image_upload_size], help_text="Банер изображение, което ще се показва в горната част на публикацията.")
     hook = models.TextField(max_length=100, help_text="Кратко въведение или 'кукичка', което да привлече вниманието на читателя до 100 символа.")
     content = models.TextField(blank=False, help_text="Пълното съдържание на публикацията. Поддържа се Markdown формат.")
-    author = models.ForeignKey(User, on_delete=models.CASCADE, help_text="Авторът на публикацията. Полето се попълва автоматично.")
+    author = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Авторът на публикацията. Полето се попълва автоматично.",
+    )
     created_at = models.DateTimeField(default=timezone.now, help_text="Дата и час на създаване на публикацията. Формат: YYYY-MM-DD HH:MM:SS.")
     published = BooleanField(help_text="Отбележете, ако публикацията трябва да бъде видима за всички потребители.")
     allowed = models.BooleanField(default=False, help_text="Отбележете, за да одобрите публикацията за показване (за публикации, изискващи одобрение).")
@@ -90,13 +157,39 @@ class Posts(models.Model):
 
 class Comments(models.Model):
     content = models.TextField(blank=False, help_text="Съдържанието на коментара.")
-    user = models.ForeignKey(User, on_delete=models.CASCADE, help_text="Потребителят, който е написал коментара.")
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Потребителят, който е написал коментара.",
+    )
     created_at = models.DateTimeField(auto_now_add=True, help_text="Дата и час на създаване на коментара. Формат: YYYY-MM-DD HH:MM:SS.")
     post = models.ForeignKey(Posts, on_delete=models.CASCADE, help_text="Публикацията, към която е коментарът.")
-    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.CASCADE, related_name='replies', help_text="Родителският коментар, ако този е отговор.")
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='replies', help_text="Родителският коментар, ако този е отговор.")
 
     class Meta:
         ordering = ['created_at']
+
+    def clean(self):
+        super().clean()
+        if (
+            self.parent_id
+            and self.post_id
+            and self.parent.post_id != self.post_id
+        ):
+            raise ValidationError({
+                'parent': (
+                    'Родителският коментар не принадлежи '
+                    'към тази публикация.'
+                )
+            })
+
+    def save(self, *args, **kwargs):
+        raw = kwargs.pop('raw', False)
+        if not raw:
+            self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return self.content
@@ -118,7 +211,14 @@ STATUS_CHOICES = (
 )
 
 class BellSongSuggestion(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Потребител", help_text="Потребителят, който е направил предложението.")
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Потребител",
+        help_text="Потребителят, който е направил предложението.",
+    )
     title = models.CharField(max_length=255, verbose_name="Заглавие на песента", help_text="Името на песента.")
     link = models.URLField(max_length=2048, verbose_name="Линк към песента", help_text="URL към песента в Spotify или YouTube.")
     slot = models.CharField(max_length=20, choices=SLOT_CHOICES, default='morning', verbose_name="Кога да звучи", help_text="Изберете кога да звучи песента.")
@@ -132,14 +232,34 @@ class BellSongSuggestion(models.Model):
         verbose_name = "Предложение за песен за звънец"
         verbose_name_plural = "Предложения за песни за звънец"
         ordering = ['-submitted_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(votes__gte=0),
+                name='blog_song_votes_nonnegative',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.title} ({self.get_status_display()})"
 
 class MemeOfWeek(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Потребител", help_text="Потребителят, който е качил мемето.")
-    title = models.CharField(max_length=100, blank=True, null=True, verbose_name="Заглавие", help_text="Заглавие на мемето (по избор).")
-    image = models.ImageField(upload_to=meme_upload_path, blank=True, null=True, verbose_name="Изображение", help_text="Файлът с изображението на мемето.")
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Потребител",
+        help_text="Потребителят, който е качил мемето.",
+    )
+    title = models.CharField(max_length=100, blank=False, null=True, verbose_name="Заглавие", help_text="Заглавие на мемето.")
+    image = models.ImageField(
+        upload_to=meme_upload_path,
+        blank=False,
+        null=True,
+        validators=[validate_meme_image_size],
+        verbose_name="Изображение",
+        help_text="Файлът с изображението на мемето.",
+    )
     is_approved = models.BooleanField(default=False, verbose_name="Одобрено", help_text="Отбележете, ако мемето е одобрено за участие в 'Меме на седмицата'.")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата на качване", null=True, help_text="Дата и час на качване на мемето. Формат: YYYY-MM-DD HH:MM:SS.")
     voted_by = models.ManyToManyField(User, related_name='voted_memes', blank=True, verbose_name="Гласували потребители", help_text="Потребители, които са гласували за това меме.")
@@ -149,11 +269,18 @@ class MemeOfWeek(models.Model):
         verbose_name = "Меме на седмицата"
         verbose_name_plural = "Мемета на седмицата"
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(votes__gte=0),
+                name='blog_meme_votes_nonnegative',
+            ),
+        ]
 
     def __str__(self):
         if self.title:
             return self.title
-        return f"Meme by {self.user.username}"
+        username = self.user.username if self.user else "изтрит потребител"
+        return f"Meme by {username}"
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, help_text="Свързаният потребителски акаунт.")
@@ -163,50 +290,71 @@ class UserProfile(models.Model):
         return f"Профил на {self.user.username}"
 # Create your models here.
 
+class ConsentRecord(models.Model):
+    # Данни за потребителя
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, help_text="Потребителят, дал съгласие (ако е логнат).")
+    ip_address = models.CharField(max_length=45, blank=True, null=True, help_text="IP адрес на потребителя.")
+
+    # Резултат
+    STATUS_CHOICES = [
+        ('INFORMED', 'Информиран (Необходими)'),
+        ('ACCEPTED', 'Приел'),
+        ('REJECTED', 'Отказал'),
+    ]
+    consent_status = models.CharField(max_length=10, choices=STATUS_CHOICES, help_text="Статус на даденото съгласие.")
+
+    # Доказателство
+    timestamp = models.DateTimeField(auto_now_add=True, help_text="Дата и час на записа на съгласието. Формат: YYYY-MM-DD HH:MM:SS.")
+    policy_version = models.CharField(max_length=50, default='v1.0', help_text="Версия на политиката за бисквитки, за която е дадено съгласието.")
+
+    def __str__(self):
+        return f"Consent: {self.consent_status} at {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
+
+
 class Cookie(models.Model):
-    class ConsentRecord(models.Model):
-        # Данни за потребителя
-        user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, help_text="Потребителят, дал съгласие (ако е логнат).")
-        ip_address = models.CharField(max_length=45, blank=True, null=True, help_text="IP адрес на потребителя.")
+    """Legacy empty model retained for migration and admin compatibility."""
+    pass
 
-        # Резултат
-        STATUS_CHOICES = [
-            ('INFORMED', 'Информиран (Необходими)'),
-            ('ACCEPTED', 'Приел'),
-            ('REJECTED', 'Отказал'),
-        ]
-        consent_status = models.CharField(max_length=10, choices=STATUS_CHOICES, help_text="Статус на даденото съгласие.")
 
-        # Доказателство
-        timestamp = models.DateTimeField(auto_now_add=True, help_text="Дата и час на записа на съгласието. Формат: YYYY-MM-DD HH:MM:SS.")
-        policy_version = models.CharField(max_length=50, default='v1.0', help_text="Версия на политиката за бисквитки, за която е дадено съгласието.")
-
-        def __str__(self):
-            return f"Consent: {self.consent_status} at {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
+# Backwards compatibility for older imports without nesting a registered model.
+Cookie.ConsentRecord = ConsentRecord
 
 
 class PollQuestion(models.Model):
     title = models.CharField(max_length=255, verbose_name="Заглавие", help_text="Заглавието на анкетата.")
     subtitle = models.CharField(max_length=255, blank=True, null=True, verbose_name="Подзаглавие", help_text="Подзаглавие на анкетата (по избор).")
     task_description = models.TextField(verbose_name="Описание на задачата", help_text="Текст на въпроса или описание на задачата.", blank=True, default='')
-    image = models.ImageField(upload_to=poll_media_upload_path, blank=True, null=True, verbose_name="Изображение към въпроса", help_text="Изображение, което се показва с въпроса.")
+    image = models.ImageField(upload_to=poll_media_upload_path, blank=True, null=True, validators=[validate_image_upload_size], verbose_name="Изображение към въпроса", help_text="Изображение, което се показва с въпроса.")
     start_date = models.DateTimeField(verbose_name="Начална дата", default=timezone.now, help_text="Дата и час, от които анкетата е активна. Формат: YYYY-MM-DD HH:MM:SS.")
-    end_date = models.DateTimeField(verbose_name="Крайна дата", default=timezone.now, help_text="Дата и час, до които анкетата е активна. Формат: YYYY-MM-DD HH:MM:SS.")
+    end_date = models.DateTimeField(verbose_name="Крайна дата", default=default_poll_end_date, help_text="Дата и час, до които анкетата е активна. Формат: YYYY-MM-DD HH:MM:SS.")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създаден на", help_text="Дата и час на създаване на анкетата. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
         return self.title
 
+    def clean(self):
+        super().clean()
+        if self.start_date and self.end_date and self.end_date <= self.start_date:
+            raise ValidationError({
+                'end_date': "Крайната дата трябва да е след началната дата."
+            })
+
     class Meta:
         verbose_name = "Въпрос за анкета"
         verbose_name_plural = "Въпроси за анкети"
         ordering = ['-start_date']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__gt=models.F('start_date')),
+                name='blog_poll_end_after_start',
+            ),
+        ]
 
 
 class PollOption(models.Model):
     question = models.ForeignKey(PollQuestion, related_name='options', on_delete=models.CASCADE, verbose_name="Въпрос", help_text="Въпросът, към който принадлежи тази опция.")
     text = models.CharField(max_length=255, verbose_name="Текст на опция", help_text="Текстът на отговора.")
-    image = models.ImageField(upload_to=poll_media_upload_path, blank=True, null=True, verbose_name="Изображение към опция", help_text="Изображение, което се показва с тази опция.")
+    image = models.ImageField(upload_to=poll_media_upload_path, blank=True, null=True, validators=[validate_image_upload_size], verbose_name="Изображение към опция", help_text="Изображение, което се показва с тази опция.")
     is_correct = models.BooleanField(default=False, verbose_name="Правилен отговор", help_text="Отбележете, ако това е правилният отговор на въпроса.")
     key = models.CharField(max_length=1, choices=[('a', 'A'), ('b', 'B'), ('c', 'C'), ('d', 'D')], verbose_name="Ключ", help_text="Буквеният ключ за тази опция (a, b, c, d).")
 
@@ -221,18 +369,49 @@ class PollOption(models.Model):
 
 
 class PollAnswer(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Потребител", help_text="Потребителят, който е отговорил.")
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Потребител",
+        help_text="Потребителят, който е отговорил.",
+    )
     question = models.ForeignKey(PollQuestion, on_delete=models.CASCADE, verbose_name="Въпрос", help_text="Въпросът, на който е отговорено.")
-    selected_option = models.ForeignKey(PollOption, on_delete=models.CASCADE, verbose_name="Избрана опция", help_text="Опцията, която потребителят е избрал.")
+    selected_option = models.ForeignKey(PollOption, on_delete=models.RESTRICT, verbose_name="Избрана опция", help_text="Опцията, която потребителят е избрал.")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Отговорено на", help_text="Дата и час на отговаряне. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
-        return f"{self.user.username} answered {self.question.title}"
+        username = self.user.username if self.user else "изтрит потребител"
+        return f"{username} answered {self.question.title}"
+
+    def clean(self):
+        super().clean()
+        if (
+            self.question_id
+            and self.selected_option_id
+            and self.selected_option.question_id != self.question_id
+        ):
+            raise ValidationError({
+                'selected_option': "Избраната опция не принадлежи към въпроса."
+            })
+
+    def save(self, *args, **kwargs):
+        raw = kwargs.pop('raw', False)
+        if not raw:
+            self.full_clean()
+        return super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = "Отговор на анкета"
         verbose_name_plural = "Отговори на анкети"
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'question'),
+                name='blog_unique_poll_answer_per_user',
+            ),
+        ]
 
 
 class ContactSubmission(models.Model):
@@ -281,24 +460,26 @@ class Notification(models.Model):
         ordering = ['-created_at']
 
 class TermsOfService(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=False, verbose_name="Автор", help_text="Авторът, който е създал/редактирал условията.")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Автор", help_text="Авторът, който е създал/редактирал условията.")
     content = models.TextField(null=False, help_text="Пълният текст на Условията за ползване. Поддържа се Markdown.")
     date = models.DateTimeField(auto_now_add=True, help_text="Дата на последната промяна. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
-        return f"{self.content} качено на : {self.user.username}"
+        username = self.user.username if self.user else "изтрит потребител"
+        return f"{self.content} качено на : {username}"
 
     class Meta:
         verbose_name = "Условие за ползване"
         verbose_name_plural = "Условия за ползване"
 
 class PrivacyPolicy(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, null=False, verbose_name="Автор", help_text="Авторът, който е създал/редактирал политиката.")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Автор", help_text="Авторът, който е създал/редактирал политиката.")
     content = models.TextField(null=False, help_text="Пълният текст на Политиката за поверителност. Поддържа се Markdown.")
     date = models.DateTimeField(auto_now_add=True, help_text="Дата на последната промяна. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
-        return f"{self.content} качено на : {self.user.username}"
+        username = self.user.username if self.user else "изтрит потребител"
+        return f"{self.content} качено на : {username}"
 
     class Meta:
         verbose_name = "Политика за поверителност"
@@ -306,7 +487,7 @@ class PrivacyPolicy(models.Model):
 
 class PostImage(models.Model):
     post = models.ForeignKey(Posts, related_name='images', on_delete=models.CASCADE, help_text="Публикацията, към която е свързана тази снимка.")
-    image = models.ImageField(upload_to=post_gallery_upload_path, help_text="Файлът с изображението.")
+    image = models.ImageField(upload_to=post_gallery_upload_path, validators=[validate_image_upload_size], help_text="Файлът с изображението.")
 
     def __str__(self):
         return f"Image for post: {self.post.title}"
@@ -317,7 +498,14 @@ class PostImage(models.Model):
 
 class PostDocument(models.Model):
     post = models.ForeignKey(Posts, related_name='documents', on_delete=models.CASCADE, help_text="Публикацията, към която е свързан този документ.")
-    file = models.FileField(upload_to=post_document_upload_path, help_text="Файлът с документа (PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, ZIP, RAR, 7Z, CSV, TXT, JSON, RTF).")
+    file = models.FileField(
+        upload_to=post_document_upload_path,
+        validators=[
+            FileExtensionValidator(allowed_extensions=DOCUMENT_EXTENSIONS),
+            validate_document_upload_size,
+        ],
+        help_text="Файлът с документа (PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, ZIP, RAR, 7Z, CSV, TXT, JSON, RTF).",
+    )
     uploaded_at = models.DateTimeField(auto_now_add=True, help_text="Дата и час на качване на документа. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
@@ -342,10 +530,30 @@ class Event(models.Model):
     def __str__(self):
         return self.title
 
+    def clean(self):
+        super().clean()
+        if (
+            self.start_datetime
+            and self.end_datetime
+            and self.end_datetime <= self.start_datetime
+        ):
+            raise ValidationError({
+                'end_datetime': "Краят на събитието трябва да е след началото."
+            })
+
     class Meta:
         verbose_name = "Събитие"
         verbose_name_plural = "Събития"
         ordering = ['start_datetime']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(end_datetime__isnull=True)
+                    | models.Q(end_datetime__gt=models.F('start_datetime'))
+                ),
+                name='blog_event_end_after_start',
+            ),
+        ]
 
 
 class Changelog(models.Model):
@@ -364,6 +572,11 @@ class Changelog(models.Model):
 
 
 class SiteSettings(models.Model):
+    singleton_key = models.PositiveSmallIntegerField(
+        default=1,
+        unique=True,
+        editable=False,
+    )
     maintenance_mode = models.BooleanField(default=False, verbose_name="Режим на поддръжка", help_text="Ако е активиран, сайтът ще показва страница за поддръжка на всички потребители, които не са администратори.")
     enable_bell_suggestions = models.BooleanField(default=True, verbose_name="Активирани 'Предложения за песни'", help_text="Позволява на потребителите да предлагат песни за училищния звънец.")
     enable_weekly_poll = models.BooleanField(default=True, verbose_name="Активирана 'Седмична анкета'", help_text="Активира/деактивира показването на седмичната анкета на сайта.")
@@ -374,10 +587,107 @@ class SiteSettings(models.Model):
     class Meta:
         verbose_name = "Настройки на сайта"
         verbose_name_plural = "Настройки на сайта"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(singleton_key=1),
+                name='blog_site_settings_singleton_key',
+            ),
+        ]
 
     def save(self, *args, **kwargs):
-        if not self.pk and SiteSettings.objects.exists():
-            raise ValidationError('Може да съществува само един обект с настройки на сайта.')
+        self.singleton_key = 1
+        if not self.pk:
+            if SiteSettings.objects.exists():
+                raise ValidationError(
+                    'Може да съществува само един обект с настройки на сайта.'
+                )
+            self.pk = 1
         return super(SiteSettings, self).save(*args, **kwargs)
 
 
+class GoogleIdentity(models.Model):
+    """Stable Google account binding; e-mail is metadata, never the identity key."""
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='google_identity',
+    )
+    issuer = models.CharField(max_length=64)
+    subject = models.CharField(max_length=255)
+    email_at_link_time = models.EmailField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('issuer', 'subject'),
+                name='blog_unique_google_identity',
+            ),
+        ]
+        verbose_name = "Google самоличност"
+        verbose_name_plural = "Google самоличности"
+
+    def __str__(self):
+        return f"{self.issuer}:{self.subject}"
+
+
+def _sync_song_votes(song_ids):
+    through = BellSongSuggestion.voted_by.through
+    for song_id in song_ids:
+        count = through.objects.filter(bellsongsuggestion_id=song_id).count()
+        BellSongSuggestion.objects.filter(pk=song_id).update(votes=count)
+
+
+def _sync_meme_votes(meme_ids):
+    through = MemeOfWeek.voted_by.through
+    for meme_id in meme_ids:
+        count = through.objects.filter(memeofweek_id=meme_id).count()
+        MemeOfWeek.objects.filter(pk=meme_id).update(votes=count)
+
+
+@receiver(m2m_changed, sender=BellSongSuggestion.voted_by.through)
+def sync_song_vote_counter(sender, instance, action, reverse, pk_set, **kwargs):
+    cache_name = '_song_vote_ids_before_clear'
+    if action == 'pre_clear' and reverse:
+        setattr(instance, cache_name, list(instance.voted_songs.values_list('pk', flat=True)))
+        return
+    if action not in {'post_add', 'post_remove', 'post_clear'}:
+        return
+    if reverse:
+        song_ids = pk_set or getattr(instance, cache_name, [])
+    else:
+        song_ids = [instance.pk]
+    _sync_song_votes(song_ids)
+
+
+@receiver(m2m_changed, sender=MemeOfWeek.voted_by.through)
+def sync_meme_vote_counter(sender, instance, action, reverse, pk_set, **kwargs):
+    cache_name = '_meme_vote_ids_before_clear'
+    if action == 'pre_clear' and reverse:
+        setattr(instance, cache_name, list(instance.voted_memes.values_list('pk', flat=True)))
+        return
+    if action not in {'post_add', 'post_remove', 'post_clear'}:
+        return
+    if reverse:
+        meme_ids = pk_set or getattr(instance, cache_name, [])
+    else:
+        meme_ids = [instance.pk]
+    _sync_meme_votes(meme_ids)
+
+
+@receiver(pre_delete, sender=User)
+def remember_vote_targets_before_user_delete(sender, instance, **kwargs):
+    instance._song_vote_ids_before_delete = list(
+        instance.voted_songs.values_list('pk', flat=True)
+    )
+    instance._meme_vote_ids_before_delete = list(
+        instance.voted_memes.values_list('pk', flat=True)
+    )
+
+
+@receiver(post_delete, sender=User)
+def sync_vote_counters_after_user_delete(sender, instance, **kwargs):
+    _sync_song_votes(getattr(instance, '_song_vote_ids_before_delete', []))
+    _sync_meme_votes(getattr(instance, '_meme_vote_ids_before_delete', []))

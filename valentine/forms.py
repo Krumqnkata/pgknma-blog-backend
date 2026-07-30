@@ -1,7 +1,9 @@
 from django import forms
+from django.utils import timezone
 
 from .models import (
     Profile,
+    ValentineCampaign,
     Valenitines,
     default_academic_year_start,
     normalize_class_code,
@@ -205,3 +207,85 @@ class ProfileCsvImportForm(forms.Form):
         initial=default_academic_year_start,
         help_text="Например 2026 означава учебната 2026/2027 година.",
     )
+
+
+class ProfilePromotionForm(forms.Form):
+    target_academic_year_start = forms.IntegerField(
+        label="Нова учебна година",
+        min_value=2000,
+        max_value=2100,
+        help_text="Например 2026 означава учебната 2026/2027 година.",
+    )
+
+
+class CampaignActivationForm(forms.Form):
+    sending_starts_at = forms.DateTimeField(
+        label="Начало на изпращането",
+        widget=forms.DateTimeInput(
+            attrs={"type": "datetime-local"},
+            format="%Y-%m-%dT%H:%M",
+        ),
+        input_formats=("%Y-%m-%dT%H:%M",),
+    )
+    sending_ends_at = forms.DateTimeField(
+        label="Край на изпращането",
+        widget=forms.DateTimeInput(
+            attrs={"type": "datetime-local"},
+            format="%Y-%m-%dT%H:%M",
+        ),
+        input_formats=("%Y-%m-%dT%H:%M",),
+    )
+    reveal_at = forms.DateTimeField(
+        label="Разкриване",
+        widget=forms.DateTimeInput(
+            attrs={"type": "datetime-local"},
+            format="%Y-%m-%dT%H:%M",
+        ),
+        input_formats=("%Y-%m-%dT%H:%M",),
+    )
+
+    def __init__(self, *args, campaign: ValentineCampaign, **kwargs):
+        self.campaign = campaign
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        starts_at = cleaned_data.get("sending_starts_at")
+        ends_at = cleaned_data.get("sending_ends_at")
+        reveal_at = cleaned_data.get("reveal_at")
+        values = {
+            "sending_starts_at": starts_at,
+            "sending_ends_at": ends_at,
+            "reveal_at": reveal_at,
+        }
+        labels = {
+            "sending_starts_at": "Началото",
+            "sending_ends_at": "Краят",
+            "reveal_at": "Разкриването",
+        }
+        for field_name, value in values.items():
+            if (
+                value
+                and timezone.localtime(value).year != self.campaign.year
+            ):
+                self.add_error(
+                    field_name,
+                    f"{labels[field_name]} трябва да е през "
+                    f"{self.campaign.year} година.",
+                )
+        if starts_at and ends_at and starts_at >= ends_at:
+            self.add_error(
+                "sending_ends_at",
+                "Краят трябва да бъде след началото.",
+            )
+        if ends_at and reveal_at and ends_at > reveal_at:
+            self.add_error(
+                "reveal_at",
+                "Разкриването трябва да бъде след края на изпращането.",
+            )
+        if starts_at and reveal_at and starts_at >= reveal_at:
+            self.add_error(
+                "reveal_at",
+                "Разкриването трябва да бъде след началото.",
+            )
+        return cleaned_data

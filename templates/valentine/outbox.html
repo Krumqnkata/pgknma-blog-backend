@@ -7,7 +7,7 @@
     <span class="eyebrow">Твоите добри думи</span>
     <h1>Изпратени валентинки</h1>
     {% if can_edit %}
-    <p>Можеш да редактираш посланията до {{ reveal_at|date:"d.m.Y · H:i" }}. Изтриване не е позволено.</p>
+    <p>Можеш да редактираш недокладваните послания до {{ reveal_at|date:"d.m.Y · H:i" }}. Изтриване не е позволено.</p>
     {% else %}
     <p>Посланията са разкрити и вече не могат да бъдат редактирани.</p>
     {% endif %}
@@ -36,7 +36,7 @@
                     data-filename="valentine-{{ dispatch.dispatch_id }}">
                 Изтегли като снимка
             </button>
-            {% if can_edit %}
+            {% if can_edit and dispatch.moderated_count == 0 %}
             <a class="button button-secondary button-small"
                href="{% url 'valentine:edit' dispatch.dispatch_id %}">
                 Редактирай

@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views as blog_views
-from blog.auth import GoogleAuthView
+from blog.auth import GoogleAuthView, GoogleLinkView
 
 # Основен рутер за ViewSet-ове
 router = DefaultRouter()
@@ -11,11 +11,19 @@ router.register('memes', blog_views.MemeOfWeekViewSet, basename='memes')
 
 # URL пътища
 urlpatterns = [
+    # Meme binaries are authorization-aware and must not use MEDIA_URL.
+    path(
+        'memes/<int:pk>/image/',
+        blog_views.ProtectedMemeImageView.as_view(),
+        name='meme-image',
+    ),
+
     # Включване на рутера
     path('', include(router.urls)),
 
     # google_auth
     path('auth/google/', GoogleAuthView.as_view(), name='google-auth'),
+    path('auth/google/link/', GoogleLinkView.as_view(), name='google-link'),
 
     # Пътища за коментари
     path('posts/<int:post_pk>/comments/', blog_views.CommentList.as_view(), name='comment-list'),
@@ -28,6 +36,7 @@ urlpatterns = [
     path('auth/profile/change-password/', blog_views.PasswordChangeView.as_view(), name='password-change'),
     path('auth/profile/change-username/', blog_views.UsernameChangeView.as_view(), name='username-change'),
     path('auth/profile/deactivate/', blog_views.AccountDeactivateView.as_view(), name='account-deactivate'),
+    path('auth/logout/', blog_views.LogoutView.as_view(), name='logout'),
 
 
     # Пътища за съдържание на потребителя

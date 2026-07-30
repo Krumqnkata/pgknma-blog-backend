@@ -230,18 +230,11 @@ def parse_profile_csv(uploaded_file):
 def _profile_lookup(profiles):
     by_code = {}
     by_email = defaultdict(list)
-    by_name = defaultdict(list)
     for profile in profiles:
         by_code[profile.code.upper()] = profile
         if profile.email:
             by_email[profile.email.strip().casefold()].append(profile)
-        by_name[
-            (
-                profile.first_name.strip().casefold(),
-                profile.last_name.strip().casefold(),
-            )
-        ].append(profile)
-    return by_code, by_email, by_name
+    return by_code, by_email
 
 
 def build_profile_import_plan(rows, *, lock=False):
@@ -249,39 +242,32 @@ def build_profile_import_plan(rows, *, lock=False):
     if lock:
         queryset = queryset.select_for_update()
     profiles = list(queryset)
-    by_code, by_email, by_name = _profile_lookup(profiles)
+    by_code, by_email = _profile_lookup(profiles)
     plans = []
     errors = []
     targeted_profiles = {}
-    new_identity_rows = {}
+    new_email_rows = {}
 
     for row in rows:
         code = row["code"]
         email_key = row["email"].casefold()
-        name_key = (
-            row["first_name"].casefold(),
-            row["last_name"].casefold(),
-        )
         profile = by_code.get(code) if code else None
 
-        if profile is None:
-            candidates = set()
-            if email_key:
-                candidates.update(by_email.get(email_key, ()))
-            candidates.update(by_name.get(name_key, ()))
+        if profile is None and email_key:
+            candidates = by_email.get(email_key, ())
             if len(candidates) == 1:
-                profile = candidates.pop()
+                profile = candidates[0]
                 if code and profile.code.upper() != code:
                     errors.append(
-                        f"Ред {row['row_number']}: ученикът вече съществува "
-                        f"с код {profile.code}; използвай този код или остави "
-                        "колоната за код празна."
+                        f"Ред {row['row_number']}: имейлът принадлежи на "
+                        "съществуващ профил, но подаденият код не съвпада. "
+                        "Използвай точния код или остави кода празен."
                     )
                     continue
             elif len(candidates) > 1:
                 errors.append(
-                    f"Ред {row['row_number']}: открити са няколко сходни "
-                    "профила; добави точния код за достъп."
+                    f"Ред {row['row_number']}: имейлът се използва от "
+                    "няколко профила; добави точния код за достъп."
                 )
                 continue
 
@@ -296,14 +282,14 @@ def build_profile_import_plan(rows, *, lock=False):
             targeted_profiles[profile_key] = row["row_number"]
             action = "reactivate" if not profile.is_active else "update"
         else:
-            identity_key = (email_key or None, name_key)
-            if identity_key in new_identity_rows:
+            if email_key and email_key in new_email_rows:
                 errors.append(
-                    f"Ред {row['row_number']}: ученикът се повтаря и на ред "
-                    f"{new_identity_rows[identity_key]}."
+                    f"Ред {row['row_number']}: имейлът се повтаря и на ред "
+                    f"{new_email_rows[email_key]}."
                 )
                 continue
-            new_identity_rows[identity_key] = row["row_number"]
+            if email_key:
+                new_email_rows[email_key] = row["row_number"]
             action = "create"
 
         plans.append(
@@ -321,9 +307,27 @@ def build_profile_import_plan(rows, *, lock=False):
     return plans, errors
 
 
-def apply_profile_import(rows, academic_year_start):
+def apply_profile_import(
+    rows,
+    academic_year_start,
+    *,
+    allow_existing_updates=True,
+):
     with transaction.atomic():
         plans, errors = build_profile_import_plan(rows, lock=True)
+        if not allow_existing_updates:
+            protected_rows = [
+                plan["row"]["row_number"]
+                for plan in plans
+                if plan["action"] != "create"
+            ]
+            if protected_rows:
+                errors.append(
+                    "Нямаш право да обновяваш или възстановяваш "
+                    "съществуващи профили (редове: "
+                    + ", ".join(str(row) for row in protected_rows)
+                    + ")."
+                )
         if errors:
             raise ProfileImportError(errors)
 

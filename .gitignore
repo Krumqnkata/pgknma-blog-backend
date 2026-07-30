@@ -4,6 +4,9 @@ db.sqlite3*.bak
 __pycache__/
 *.py[cod]
 .env
+.env.*
+!.env.example
+!.env.production.example
 .agents/
 .codex/
 .openai/
@@ -14,3 +17,4 @@ staticfiles_collected/
 htmlcov/
 .pytest_cache/
 .mypy_cache/
+cms_backup.zip

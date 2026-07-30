@@ -4,81 +4,108 @@
 {% block field_sets %}
     {{ block.super }}
 
-    <!-- Meme Selection Section -->
-    <div class="module aligned">
-        <h2 class="meme-section-header">Изтриване на мемета (Необратимо действие!)</h2>
-        <div class="form-row">
-            <form method="post" style="width: 100%;">
-                {% csrf_token %}
-                {{ meme_selection_form.non_field_errors }}
-
-                <div style="max-height: 400px; overflow-y: auto; margin-bottom: 10px;">
-                    {% for field in meme_selection_form %}
-                        <div class="form-row" style="border-bottom: 1px solid #eee; padding: 8px 0;">
-                            <label style="display: flex; align-items: center; gap: 10px;">
-                                {{ field }}
-                                <span style="flex: 1; display: flex; align-items: center; gap: 5px;">{{ field.label|safe }}</span>
-                            </label>
-                        </div>
-                    {% endfor %}
+    {% if can_delete_memes %}
+        <section class="module aligned related-deletion-section">
+            <h2 class="meme-section-header">Изтриване на мемета</h2>
+            <p class="deletion-warning">Необратимо действие — изберете само записите, които искате да премахнете.</p>
+            <p class="selection-help">
+                Показани са най-новите до {{ meme_selection_form.selection_limit }} записа.
+                По-старите се управляват от
+                <a href="{% url 'admin:blog_memeofweek_changelist' %}">стандартния списък с мемета</a>.
+            </p>
+            {{ meme_selection_form.non_field_errors }}
+            <div class="selection-list">
+                {% for field in meme_selection_form %}
+                    <div class="selection-row">
+                        {{ field }}
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    </div>
+                {% empty %}
+                    <p>Няма мемета за изтриване.</p>
+                {% endfor %}
+            </div>
+            {% if meme_selection_form.fields %}
+                <div class="related-delete-actions">
+                    <button
+                        type="submit"
+                        class="default delete-related-button"
+                        formaction="{% url 'admin:blog_sitesettings_delete_memes' original.pk %}"
+                        formmethod="post"
+                        formnovalidate
+                        data-confirm-message="Сигурни ли сте, че искате да изтриете избраните мемета? Действието е необратимо."
+                    >Изтрий избраните мемета</button>
                 </div>
+            {% endif %}
+        </section>
+    {% endif %}
 
-                <div class="submit-row" style="display: flex; justify-content: flex-start;">
-                    <input type="submit" value="Изтрий избраните мемета" class="default delete-meme-button" name="delete_selected_memes">
+    {% if can_delete_suggestions %}
+        <section class="module aligned related-deletion-section">
+            <h2 class="meme-section-header">Изтриване на предложения за песни</h2>
+            <p class="deletion-warning">Необратимо действие — изберете само записите, които искате да премахнете.</p>
+            <p class="selection-help">
+                Показани са най-новите до {{ suggestion_selection_form.selection_limit }} записа.
+                По-старите се управляват от
+                <a href="{% url 'admin:blog_bellsongsuggestion_changelist' %}">стандартния списък с предложения</a>.
+            </p>
+            {{ suggestion_selection_form.non_field_errors }}
+            <div class="selection-list">
+                {% for field in suggestion_selection_form %}
+                    <div class="selection-row">
+                        {{ field }}
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    </div>
+                {% empty %}
+                    <p>Няма предложения за изтриване.</p>
+                {% endfor %}
+            </div>
+            {% if suggestion_selection_form.fields %}
+                <div class="related-delete-actions">
+                    <button
+                        type="submit"
+                        class="default delete-related-button"
+                        formaction="{% url 'admin:blog_sitesettings_delete_suggestions' original.pk %}"
+                        formmethod="post"
+                        formnovalidate
+                        data-confirm-message="Сигурни ли сте, че искате да изтриете избраните предложения? Действието е необратимо."
+                    >Изтрий избраните предложения</button>
                 </div>
-            </form>
-        </div>
-    </div>
+            {% endif %}
+        </section>
+    {% endif %}
 
-    <!-- Song Suggestion Selection Section -->
-    <div class="module aligned">
-        <h2 class="meme-section-header">Изтриване на предложения за песни (Необратимо действие!)</h2>
-        <div class="form-row">
-            <form method="post" style="width: 100%;">
-                {% csrf_token %}
-                {{ suggestion_selection_form.non_field_errors }}
-
-                <div style="max-height: 400px; overflow-y: auto; margin-bottom: 10px;">
-                    {% for field in suggestion_selection_form %}
-                        <div class="form-row" style="border-bottom: 1px solid #eee; padding: 8px 0;">
-                            <label style="display: flex; align-items: center; gap: 10px;">
-                                {{ field }}
-                                <span style="flex: 1; display: flex; align-items: center; gap: 5px;">{{ field.label }}</span>
-                            </label>
-                        </div>
-                    {% endfor %}
+    {% if can_delete_polls %}
+        <section class="module aligned related-deletion-section">
+            <h2 class="meme-section-header">Изтриване на седмични анкети</h2>
+            <p class="deletion-warning">Необратимо действие — изберете само записите, които искате да премахнете.</p>
+            <p class="selection-help">
+                Показани са най-новите до {{ poll_selection_form.selection_limit }} записа.
+                По-старите се управляват от
+                <a href="{% url 'admin:blog_pollquestion_changelist' %}">стандартния списък с анкети</a>.
+            </p>
+            {{ poll_selection_form.non_field_errors }}
+            <div class="selection-list">
+                {% for field in poll_selection_form %}
+                    <div class="selection-row">
+                        {{ field }}
+                        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    </div>
+                {% empty %}
+                    <p>Няма анкети за изтриване.</p>
+                {% endfor %}
+            </div>
+            {% if poll_selection_form.fields %}
+                <div class="related-delete-actions">
+                    <button
+                        type="submit"
+                        class="default delete-related-button"
+                        formaction="{% url 'admin:blog_sitesettings_delete_polls' original.pk %}"
+                        formmethod="post"
+                        formnovalidate
+                        data-confirm-message="Сигурни ли сте, че искате да изтриете избраните анкети? Действието е необратимо."
+                    >Изтрий избраните анкети</button>
                 </div>
-
-                <div class="submit-row" style="display: flex; justify-content: flex-start;">
-                    <input type="submit" value="Изтрий избраните предложения" class="default delete-meme-button" name="delete_selected_suggestions">
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Poll Question Selection Section -->
-    <div class="module aligned">
-        <h2 class="meme-section-header">Изтриване на седмични анкети (Необратимо действие!)</h2>
-        <div class="form-row">
-            <form method="post" style="width: 100%;">
-                {% csrf_token %}
-                {{ poll_selection_form.non_field_errors }}
-
-                <div style="max-height: 400px; overflow-y: auto; margin-bottom: 10px;">
-                    {% for field in poll_selection_form %}
-                        <div class="form-row" style="border-bottom: 1px solid #eee; padding: 8px 0;">
-                            <label style="display: flex; align-items: center; gap: 10px;">
-                                {{ field }}
-                                <span style="flex: 1; display: flex; align-items: center; gap: 5px;">{{ field.label }}</span>
-                            </label>
-                        </div>
-                    {% endfor %}
-                </div>
-
-                <div class="submit-row" style="display: flex; justify-content: flex-start;">
-                    <input type="submit" value="Изтрий избраните анкети" class="default delete-meme-button" name="delete_selected_polls">
-                </div>
-            </form>
-        </div>
-    </div>
+            {% endif %}
+        </section>
+    {% endif %}
 {% endblock %}
