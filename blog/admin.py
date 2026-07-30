@@ -532,10 +532,10 @@ class MemeOfWeekAdmin(ModelAdmin):
 
 @admin.register(Cookie.ConsentRecord)
 class ConsentRecordAdmin(ModelAdmin):
-    list_display = ('user_display', 'ip_address', 'consent_status', 'timestamp', 'policy_version')
+    list_display = ('user_display', 'ip_address', 'network_operator', 'network_asn_display', 'consent_status', 'timestamp', 'policy_version')
     list_filter = ('consent_status', 'policy_version')
-    search_fields = ('ip_address', 'user__username')
-    readonly_fields = ('user', 'ip_address', 'consent_status', 'timestamp', 'policy_version')
+    search_fields = ('ip_address', 'network_operator', 'user__username')
+    readonly_fields = ('user', 'ip_address', 'network_operator', 'network_asn', 'consent_status', 'timestamp', 'policy_version')
 
     def has_add_permission(self, request):
         return False # Records are created via API, not admin
@@ -546,6 +546,10 @@ class ConsentRecordAdmin(ModelAdmin):
     def user_display(self, obj):
         return obj.user.username if obj.user else "Анонимен"
     user_display.short_description = "Потребител"
+
+    def network_asn_display(self, obj):
+        return f"AS{obj.network_asn}" if obj.network_asn else "—"
+    network_asn_display.short_description = "ASN"
 
 @admin.register(SiteSettings)
 class SiteSettingsAdmin(ModelAdmin):

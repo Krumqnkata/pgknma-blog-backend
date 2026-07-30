@@ -294,6 +294,8 @@ class ConsentRecord(models.Model):
     # Данни за потребителя
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, help_text="Потребителят, дал съгласие (ако е логнат).")
     ip_address = models.CharField(max_length=45, blank=True, null=True, help_text="IP адрес на потребителя.")
+    network_operator = models.CharField(max_length=255, blank=True, default='', help_text="Организацията/операторът за IP адреса според локалната MaxMind ASN база.")
+    network_asn = models.BigIntegerField(blank=True, null=True, help_text="Autonomous System Number (ASN) за IP адреса.")
 
     # Резултат
     STATUS_CHOICES = [

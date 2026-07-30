@@ -1198,3 +1198,23 @@ class ProxyAddressTests(TestCase):
                     throttle.get_ident(untrusted_request),
                     '203.0.113.9',
                 )
+
+
+class ConsentNetworkMetadataTests(TestCase):
+    @override_settings(TRUSTED_PROXY_IPS=('127.0.0.1',))
+    @patch('blog.views.lookup_network_operator', return_value=('A1 Bulgaria EAD', 8717))
+    def test_consent_record_stores_local_asn_lookup(self, lookup):
+        response = APIClient().post(
+            '/api/consent/',
+            {'consent_status': 'ACCEPTED', 'policy_version': 'v1.0'},
+            format='json',
+            REMOTE_ADDR='127.0.0.1',
+            HTTP_X_FORWARDED_FOR='198.51.100.40',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        record = ConsentRecord.objects.get()
+        self.assertEqual(record.ip_address, '198.51.100.40')
+        self.assertEqual(record.network_operator, 'A1 Bulgaria EAD')
+        self.assertEqual(record.network_asn, 8717)
+        lookup.assert_called_once_with('198.51.100.40')

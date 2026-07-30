@@ -24,6 +24,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
+from .network_operator import lookup_network_operator
 from .serializer import (
     PostSerializer, RegisterSerializer, CommentSerializer,
     PollQuestionSerializer, UserPollStatusSerializer, PollAnswerSerializer,
@@ -778,7 +779,13 @@ class ConsentRecordCreateView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = self.request.user if self.request.user.is_authenticated else None
         ip_address = get_client_ip(self.request)
-        serializer.save(user=user, ip_address=ip_address)
+        network_operator, network_asn = lookup_network_operator(ip_address)
+        serializer.save(
+            user=user,
+            ip_address=ip_address,
+            network_operator=network_operator,
+            network_asn=network_asn,
+        )
 class SiteStatusView(generics.RetrieveAPIView):
     permission_classes = [AllowAny]
     serializer_class = SiteSettingsSerializer

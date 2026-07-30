@@ -99,6 +99,7 @@ TRUSTED_PROXY_IPS = env_list(
     "TRUSTED_PROXY_IPS",
     () if DEBUG else ("127.0.0.1", "::1"),
 )
+MAXMIND_ASN_DATABASE = os.getenv("MAXMIND_ASN_DATABASE", "").strip()
 
 DJANGO_ADMIN_LOGS_ENABLED = True
 # Application definition
