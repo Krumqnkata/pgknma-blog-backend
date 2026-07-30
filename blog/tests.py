@@ -574,9 +574,10 @@ class AuthenticationHardeningTests(TestCase):
         legacy = User.objects.create(
             username='legacy-google',
             email='Student@Example.com',
-            password='',
             is_active=True,
         )
+        legacy.set_unusable_password()
+        legacy.save(update_fields=['password'])
         SiteSettings.objects.create(enable_user_registration=False)
         verify.return_value = self.google_claims()
 

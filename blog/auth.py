@@ -117,8 +117,10 @@ class GoogleAuthView(APIView):
                     # E-mail alone is not proof of ownership for linking. An
                     # existing local account must be linked from an authenticated
                     # profile flow rather than silently claimed here. The sole
-                    # exception is an unambiguous legacy Google-only account:
-                    # the old implementation left its password as exactly ''.
+                    # exception is an unambiguous legacy Google-only account.
+                    # Older versions used either an empty password or Django's
+                    # standard unusable-password marker, so use the public API
+                    # instead of checking the stored hash directly.
                     email_matches = list(
                         User.objects.select_for_update()
                         .filter(email__iexact=email)
@@ -127,7 +129,7 @@ class GoogleAuthView(APIView):
                     if (
                         len(email_matches) == 1
                         and email_matches[0].is_active
-                        and email_matches[0].password == ''
+                        and not email_matches[0].has_usable_password()
                     ):
                         user = email_matches[0]
                         user.email = email
