@@ -711,6 +711,20 @@ class WeeklyPollViewSet(viewsets.ViewSet):
                 filter=Q(selected_option__is_correct=True),
             ),
         )
+        aggregates['leaderboard'] = list(
+            User.objects.filter(
+                is_active=True,
+                pollanswer__selected_option__is_correct=True,
+            )
+            .annotate(
+                correct_answers=Count(
+                    'pollanswer',
+                    filter=Q(pollanswer__selected_option__is_correct=True),
+                )
+            )
+            .order_by('-correct_answers', 'username', 'id')
+            .values('id', 'username', 'correct_answers')[:5]
+        )
         serializer = PollStatisticsSerializer(aggregates)
         return Response(serializer.data)
 

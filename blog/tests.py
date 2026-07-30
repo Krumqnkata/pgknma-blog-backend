@@ -418,7 +418,7 @@ class PollIntegrityTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertFalse(PollAnswer.objects.exists())
 
-    def test_public_statistics_are_aggregate_only(self):
+    def test_public_statistics_include_top_five_leaderboard(self):
         PollAnswer.objects.create(
             user=self.user,
             question=self.question,
@@ -430,9 +430,13 @@ class PollIntegrityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             set(response.data),
-            {'total_participants', 'total_answers', 'correct_answers'},
+            {'total_participants', 'total_answers', 'correct_answers', 'leaderboard'},
         )
-        self.assertNotIn(self.user.username, str(response.data))
+        self.assertEqual(response.data['leaderboard'], [{
+            'id': self.user.id,
+            'username': self.user.username,
+            'correct_answers': 1,
+        }])
 
     def test_poll_and_event_validate_date_ranges(self):
         now = timezone.now()

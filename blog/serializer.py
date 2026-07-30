@@ -389,10 +389,17 @@ class UserPollStatusSerializer(serializers.Serializer):
     question = PollQuestionSerializer(allow_null=True)
 
 
+class PollLeaderboardEntrySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    correct_answers = serializers.IntegerField()
+
+
 class PollStatisticsSerializer(serializers.Serializer):
     total_participants = serializers.IntegerField()
     total_answers = serializers.IntegerField()
     correct_answers = serializers.IntegerField()
+    leaderboard = PollLeaderboardEntrySerializer(many=True)
 
 
 class ContactSubmissionSerializer(serializers.ModelSerializer):
