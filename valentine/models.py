@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, time, timedelta
 
 from django.conf import settings as django_settings
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.exceptions import ValidationError
 from django.core.validators import MaxLengthValidator
 from django.db import models
@@ -89,6 +90,29 @@ class Profile(models.Model):
             "Например 2025 означава учебната 2025/2026 година."
         ),
     )
+    pin_hash = models.CharField(
+        max_length=256,
+        blank=True,
+        editable=False,
+        verbose_name="PIN хеш",
+    )
+    pin_set_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="PIN зададен на",
+    )
+    pin_failed_attempts = models.PositiveSmallIntegerField(
+        default=0,
+        editable=False,
+        verbose_name="Грешни PIN опити",
+    )
+    pin_locked_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="PIN заключен до",
+    )
 
     @property
     def clas_bg(self):
@@ -114,6 +138,26 @@ class Profile(models.Model):
             f"{self.academic_year_start}/"
             f"{self.academic_year_start + 1}"
         )
+
+    @property
+    def has_pin(self):
+        return bool(self.pin_hash)
+
+    def set_pin(self, pin):
+        """Store a PIN safely; its plaintext value is never persisted."""
+        self.pin_hash = make_password(pin)
+        self.pin_set_at = timezone.now()
+        self.pin_failed_attempts = 0
+        self.pin_locked_until = None
+
+    def check_pin(self, pin):
+        return bool(self.pin_hash) and check_password(pin, self.pin_hash)
+
+    def reset_pin(self):
+        self.pin_hash = ""
+        self.pin_set_at = None
+        self.pin_failed_attempts = 0
+        self.pin_locked_until = None
 
     def clean_fields(self, exclude=None):
         # ModelForm runs field validation before ``clean()``, so normalize here.

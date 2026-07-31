@@ -82,7 +82,21 @@ class ValentinePlatformTests(TestCase):
         )
 
     def login(self, code="SEND01"):
-        return self.client.post(reverse("valentine:login"), {"code": code})
+        profile = Profile.objects.filter(code__iexact=code).first()
+        if profile and not profile.has_pin:
+            profile.set_pin("123456")
+            profile.save(
+                update_fields=(
+                    "pin_hash",
+                    "pin_set_at",
+                    "pin_failed_attempts",
+                    "pin_locked_until",
+                )
+            )
+        response = self.client.post(reverse("valentine:login"), {"code": code})
+        if response.status_code == 302 and response.url == reverse("valentine:pin"):
+            return self.client.post(reverse("valentine:pin"), {"pin": "123456"})
+        return response
 
     def reveal_campaign(self):
         self.platform_settings.sending_ends_at = (
@@ -103,12 +117,120 @@ class ValentinePlatformTests(TestCase):
         self.assertTrue(cookie["secure"])
         self.assertEqual(cookie["samesite"], "Lax")
 
+    def test_first_login_requires_creating_a_six_digit_pin(self):
+        response = self.client.post(
+            reverse("valentine:login"), {"code": self.sender.code}
+        )
+
+        self.assertRedirects(response, reverse("valentine:pin"))
+        pin_page = self.client.get(reverse("valentine:pin"))
+        self.assertContains(pin_page, "Повтори PIN кода")
+
+        invalid = self.client.post(
+            reverse("valentine:pin"),
+            {"pin": "12345", "pin_confirmation": "12345"},
+        )
+        self.assertContains(invalid, "точно 6 цифри")
+        self.assertNotIn("authv", invalid.cookies)
+
+        response = self.client.post(
+            reverse("valentine:pin"),
+            {"pin": "654321", "pin_confirmation": "654321"},
+        )
+        self.assertRedirects(response, reverse("valentine:home"))
+        self.sender.refresh_from_db()
+        self.assertTrue(self.sender.has_pin)
+        self.assertTrue(self.sender.check_pin("654321"))
+
+    def test_existing_pin_is_required_after_access_code(self):
+        self.sender.set_pin("654321")
+        self.sender.save(
+            update_fields=(
+                "pin_hash",
+                "pin_set_at",
+                "pin_failed_attempts",
+                "pin_locked_until",
+            )
+        )
+        self.client.post(reverse("valentine:login"), {"code": self.sender.code})
+
+        wrong = self.client.post(reverse("valentine:pin"), {"pin": "000000"})
+        self.assertContains(wrong, "PIN кодът е невалиден")
+        self.assertNotIn("authv", wrong.cookies)
+
+        correct = self.client.post(reverse("valentine:pin"), {"pin": "654321"})
+        self.assertRedirects(correct, reverse("valentine:home"))
+
+    def test_pin_is_locked_after_five_wrong_attempts(self):
+        self.sender.set_pin("654321")
+        self.sender.save(
+            update_fields=(
+                "pin_hash",
+                "pin_set_at",
+                "pin_failed_attempts",
+                "pin_locked_until",
+            )
+        )
+        self.client.post(reverse("valentine:login"), {"code": self.sender.code})
+        for _index in range(5):
+            response = self.client.post(reverse("valentine:pin"), {"pin": "000000"})
+            self.assertContains(response, "PIN кодът е невалиден")
+
+        blocked = self.client.post(reverse("valentine:pin"), {"pin": "654321"})
+        self.assertContains(blocked, "PIN кодът е временно заключен")
+        self.assertNotIn("authv", blocked.cookies)
+        self.sender.refresh_from_db()
+        self.assertEqual(self.sender.pin_failed_attempts, 5)
+        self.assertGreater(self.sender.pin_locked_until, timezone.now())
+
+    def test_admin_pin_reset_revokes_sessions_without_exposing_the_pin(self):
+        self.sender.set_pin("654321")
+        self.sender.save(
+            update_fields=(
+                "pin_hash",
+                "pin_set_at",
+                "pin_failed_attempts",
+                "pin_locked_until",
+            )
+        )
+        active_session = Register.objects.create(profile=self.sender)
+        admin_user = get_user_model().objects.create_superuser(
+            username="pin-admin",
+            email="pin-admin@example.com",
+            password="test-password",
+        )
+        request = RequestFactory().post("/admin/valentine/profile/")
+        request.user = admin_user
+        model_admin = ProfileAdmin(Profile, AdminSite())
+
+        with patch.object(model_admin, "message_user"):
+            model_admin.reset_pins(
+                request, Profile.objects.filter(pk=self.sender.pk)
+            )
+
+        self.sender.refresh_from_db()
+        active_session.refresh_from_db()
+        self.assertFalse(self.sender.has_pin)
+        self.assertTrue(active_session.revoked)
+        self.assertNotIn("pin_hash", model_admin.get_readonly_fields(request, self.sender))
+
     def test_external_next_url_is_not_allowed(self):
+        self.sender.set_pin("123456")
+        self.sender.save(
+            update_fields=(
+                "pin_hash",
+                "pin_set_at",
+                "pin_failed_attempts",
+                "pin_locked_until",
+            )
+        )
         response = self.client.post(
             f"{reverse('valentine:login')}?next=https://example.org/",
             {"code": "SEND01"},
         )
 
+        self.assertRedirects(response, reverse("valentine:pin"))
+        response = self.client.post(reverse("valentine:pin"), {"pin": "123456"})
         self.assertRedirects(response, reverse("valentine:home"))
 
     def test_profile_can_be_deactivated_without_losing_history(self):
@@ -1703,6 +1825,15 @@ class ValentinePlatformTests(TestCase):
 
     def test_successful_login_does_not_reset_ip_failure_counter(self):
         remote_addr = "192.0.2.11"
+        self.sender.set_pin("123456")
+        self.sender.save(
+            update_fields=(
+                "pin_hash",
+                "pin_set_at",
+                "pin_failed_attempts",
+                "pin_locked_until",
+            )
+        )
         for _index in range(4):
             self.client.post(
                 reverse("valentine:login"),
@@ -1713,6 +1844,12 @@ class ValentinePlatformTests(TestCase):
         successful = self.client.post(
             reverse("valentine:login"),
             {"code": self.sender.code},
+            REMOTE_ADDR=remote_addr,
+        )
+        self.assertRedirects(successful, reverse("valentine:pin"))
+        successful = self.client.post(
+            reverse("valentine:pin"),
+            {"pin": "123456"},
             REMOTE_ADDR=remote_addr,
         )
         self.assertRedirects(successful, reverse("valentine:home"))

@@ -7,6 +7,7 @@ app_name = "valentine"
 
 urlpatterns = [
     path("", views.login, name="login"),
+    path("pin/", views.pin, name="pin"),
     path("home/", views.home, name="home"),
     path("logout/", views.logout, name="logout"),
     path("students/<str:class_name>/", views.get_students, name="students"),

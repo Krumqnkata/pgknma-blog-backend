@@ -29,6 +29,60 @@ class AccessCodeForm(forms.Form):
         return self.cleaned_data["code"].strip().upper()
 
 
+class PinAuthenticationForm(forms.Form):
+    pin = forms.CharField(
+        min_length=6,
+        max_length=6,
+        label="6-цифрен PIN",
+        widget=forms.PasswordInput(
+            attrs={
+                "autocomplete": "current-password",
+                "inputmode": "numeric",
+                "pattern": "[0-9]*",
+                "placeholder": "••••••",
+            }
+        ),
+    )
+
+    def clean_pin(self):
+        pin = self.cleaned_data["pin"]
+        if not pin.isascii() or not pin.isdigit() or len(pin) != 6:
+            raise forms.ValidationError("PIN кодът трябва да е точно 6 цифри.")
+        return pin
+
+
+class PinSetupForm(PinAuthenticationForm):
+    pin_confirmation = forms.CharField(
+        min_length=6,
+        max_length=6,
+        label="Повтори PIN кода",
+        widget=forms.PasswordInput(
+            attrs={
+                "autocomplete": "new-password",
+                "inputmode": "numeric",
+                "pattern": "[0-9]*",
+                "placeholder": "••••••",
+            }
+        ),
+    )
+
+    def clean_pin_confirmation(self):
+        pin = self.cleaned_data["pin_confirmation"]
+        if not pin.isascii() or not pin.isdigit() or len(pin) != 6:
+            raise forms.ValidationError("PIN кодът трябва да е точно 6 цифри.")
+        return pin
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if (
+            cleaned_data.get("pin")
+            and cleaned_data.get("pin_confirmation")
+            and cleaned_data["pin"] != cleaned_data["pin_confirmation"]
+        ):
+            self.add_error("pin_confirmation", "Двата PIN кода не съвпадат.")
+        return cleaned_data
+
+
 class ValentineCreateForm(forms.Form):
     target_type = forms.ChoiceField(
         choices=Valenitines.AudienceType.choices,

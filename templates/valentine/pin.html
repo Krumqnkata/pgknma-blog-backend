@@ -1,0 +1,53 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}{% if creating_pin %}Създай PIN{% else %}Въведи PIN{% endif %} · Valentine ПГКНМА{% endblock %}
+{% block body_class %}login-page{% endblock %}
+
+{% block content %}
+<section class="login-shell">
+    <div class="login-story">
+        <span class="eyebrow">Твоят личен вход</span>
+        {% if creating_pin %}
+        <h1>Създай своя 6-цифрен PIN.</h1>
+        <p>Той добавя защита към личния ти код. Не го споделяй с никого.</p>
+        {% else %}
+        <h1>Въведи своя PIN.</h1>
+        <p>PIN кодът потвърждава, че ти използваш личния код за достъп.</p>
+        {% endif %}
+        <div class="floating-envelope" aria-hidden="true"><span>♥</span></div>
+    </div>
+
+    <div class="panel login-panel">
+        <div class="panel-icon" aria-hidden="true">✦</div>
+        <span class="eyebrow">{{ profile.full_name }}</span>
+        {% if creating_pin %}
+        <h2>Избери PIN код</h2>
+        <p class="muted">Използвай точно 6 цифри, които ще запомниш.</p>
+        {% else %}
+        <h2>Потвърди входа</h2>
+        <p class="muted">Въведи своя 6-цифрен PIN код.</p>
+        {% endif %}
+
+        <form method="post" class="stack-form" novalidate>
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+            <div class="form-alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+            <label for="{{ form.pin.id_for_label }}">{{ form.pin.label }}</label>
+            {{ form.pin }}
+            {% if form.pin.errors %}<div class="field-error">{{ form.pin.errors }}</div>{% endif %}
+            {% if creating_pin %}
+            <label for="{{ form.pin_confirmation.id_for_label }}">{{ form.pin_confirmation.label }}</label>
+            {{ form.pin_confirmation }}
+            {% if form.pin_confirmation.errors %}<div class="field-error">{{ form.pin_confirmation.errors }}</div>{% endif %}
+            {% endif %}
+            <button class="button button-primary button-wide" type="submit">
+                {% if creating_pin %}Запази PIN и влез{% else %}Влез{% endif %}
+                <span aria-hidden="true">→</span>
+            </button>
+        </form>
+
+        <a class="text-link" href="{% url 'valentine:login' %}">Назад към кода за достъп</a>
+    </div>
+</section>
+{% endblock %}

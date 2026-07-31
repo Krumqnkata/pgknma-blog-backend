@@ -19,6 +19,8 @@ from django.views.decorators.http import require_GET, require_POST, require_http
 
 from .forms import (
     AccessCodeForm,
+    PinAuthenticationForm,
+    PinSetupForm,
     ReportValentineForm,
     ValentineCreateForm,
     ValentineEditForm,
@@ -35,8 +37,14 @@ from .models import (
 
 
 AUTH_COOKIE = "authv"
+PIN_PENDING_PROFILE_KEY = "valentine_pin_profile"
+PIN_PENDING_NEXT_KEY = "valentine_pin_next"
+PIN_PENDING_CREATED_KEY = "valentine_pin_started_at"
+PIN_PENDING_TTL_SECONDS = 10 * 60
 LOGIN_WINDOW_SECONDS = 15 * 60
 LOGIN_MAX_ATTEMPTS = 5
+PIN_LOCK_SECONDS = 15 * 60
+PIN_MAX_ATTEMPTS = 5
 LOGIN_DATABASE_RETRIES = 3
 LOGIN_STATUS_BLOCKED = "blocked"
 LOGIN_STATUS_INVALID = "invalid"
@@ -170,6 +178,26 @@ def _login_window():
     return max(60, configured)
 
 
+def _pin_limit():
+    try:
+        configured = int(
+            getattr(django_settings, "VALENTINE_PIN_MAX_ATTEMPTS", PIN_MAX_ATTEMPTS)
+        )
+    except (TypeError, ValueError):
+        configured = PIN_MAX_ATTEMPTS
+    return max(1, configured)
+
+
+def _pin_lock_window():
+    try:
+        configured = int(
+            getattr(django_settings, "VALENTINE_PIN_LOCK_SECONDS", PIN_LOCK_SECONDS)
+        )
+    except (TypeError, ValueError):
+        configured = PIN_LOCK_SECONDS
+    return max(60, configured)
+
+
 def _authenticate_login(code, client_key, *, now=None):
     """Authenticate and update the DB-authoritative failure window.
 
@@ -240,17 +268,63 @@ def _authenticate_login(code, client_key, *, now=None):
                             "updated_at",
                         )
                     )
-                Register.objects.filter(
-                    profile=profile,
-                    revoked=False,
-                ).update(revoked=True)
-                session = Register.objects.create(profile=profile)
-                return LOGIN_STATUS_SUCCESS, session
+                return LOGIN_STATUS_SUCCESS, profile
         except OperationalError:
             # Deadlock/table-lock retries are bounded and ultimately fail
             # closed instead of allowing an uncounted authentication attempt.
             continue
     return LOGIN_STATUS_BLOCKED, None
+
+
+def _clear_pending_pin_login(request):
+    for key in (
+        PIN_PENDING_PROFILE_KEY,
+        PIN_PENDING_NEXT_KEY,
+        PIN_PENDING_CREATED_KEY,
+    ):
+        request.session.pop(key, None)
+
+
+def _pending_pin_profile(request):
+    profile_id = request.session.get(PIN_PENDING_PROFILE_KEY)
+    started_at = request.session.get(PIN_PENDING_CREATED_KEY)
+    try:
+        is_expired = (
+            not profile_id
+            or not started_at
+            or timezone.now().timestamp() - float(started_at)
+            > PIN_PENDING_TTL_SECONDS
+        )
+    except (TypeError, ValueError):
+        is_expired = True
+    if is_expired:
+        _clear_pending_pin_login(request)
+        return None
+    return Profile.objects.filter(pk=profile_id, is_active=True).first()
+
+
+def _complete_pin_login(request, profile):
+    Register.objects.filter(profile=profile, revoked=False).update(revoked=True)
+    session = Register.objects.create(profile=profile)
+    next_url = request.session.get(PIN_PENDING_NEXT_KEY)
+    _clear_pending_pin_login(request)
+    if not next_url or not url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        next_url = reverse("valentine:home")
+    response = redirect(next_url)
+    response.set_cookie(
+        AUTH_COOKIE,
+        str(session.uuid),
+        max_age=14 * 24 * 60 * 60,
+        httponly=True,
+        secure=not django_settings.DEBUG,
+        samesite="Lax",
+        path="/valentines/",
+    )
+    return response
 
 
 def _day_bounds(moment):
@@ -321,25 +395,88 @@ def login(request):
                 form.add_error(None, "Кодът е невалиден или е изтекъл.")
             else:
                 next_url = request.GET.get("next")
-                if not next_url or not url_has_allowed_host_and_scheme(
+                if next_url and not url_has_allowed_host_and_scheme(
                     next_url,
                     allowed_hosts={request.get_host()},
                     require_https=request.is_secure(),
                 ):
-                    next_url = reverse("valentine:home")
-                response = redirect(next_url)
-                response.set_cookie(
-                    AUTH_COOKIE,
-                    str(session.uuid),
-                    max_age=14 * 24 * 60 * 60,
-                    httponly=True,
-                    secure=not django_settings.DEBUG,
-                    samesite="Lax",
-                    path="/valentines/",
-                )
-                return response
+                    next_url = ""
+                request.session[PIN_PENDING_PROFILE_KEY] = str(session.pk)
+                request.session[PIN_PENDING_CREATED_KEY] = timezone.now().timestamp()
+                request.session[PIN_PENDING_NEXT_KEY] = next_url or ""
+                return redirect("valentine:pin")
 
     return render(request, "valentine/login.html", {"form": form})
+
+
+@never_cache
+@require_http_methods(["GET", "POST"])
+def pin(request):
+    """Finish a code-authenticated Valentine login with a private PIN."""
+    if get_current_session(request):
+        _clear_pending_pin_login(request)
+        return redirect("valentine:home")
+
+    profile = _pending_pin_profile(request)
+    if profile is None:
+        messages.error(request, "Сесията за вход изтече. Въведи кода си отново.")
+        return redirect("valentine:login")
+
+    creating_pin = not profile.has_pin
+    form_class = PinSetupForm if creating_pin else PinAuthenticationForm
+    form = form_class(request.POST or None)
+
+    if request.method == "POST" and form.is_valid():
+        now = timezone.now()
+        with transaction.atomic():
+            profile = Profile.objects.select_for_update().get(pk=profile.pk)
+            if not profile.is_active:
+                _clear_pending_pin_login(request)
+                messages.error(request, "Профилът вече не е активен.")
+                return redirect("valentine:login")
+
+            if profile.pin_locked_until and profile.pin_locked_until > now:
+                form.add_error(
+                    None,
+                    "PIN кодът е временно заключен. Опитай отново по-късно.",
+                )
+            elif not profile.has_pin:
+                # A PIN is created only after the code has been validated in
+                # the previous step. It is stored as a Django password hash.
+                profile.set_pin(form.cleaned_data["pin"])
+                profile.save(
+                    update_fields=(
+                        "pin_hash",
+                        "pin_set_at",
+                        "pin_failed_attempts",
+                        "pin_locked_until",
+                    )
+                )
+                return _complete_pin_login(request, profile)
+            elif profile.check_pin(form.cleaned_data["pin"]):
+                if profile.pin_failed_attempts or profile.pin_locked_until:
+                    profile.pin_failed_attempts = 0
+                    profile.pin_locked_until = None
+                    profile.save(
+                        update_fields=("pin_failed_attempts", "pin_locked_until")
+                    )
+                return _complete_pin_login(request, profile)
+            else:
+                profile.pin_failed_attempts += 1
+                if profile.pin_failed_attempts >= _pin_limit():
+                    profile.pin_locked_until = now + timedelta(
+                        seconds=_pin_lock_window()
+                    )
+                profile.save(
+                    update_fields=("pin_failed_attempts", "pin_locked_until")
+                )
+                form.add_error(None, "PIN кодът е невалиден.")
+
+    return render(
+        request,
+        "valentine/pin.html",
+        {"form": form, "profile": profile, "creating_pin": creating_pin},
+    )
 
 
 @require_POST

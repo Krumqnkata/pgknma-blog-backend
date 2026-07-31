@@ -95,11 +95,18 @@ class ProfileAdmin(ModelAdmin):
         "academic_year_display",
         "email",
         "code",
+        "pin_status_display",
         "is_active",
     )
     search_fields = ("code", "first_name", "last_name", "email", "clas")
     list_filter = ("is_active", "academic_year_start", "clas")
-    readonly_fields = ("uuid",)
+    readonly_fields = (
+        "uuid",
+        "pin_status_display",
+        "pin_set_at",
+        "pin_failed_attempts",
+        "pin_locked_until",
+    )
     actions = (
         "promote_to_next_academic_year",
         "deactivate_profiles",
@@ -107,11 +114,16 @@ class ProfileAdmin(ModelAdmin):
         "export_selected_profiles_pdf",
         "send_system_valentine",
         "regenerate_access_codes",
+        "reset_pins",
     )
 
     @admin.display(description="Име")
     def full_name_display(self, obj):
         return obj.full_name
+
+    @admin.display(description="PIN настроен", boolean=True)
+    def pin_status_display(self, obj):
+        return obj.has_pin
 
     @admin.display(
         description="Учебна година",
@@ -620,6 +632,32 @@ class ProfileAdmin(ModelAdmin):
         self.message_user(
             request,
             f"Обновени са {updated} кода и активните им сесии са прекратени.",
+            messages.WARNING,
+        )
+
+    @admin.action(
+        description="Нулирай PIN кодовете и прекрати сесиите",
+        permissions=("change",),
+    )
+    def reset_pins(self, request, queryset):
+        profile_ids = list(queryset.values_list("pk", flat=True))
+        if not profile_ids:
+            return
+        updated = Profile.objects.filter(pk__in=profile_ids).update(
+            pin_hash="",
+            pin_set_at=None,
+            pin_failed_attempts=0,
+            pin_locked_until=None,
+        )
+        Register.objects.filter(profile_id__in=profile_ids, revoked=False).update(
+            revoked=True
+        )
+        self.message_user(
+            request,
+            (
+                f"Нулирани PIN кодове: {updated}. "
+                "Активните Valentine сесии на тези профили са прекратени."
+            ),
             messages.WARNING,
         )
 
