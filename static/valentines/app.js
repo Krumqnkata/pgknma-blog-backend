@@ -482,6 +482,17 @@
         });
     });
 
+    document.querySelectorAll("[data-confirm-logout]").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+            const confirmed = window.confirm(
+                "Сигурен ли си, че искаш да излезеш? На това устройство ще трябва отново да въведеш кода и PIN-а си."
+            );
+            if (!confirmed) {
+                event.preventDefault();
+            }
+        });
+    });
+
     document.querySelectorAll(".toast").forEach((toast, index) => {
         window.setTimeout(() => {
             toast.classList.add("toast-leaving");

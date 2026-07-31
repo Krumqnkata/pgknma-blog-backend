@@ -503,6 +503,48 @@ class ValentinePlatformTests(TestCase):
         self.assertContains(response, "Вече разкрито послание")
         self.assertContains(response, self.recipient.full_name)
 
+    def test_received_archive_shows_only_own_visible_archived_valentines(self):
+        archived_campaign = ValentineCampaign.objects.create(
+            year=self.campaign.year - 1,
+            is_archived=True,
+            archived_at=timezone.now(),
+        )
+        Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=archived_campaign,
+            content="Мое старо послание",
+            is_anonymous=False,
+        )
+        Valenitines.objects.create(
+            profile=self.same_name_recipient,
+            sender_profile=self.sender,
+            campaign=archived_campaign,
+            content="Чуждо старо послание",
+        )
+        Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=archived_campaign,
+            content="Скрито старо послание",
+            moderation_status=Valenitines.ModerationStatus.HIDDEN,
+        )
+        Valenitines.objects.create(
+            profile=self.recipient,
+            sender_profile=self.sender,
+            campaign=self.campaign,
+            content="Текущо послание",
+        )
+        self.login(code="RECV01")
+
+        response = self.client.get(reverse("valentine:archive"))
+
+        self.assertContains(response, "Мое старо послание")
+        self.assertContains(response, archived_campaign.name)
+        self.assertNotContains(response, "Чуждо старо послание")
+        self.assertNotContains(response, "Скрито старо послание")
+        self.assertNotContains(response, "Текущо послание")
+
     def test_report_can_only_target_received_message(self):
         received = Valenitines.objects.create(
             profile=self.sender,

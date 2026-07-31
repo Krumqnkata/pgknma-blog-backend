@@ -1179,6 +1179,31 @@ summary:focus-visible {
     gap: 22px;
 }
 
+.archive-campaign {
+    margin-top: 54px;
+}
+
+.archive-heading {
+    margin-bottom: 18px;
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.archive-heading h2 {
+    margin: 5px 0 0;
+    font-family: var(--font-display);
+    font-size: clamp(1.8rem, 4vw, 2.7rem);
+    font-weight: 500;
+}
+
+.archive-heading > span {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
 .received-card {
     min-height: 370px;
     padding: 35px 28px 25px;
@@ -1506,7 +1531,13 @@ summary:focus-visible {
         min-height: 68px;
         margin-top: 8px;
         padding: 9px 11px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
         gap: 10px;
+    }
+
+    .site-header > .brand {
+        min-width: 0;
     }
 
     .brand-mark {
@@ -1518,8 +1549,8 @@ summary:focus-visible {
         display: none;
     }
 
-    .main-nav {
-        position: fixed;
+    .site-header > .main-nav {
+        position: fixed !important;
         z-index: 80;
         right: 10px;
         bottom: 10px;
@@ -1538,8 +1569,12 @@ summary:focus-visible {
         font-size: 0.72rem;
     }
 
-    .logout-form {
+    .site-header > .logout-form {
         margin-left: auto;
+        display: block !important;
+        flex: 0 0 auto;
+        grid-column: 2;
+        grid-row: 1;
     }
 
     .site-footer {
@@ -1637,6 +1672,43 @@ summary:focus-visible {
     }
 }
 
+/* Some phones/tablets report a wider CSS viewport (for example in a WebView).
+   Keep account actions visible there too. */
+@media (min-width: 721px) and (max-width: 1050px) {
+    .site-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+    }
+
+    .site-header > .main-nav {
+        position: fixed;
+        z-index: 80;
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+        display: flex;
+        justify-content: space-around;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 17px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 14px 38px rgba(57, 13, 34, 0.18);
+        backdrop-filter: blur(16px);
+    }
+
+    .site-header > .logout-form {
+        display: block;
+        grid-column: 2;
+        grid-row: 1;
+        margin-left: auto;
+    }
+
+    .site-footer {
+        margin-bottom: 82px;
+    }
+}
+
 /* Compact phones: keep every action readable and reachable without overflow. */
 @media (max-width: 480px) {
     .site-header {
@@ -1665,8 +1737,10 @@ summary:focus-visible {
     }
 
     .logout-form .button {
+        display: inline-flex;
         min-width: 44px;
         padding-inline: 10px;
+        white-space: nowrap;
     }
 
     .toast-stack {
@@ -1753,6 +1827,65 @@ summary:focus-visible {
     .guide-card h2 {
         margin-top: 20px;
         font-size: 1.45rem;
+    }
+}
+
+/* Mobile header: first row for the account, second row for navigation.
+   Links wrap instead of being hidden on narrow screens. */
+@media (max-width: 1050px) {
+    .site-header {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-rows: auto auto;
+        align-items: center;
+    }
+
+    .site-header > .brand {
+        grid-column: 1;
+        grid-row: 1;
+        min-width: 0;
+    }
+
+    .site-header > .logout-form {
+        display: block !important;
+        grid-column: 2;
+        grid-row: 1;
+        margin-left: 0;
+    }
+
+    .site-header > .main-nav {
+        position: static !important;
+        grid-column: 1 / -1;
+        grid-row: 2;
+        width: 100%;
+        margin: 10px 0 0;
+        padding: 9px 0 0;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: stretch;
+        gap: 4px;
+        overflow: visible;
+        border-top: 1px solid var(--line);
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        backdrop-filter: none;
+    }
+
+    .site-header > .main-nav a {
+        flex: 1 1 105px;
+        padding: 9px 7px;
+        color: #55404c;
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    .site-footer {
+        margin-bottom: 0;
     }
 }
 

@@ -842,6 +842,43 @@ def inbox(request):
 @never_cache
 @require_GET
 @valentine_login_required
+def received_archive(request):
+    """Show only the logged-in profile's visible valentines from past campaigns."""
+    archived_received = (
+        Valenitines.objects.filter(
+            profile=request.valentine_profile,
+            campaign__is_archived=True,
+            is_reported=False,
+        )
+        .exclude(moderation_status=Valenitines.ModerationStatus.HIDDEN)
+        .select_related("campaign", "sender_profile")
+        .order_by("-campaign__year", "-date")
+    )
+
+    archive_groups = []
+    for valentine in archived_received:
+        if (
+            not archive_groups
+            or archive_groups[-1]["campaign"].pk != valentine.campaign_id
+        ):
+            archive_groups.append(
+                {"campaign": valentine.campaign, "valentines": []}
+            )
+        archive_groups[-1]["valentines"].append(valentine)
+
+    return render(
+        request,
+        "valentine/archive.html",
+        {
+            "profile": request.valentine_profile,
+            "archive_groups": archive_groups,
+        },
+    )
+
+
+@never_cache
+@require_GET
+@valentine_login_required
 def outbox(request):
     platform_settings = get_platform_settings()
     campaign = platform_settings.active_campaign

@@ -1,0 +1,57 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Архив · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">Твоите спомени</span>
+    <h1>Архив на получените валентинки</h1>
+    <p>{{ profile.first_name }}, тук пазим получените от теб валентинки от приключили кампании.</p>
+</section>
+
+{% for archive in archive_groups %}
+<section class="archive-campaign wrap">
+    <div class="archive-heading">
+        <div>
+            <span class="eyebrow">Кампания {{ archive.campaign.year }}</span>
+            <h2>{{ archive.campaign.name }}</h2>
+        </div>
+        <span>{{ archive.valentines|length }} {% if archive.valentines|length == 1 %}валентинка{% else %}валентинки{% endif %}</span>
+    </div>
+
+    <div class="mail-grid">
+        {% for valentine in archive.valentines %}
+        <article class="received-card theme-{{ valentine.theme }}" data-download-card>
+            <div class="card-stamp">♥</div>
+            <span class="card-kicker">{{ valentine.date|date:"d.m.Y · H:i" }}</span>
+            <p class="received-message">{{ valentine.content }}</p>
+            <div class="received-from">
+                {% if valentine.is_anonymous %}
+                    От анонимен приятел
+                {% elif valentine.sender_profile %}
+                    От {{ valentine.sender_profile.full_name }}
+                {% else %}
+                    От Valentine екипа
+                {% endif %}
+            </div>
+            <div class="card-download-row" data-download-exclude>
+                <button class="button button-secondary button-small"
+                        type="button"
+                        data-download-image
+                        data-filename="valentine-{{ valentine.id }}">
+                    Изтегли като снимка
+                </button>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% empty %}
+<section class="empty-state wrap">
+    <span aria-hidden="true">♡</span>
+    <h2>Все още нямаш архив</h2>
+    <p>Тук ще се появят получените ти валентинки, когато кампаниите бъдат архивирани.</p>
+    <a class="button button-primary" href="{% url 'valentine:inbox' %}">Към получените</a>
+</section>
+{% endfor %}
+{% endblock %}
