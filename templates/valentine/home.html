@@ -31,6 +31,13 @@
             {% endif %}
         {% endif %}
     </div>
+
+    {% if sending_open %}
+    <a class="scroll-cue" href="#composer">
+        <span>Плъзни надолу, за да създадеш валентинка</span>
+        <span class="scroll-cue-arrow" aria-hidden="true">↓</span>
+    </a>
+    {% endif %}
 </section>
 
 <section class="stats-strip wrap" aria-label="Статистика">
