@@ -120,7 +120,7 @@ class ContentVisibilityTests(TestCase):
             user=self.user,
             title='Pending',
             image='memes/pending.png',
-            is_approved=False,
+            status='pending',
         )
 
         response = self.client.get(f'/api/memes/{meme.pk}/')
@@ -132,7 +132,7 @@ class ContentVisibilityTests(TestCase):
             user=self.user,
             title='Approved',
             image='memes/approved.png',
-            is_approved=True,
+            status='approved',
         )
 
         response = self.client.get(f'/api/memes/{meme.pk}/')
@@ -248,7 +248,7 @@ class ProtectedMemeImageTests(TestCase):
                 self.PNG_BYTES,
                 content_type='image/png',
             ),
-            is_approved=approved,
+            status='approved' if approved else 'pending',
         )
 
     def _image_url(self, meme):
@@ -498,7 +498,7 @@ class VoteIntegrityTests(TestCase):
             user=self.user,
             title='Meme',
             image='memes/meme.png',
-            is_approved=True,
+            status='approved',
         )
 
     def test_duplicate_api_votes_do_not_increment_counter(self):

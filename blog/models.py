@@ -273,7 +273,13 @@ class MemeOfWeek(models.Model):
         verbose_name="Изображение",
         help_text="Файлът с изображението на мемето.",
     )
-    is_approved = models.BooleanField(default=False, verbose_name="Одобрено", help_text="Отбележете, ако мемето е одобрено за участие в 'Меме на седмицата'.")
+    status = models.CharField(
+        max_length=10,
+        choices=STATUS_CHOICES,
+        default='pending',
+        verbose_name="Статус",
+        help_text="Статус на мемето: изчакващо, одобрено или отхвърлено.",
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата на качване", null=True, help_text="Дата и час на качване на мемето. Формат: YYYY-MM-DD HH:MM:SS.")
     voted_by = models.ManyToManyField(User, related_name='voted_memes', blank=True, verbose_name="Гласували потребители", help_text="Потребители, които са гласували за това меме.")
     votes = models.IntegerField(default=0, verbose_name="Гласове", help_text="Брой на гласовете за мемето.")
@@ -291,7 +297,7 @@ class MemeOfWeek(models.Model):
 
     def __str__(self):
         if self.title:
-            return self.title
+            return f"{self.title} ({self.get_status_display()})"
         username = self.user.username if self.user else "изтрит потребител"
         return f"Meme by {username}"
 

@@ -521,8 +521,8 @@ class MemeOfWeekSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MemeOfWeek
-        fields = ['id', 'title', 'image', 'image_url', 'user_username', 'created_at', 'is_approved', 'votes', 'has_voted']
-        read_only_fields = ['id', 'user_username', 'created_at', 'image_url', 'is_approved', 'votes', 'has_voted']
+        fields = ['id', 'title', 'image', 'image_url', 'user_username', 'created_at', 'status', 'votes', 'has_voted']
+        read_only_fields = ['id', 'user_username', 'created_at', 'image_url', 'status', 'votes', 'has_voted']
 
     def get_image_url(self, obj):
         if obj.pk and obj.image:

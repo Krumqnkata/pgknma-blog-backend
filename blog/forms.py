@@ -262,10 +262,10 @@ class MemeSelectionForm(forms.Form):
             field_name = f'meme_{meme.id}'
             username = meme.user.username if meme.user else "неизвестен потребител"
             title = meme.title or f"Meme by {username}"
-            status_text = "Одобрено" if meme.is_approved else "Неодобрено"
+            status_text = meme.get_status_display()
             date_text = meme.created_at.strftime('%d.%m.%Y') if meme.created_at else "Без дата"
             votes_text = f" | Гласове: {meme.votes}" if meme.votes else ""
-            status_class = "approved" if meme.is_approved else "not-approved"
+            status_class = meme.status
 
             if meme.pk and meme.image:
                 image_preview = format_html(

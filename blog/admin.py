@@ -690,8 +690,8 @@ class PostDocumentAdmin(ModelAdmin):
 
 @admin.register(MemeOfWeek)
 class MemeOfWeekAdmin(ModelAdmin):
-    list_display = ('title', 'user', 'image_preview', 'is_approved', 'votes', 'created_at')
-    list_filter = ('is_approved', 'created_at')
+    list_display = ('title', 'user', 'image_preview', 'status', 'votes', 'created_at')
+    list_filter = ('status', 'created_at')
     search_fields = ('title', 'user__username')
     readonly_fields = ('user', 'created_at', 'image_preview', 'votes', 'title',)
     exclude = ('voted_by',)

@@ -90,7 +90,7 @@ class ProtectedMemeImageView(APIView):
                 'pk',
                 'user_id',
                 'image',
-                'is_approved',
+                'status',
             ),
             pk=pk,
         )
@@ -105,7 +105,7 @@ class ProtectedMemeImageView(APIView):
                 .values_list('enable_meme_of_the_week', flat=True)
                 .first()
             )
-            if not meme.is_approved or feature_enabled is False:
+            if meme.status != 'approved' or feature_enabled is False:
                 raise Http404
 
         if not meme.image or not meme.image.name:
@@ -153,7 +153,7 @@ class MemeOfWeekViewSet(viewsets.ModelViewSet):
         if site_settings and not site_settings.enable_meme_of_the_week:
             return MemeOfWeek.objects.none()
         queryset = (
-            MemeOfWeek.objects.filter(is_approved=True)
+            MemeOfWeek.objects.filter(status='approved')
             .select_related('user')
             .order_by('-votes', '-created_at')
         )
@@ -401,8 +401,8 @@ class MyMemeDeleteView(generics.DestroyAPIView):
                 pk=kwargs['pk'],
             )
             self.check_object_permissions(request, instance)
-            if instance.is_approved:
-                return Response({"detail": "Можете да триете само неодобрени мемета."}, status=status.HTTP_403_FORBIDDEN)
+            if instance.status != 'pending':
+                return Response({"detail": "Можете да триете само чакащи мемета."}, status=status.HTTP_403_FORBIDDEN)
             self.perform_destroy(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -480,7 +480,7 @@ class MemeVoteView(APIView):
                 MemeOfWeek.objects.select_for_update(),
                 pk=pk,
             )
-            if not meme.is_approved:
+            if meme.status != 'approved':
                 return Response({'detail': 'Може да гласувате само за одобрени мемета.'}, status=status.HTTP_400_BAD_REQUEST)
             if meme.voted_by.filter(pk=request.user.pk).exists():
                 return Response({'detail': 'Вече сте гласували за това меме.'}, status=status.HTTP_400_BAD_REQUEST)
