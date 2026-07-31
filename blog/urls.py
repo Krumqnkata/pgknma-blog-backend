@@ -56,6 +56,9 @@ urlpatterns = [
     # Път за събития
     path('events/', blog_views.EventListView.as_view(), name='event-list'),
 
+    # Учебна програма, поддържана чрез CSV импорт в админ панела
+    path('program/', blog_views.ProgramScheduleView.as_view(), name='program-schedule'),
+
     # Път за дневник на промените
     path('changelog/', blog_views.ChangelogListView.as_view(), name='changelog-list'),
 

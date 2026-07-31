@@ -16,12 +16,13 @@ from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
+import re
 from django.db.models import BooleanField, Count, Exists, OuterRef, Q, Value
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog
+from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
@@ -31,7 +32,7 @@ from .serializer import (
     PollStatisticsSerializer, ContactSubmissionSerializer, NotificationSerializer,
     EventSerializer, TermsOfServiceSerializer, BellSongSuggestionSerializer,
     PrivacyPolicySerializer, MemeOfWeekSerializer, ConsentRecordSerializer, SiteSettingsSerializer,
-    ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer
+    ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer
 )
 
 
@@ -748,6 +749,50 @@ class EventListView(generics.ListAPIView):
     queryset = Event.objects.filter(published=True).order_by('-start_datetime')
     serializer_class = EventSerializer
     permission_classes = [SiteIsAvailable, AllowAny]
+
+
+class ProgramScheduleView(APIView):
+    """Public schedule API. The shape deliberately matches the former CSV columns."""
+
+    permission_classes = [SiteIsAvailable, AllowAny]
+
+    def get(self, request):
+        site_settings, _ = SiteSettings.objects.get_or_create(pk=1)
+        if not site_settings.enable_program_page:
+            return Response(
+                {"detail": "Страницата с учебната програма в момента е деактивирана."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        entries = ScheduleEntry.objects.all().order_by('class_name', 'lesson_number')
+        serialized_entries = ScheduleEntrySerializer(entries, many=True).data
+        rows = [
+            {
+                'Клас': entry['class_name'],
+                'Час': str(entry['lesson_number']),
+                'Понеделник': entry['monday'],
+                'Вторник': entry['tuesday'],
+                'Сряда': entry['wednesday'],
+                'Четвъртък': entry['thursday'],
+                'Петък': entry['friday'],
+            }
+            for entry in serialized_entries
+        ]
+        def class_sort_key(class_name):
+            match = re.match(r'^\s*(\d+)\s*(.*)$', class_name)
+            if match:
+                return int(match.group(1)), match.group(2).casefold()
+            return 999, class_name.casefold()
+
+        classes = sorted(
+            {entry['class_name'] for entry in serialized_entries},
+            key=class_sort_key,
+        )
+        return Response({
+            'classes': classes,
+            'headers': ['Час', 'Понеделник', 'Вторник', 'Сряда', 'Четвъртък', 'Петък'],
+            'rows': rows,
+        })
 
 class ChangelogListView(generics.ListAPIView):
     queryset = Changelog.objects.filter(is_active=True).order_by('-updated_at')

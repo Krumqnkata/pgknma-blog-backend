@@ -550,6 +550,11 @@ UNFOLD = {
                         "icon": "event",
                     },
                     {
+                        "title": "Учебна програма",
+                        "link": "/admin/blog/scheduleentry/",
+                        "icon": "calendar_month",
+                    },
+                    {
                         "title": "Известия",
                         "link": "/admin/blog/notification/",
                         "icon": "notifications",

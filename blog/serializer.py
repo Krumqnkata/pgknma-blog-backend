@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
-    Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, \
+    Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
     validate_meme_image_size
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -553,6 +553,12 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = SiteSettings
         fields = ['maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'enable_program_page']
+
+
+class ScheduleEntrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScheduleEntry
+        fields = ['class_name', 'lesson_number', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday']
 
 
 

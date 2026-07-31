@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -15,6 +15,7 @@ from .forms import (
     PollQuestionSelectionForm,
     PostAdminForm,
     SongSuggestionSelectionForm,
+    ScheduleCsvImportForm,
 )
 from unfold.admin import ModelAdmin, TabularInline
 from django.contrib.auth.models import User, Group
@@ -36,6 +37,55 @@ class DateSelectionForm(forms.Form):
         label="Изтрий записите преди:",
         widget=forms.DateInput(attrs={'type': 'date'})
     )
+
+
+@admin.register(ScheduleEntry)
+class ScheduleEntryAdmin(ModelAdmin):
+    change_list_template = 'admin/scheduleentry/change_list.html'
+    list_display = ('class_name', 'lesson_number', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday')
+    list_filter = ('class_name',)
+    search_fields = ('class_name', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday')
+    ordering = ('class_name', 'lesson_number')
+
+    def get_urls(self):
+        opts = self.model._meta
+        custom_urls = [
+            path(
+                'import-csv/',
+                self.admin_site.admin_view(self.import_csv_view),
+                name=f'{opts.app_label}_{opts.model_name}_import_csv',
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    def import_csv_view(self, request):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+
+        if request.method == 'POST':
+            form = ScheduleCsvImportForm(request.POST, request.FILES)
+            if form.is_valid():
+                entries = form.entries
+                with transaction.atomic():
+                    previous_count = ScheduleEntry.objects.count()
+                    ScheduleEntry.objects.all().delete()
+                    ScheduleEntry.objects.bulk_create(entries)
+                self.message_user(
+                    request,
+                    f'Програмата е обновена: добавени са {len(entries)} реда и са заменени {previous_count} стари реда.',
+                    messages.SUCCESS,
+                )
+                return redirect('admin:blog_scheduleentry_changelist')
+        else:
+            form = ScheduleCsvImportForm()
+
+        context = {
+            **self.admin_site.each_context(request),
+            'opts': self.model._meta,
+            'title': 'Импортиране на учебна програма от CSV',
+            'form': form,
+        }
+        return TemplateResponse(request, 'admin/scheduleentry/import_csv.html', context)
 
 # 2. Регистрираме Group наново, но с Unfold класа
 @admin.register(Group)

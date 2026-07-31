@@ -2,10 +2,12 @@
 from django import forms
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
+import csv
+from io import StringIO
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import MemeOfWeek, BellSongSuggestion, PollQuestion, Posts, PostDocument # Import PostDocument
+from .models import MemeOfWeek, BellSongSuggestion, PollQuestion, Posts, PostDocument, ScheduleEntry # Import PostDocument
 
 
 MAX_GALLERY_IMAGES = 10
@@ -80,6 +82,93 @@ class MultipleImageField(forms.ImageField):
                 )
             return [single_image_clean(image, initial) for image in data]
         return single_image_clean(data, initial)
+
+
+class ScheduleCsvImportForm(forms.Form):
+    csv_file = forms.FileField(
+        label="CSV файл с програмата",
+        validators=[FileExtensionValidator(allowed_extensions=['csv'])],
+        help_text=(
+            "Файлът трябва да има колони: Клас; Час; Понеделник; Вторник; "
+            "Сряда; Четвъртък; Петък. При успешен импорт текущата програма се заменя изцяло."
+        ),
+    )
+
+    required_columns = ('Клас', 'Час', 'Понеделник', 'Вторник', 'Сряда', 'Четвъртък', 'Петък')
+
+    def clean_csv_file(self):
+        uploaded_file = self.cleaned_data['csv_file']
+        if uploaded_file.size > 2 * 1024 * 1024:
+            raise ValidationError("CSV файлът трябва да е до 2 MB.")
+
+        raw_content = uploaded_file.read()
+        try:
+            content = raw_content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            try:
+                content = raw_content.decode('cp1251')
+            except UnicodeDecodeError as exc:
+                raise ValidationError("Файлът трябва да е записан в UTF-8 или Windows-1251.") from exc
+
+        try:
+            delimiter = csv.Sniffer().sniff(content[:4096], delimiters=';,\t').delimiter
+        except csv.Error:
+            delimiter = ';'
+
+        reader = csv.DictReader(StringIO(content), delimiter=delimiter)
+        if not reader.fieldnames:
+            raise ValidationError("CSV файлът няма заглавен ред.")
+
+        fieldnames = tuple((field or '').strip() for field in reader.fieldnames)
+        missing_columns = [column for column in self.required_columns if column not in fieldnames]
+        if missing_columns:
+            raise ValidationError(
+                "Липсват задължителни колони: " + ", ".join(missing_columns) + "."
+            )
+
+        entries = []
+        seen_entries = set()
+        for line_number, row in enumerate(reader, start=2):
+            normalized_row = {
+                (key or '').strip(): (value or '').strip()
+                for key, value in row.items()
+            }
+            if not any(normalized_row.values()):
+                continue
+
+            class_name = normalized_row['Клас']
+            lesson_value = normalized_row['Час']
+            if not class_name or not lesson_value:
+                raise ValidationError(f"Ред {line_number}: полетата „Клас“ и „Час“ са задължителни.")
+            try:
+                lesson_number = int(lesson_value)
+            except ValueError as exc:
+                raise ValidationError(f"Ред {line_number}: „Час“ трябва да е цяло число.") from exc
+            if not 1 <= lesson_number <= 20:
+                raise ValidationError(f"Ред {line_number}: „Час“ трябва да е между 1 и 20.")
+
+            entry_key = (class_name.casefold(), lesson_number)
+            if entry_key in seen_entries:
+                raise ValidationError(
+                    f"Ред {line_number}: клас {class_name} има повторен {lesson_number}. час."
+                )
+            seen_entries.add(entry_key)
+            entries.append(ScheduleEntry(
+                class_name=class_name,
+                lesson_number=lesson_number,
+                monday=normalized_row['Понеделник'],
+                tuesday=normalized_row['Вторник'],
+                wednesday=normalized_row['Сряда'],
+                thursday=normalized_row['Четвъртък'],
+                friday=normalized_row['Петък'],
+            ))
+
+        if not entries:
+            raise ValidationError("CSV файлът не съдържа редове с програма.")
+
+        self.entries = entries
+        uploaded_file.seek(0)
+        return uploaded_file
 
 
 allowed_document_extensions = ['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt', 'zip', 'rar', '7z', 'csv', 'txt', 'json', 'rtf']

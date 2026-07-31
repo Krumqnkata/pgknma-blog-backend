@@ -558,6 +558,32 @@ class Event(models.Model):
         ]
 
 
+class ScheduleEntry(models.Model):
+    """One lesson period for a class. Entries are replaced together by CSV import."""
+
+    class_name = models.CharField(max_length=32, verbose_name="Клас")
+    lesson_number = models.PositiveSmallIntegerField(verbose_name="Час")
+    monday = models.CharField(max_length=255, blank=True, verbose_name="Понеделник")
+    tuesday = models.CharField(max_length=255, blank=True, verbose_name="Вторник")
+    wednesday = models.CharField(max_length=255, blank=True, verbose_name="Сряда")
+    thursday = models.CharField(max_length=255, blank=True, verbose_name="Четвъртък")
+    friday = models.CharField(max_length=255, blank=True, verbose_name="Петък")
+
+    class Meta:
+        verbose_name = "Запис в учебната програма"
+        verbose_name_plural = "Учебна програма"
+        ordering = ("class_name", "lesson_number")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("class_name", "lesson_number"),
+                name="blog_unique_schedule_class_lesson",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.class_name} — {self.lesson_number}. час"
+
+
 class Changelog(models.Model):
     content = models.TextField(help_text="Съдържание на промените в Markdown формат.")
     created_at = models.DateTimeField(auto_now_add=True, help_text="Дата на създаване.")
