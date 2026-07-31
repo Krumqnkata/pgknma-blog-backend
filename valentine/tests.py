@@ -117,6 +117,38 @@ class ValentinePlatformTests(TestCase):
         self.assertTrue(cookie["secure"])
         self.assertEqual(cookie["samesite"], "Lax")
 
+    @patch(
+        "valentine.views.lookup_network_operator",
+        return_value=("A1 Bulgaria EAD", 8717),
+    )
+    def test_login_session_stores_ip_and_network_operator(self, lookup_operator):
+        self.sender.set_pin("123456")
+        self.sender.save(
+            update_fields=(
+                "pin_hash",
+                "pin_set_at",
+                "pin_failed_attempts",
+                "pin_locked_until",
+            )
+        )
+        self.client.post(
+            reverse("valentine:login"),
+            {"code": self.sender.code},
+            REMOTE_ADDR="213.91.211.175",
+        )
+        response = self.client.post(
+            reverse("valentine:pin"),
+            {"pin": "123456"},
+            REMOTE_ADDR="213.91.211.175",
+        )
+
+        self.assertRedirects(response, reverse("valentine:home"))
+        session = Register.objects.get(profile=self.sender, revoked=False)
+        self.assertEqual(session.ip_address, "213.91.211.175")
+        self.assertEqual(session.network_operator, "A1 Bulgaria EAD")
+        self.assertEqual(session.network_asn, 8717)
+        lookup_operator.assert_called_once_with("213.91.211.175")
+
     def test_first_login_requires_creating_a_six_digit_pin(self):
         response = self.client.post(
             reverse("valentine:login"), {"code": self.sender.code}
@@ -213,6 +245,44 @@ class ValentinePlatformTests(TestCase):
         self.assertFalse(self.sender.has_pin)
         self.assertTrue(active_session.revoked)
         self.assertNotIn("pin_hash", model_admin.get_readonly_fields(request, self.sender))
+
+    def test_user_can_change_pin_with_current_pin_and_revoke_other_sessions(self):
+        self.login()
+        current_session = self.sender.sessions.get(revoked=False)
+        second_session = Register.objects.create(profile=self.sender)
+
+        response = self.client.post(
+            reverse("valentine:change_pin"),
+            {
+                "current_pin": "123456",
+                "pin": "654321",
+                "pin_confirmation": "654321",
+            },
+        )
+
+        self.assertRedirects(response, reverse("valentine:home"))
+        self.sender.refresh_from_db()
+        current_session.refresh_from_db()
+        second_session.refresh_from_db()
+        self.assertTrue(self.sender.check_pin("654321"))
+        self.assertFalse(current_session.revoked)
+        self.assertTrue(second_session.revoked)
+
+    def test_pin_cannot_be_changed_with_an_incorrect_current_pin(self):
+        self.login()
+
+        response = self.client.post(
+            reverse("valentine:change_pin"),
+            {
+                "current_pin": "000000",
+                "pin": "654321",
+                "pin_confirmation": "654321",
+            },
+        )
+
+        self.assertContains(response, "Текущият PIN код е невалиден")
+        self.sender.refresh_from_db()
+        self.assertTrue(self.sender.check_pin("123456"))
 
     def test_external_next_url_is_not_allowed(self):
         self.sender.set_pin("123456")

@@ -83,6 +83,28 @@ class PinSetupForm(PinAuthenticationForm):
         return cleaned_data
 
 
+class PinChangeForm(PinSetupForm):
+    current_pin = forms.CharField(
+        min_length=6,
+        max_length=6,
+        label="Текущ PIN код",
+        widget=forms.PasswordInput(
+            attrs={
+                "autocomplete": "current-password",
+                "inputmode": "numeric",
+                "pattern": "[0-9]*",
+                "placeholder": "••••••",
+            }
+        ),
+    )
+
+    def clean_current_pin(self):
+        pin = self.cleaned_data["current_pin"]
+        if not pin.isascii() or not pin.isdigit() or len(pin) != 6:
+            raise forms.ValidationError("PIN кодът трябва да е точно 6 цифри.")
+        return pin
+
+
 class ValentineCreateForm(forms.Form):
     target_type = forms.ChoiceField(
         choices=Valenitines.AudienceType.choices,

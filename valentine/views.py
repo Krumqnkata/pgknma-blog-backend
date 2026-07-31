@@ -17,9 +17,12 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
+from blog.network_operator import lookup_network_operator
+
 from .forms import (
     AccessCodeForm,
     PinAuthenticationForm,
+    PinChangeForm,
     PinSetupForm,
     ReportValentineForm,
     ValentineCreateForm,
@@ -305,7 +308,16 @@ def _pending_pin_profile(request):
 
 def _complete_pin_login(request, profile):
     Register.objects.filter(profile=profile, revoked=False).update(revoked=True)
-    session = Register.objects.create(profile=profile)
+    ip_address = _client_ip(request)
+    if ip_address == "unknown":
+        ip_address = ""
+    network_operator, network_asn = lookup_network_operator(ip_address)
+    session = Register.objects.create(
+        profile=profile,
+        ip_address=ip_address or None,
+        network_operator=network_operator,
+        network_asn=network_asn,
+    )
     next_url = request.session.get(PIN_PENDING_NEXT_KEY)
     _clear_pending_pin_login(request)
     if not next_url or not url_has_allowed_host_and_scheme(
@@ -487,6 +499,52 @@ def logout(request):
     response = redirect("valentine:login")
     response.delete_cookie(AUTH_COOKIE, path="/valentines/")
     return response
+
+
+@never_cache
+@require_http_methods(["GET", "POST"])
+@valentine_login_required
+def change_pin(request):
+    profile = request.valentine_profile
+    form = PinChangeForm(request.POST or None)
+
+    if request.method == "POST" and form.is_valid():
+        now = timezone.now()
+        with transaction.atomic():
+            profile = Profile.objects.select_for_update().get(pk=profile.pk)
+            if profile.pin_locked_until and profile.pin_locked_until > now:
+                form.add_error(
+                    None,
+                    "PIN кодът е временно заключен. Опитай отново по-късно.",
+                )
+            elif not profile.check_pin(form.cleaned_data["current_pin"]):
+                profile.pin_failed_attempts += 1
+                if profile.pin_failed_attempts >= _pin_limit():
+                    profile.pin_locked_until = now + timedelta(
+                        seconds=_pin_lock_window()
+                    )
+                profile.save(
+                    update_fields=("pin_failed_attempts", "pin_locked_until")
+                )
+                form.add_error(None, "Текущият PIN код е невалиден.")
+            else:
+                profile.set_pin(form.cleaned_data["pin"])
+                profile.save(
+                    update_fields=(
+                        "pin_hash",
+                        "pin_set_at",
+                        "pin_failed_attempts",
+                        "pin_locked_until",
+                    )
+                )
+                Register.objects.filter(
+                    profile=profile,
+                    revoked=False,
+                ).exclude(pk=request.valentine_session.pk).update(revoked=True)
+                messages.success(request, "PIN кодът е променен успешно.")
+                return redirect("valentine:home")
+
+    return render(request, "valentine/change_pin.html", {"form": form})
 
 
 @never_cache

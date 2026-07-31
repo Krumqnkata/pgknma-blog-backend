@@ -679,20 +679,43 @@ class ProfileAdmin(ModelAdmin):
 
 @admin.register(Register)
 class RegisterAdmin(ModelAdmin):
-    list_display = ("profile", "created_at", "expires_at", "revoked", "valid_display")
+    list_display = (
+        "profile",
+        "ip_address",
+        "network_operator",
+        "network_asn_display",
+        "created_at",
+        "expires_at",
+        "revoked",
+        "valid_display",
+    )
     list_select_related = ("profile",)
     list_filter = ("revoked", "created_at", "expires_at")
     search_fields = (
         "profile__first_name",
         "profile__last_name",
         "profile__code",
+        "ip_address",
+        "network_operator",
     )
-    readonly_fields = ("profile", "uuid", "created_at", "expires_at")
+    readonly_fields = (
+        "profile",
+        "uuid",
+        "ip_address",
+        "network_operator",
+        "network_asn",
+        "created_at",
+        "expires_at",
+    )
     actions = ("revoke_sessions", "delete_expired_sessions")
 
     @admin.display(description="Валидна", boolean=True)
     def valid_display(self, obj):
         return obj.is_valid
+
+    @admin.display(description="ASN")
+    def network_asn_display(self, obj):
+        return f"AS{obj.network_asn}" if obj.network_asn else "—"
 
     def get_search_fields(self, request):
         fields = list(super().get_search_fields(request))

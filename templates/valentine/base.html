@@ -28,6 +28,7 @@
             <a href="{% url 'valentine:home' %}">Начало</a>
             <a href="{% url 'valentine:inbox' %}">Получени</a>
             <a href="{% url 'valentine:outbox' %}">Изпратени</a>
+            <a href="{% url 'valentine:change_pin' %}">Смени PIN</a>
             <a href="{% url 'valentine:guide' %}">Помощ</a>
         </nav>
         <form method="post" action="{% url 'valentine:logout' %}" class="logout-form">

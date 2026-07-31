@@ -1,0 +1,34 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Смени PIN · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">Защита на профила</span>
+    <h1>Смени своя PIN код</h1>
+    <p>Използвай нов 6-цифрен PIN, който не споделяш с никого.</p>
+</section>
+
+<section class="panel wrap" style="max-width: 620px; margin-bottom: 3rem;">
+    <form method="post" class="stack-form" novalidate>
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+        <div class="form-alert">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <label for="{{ form.current_pin.id_for_label }}">{{ form.current_pin.label }}</label>
+        {{ form.current_pin }}
+        {% if form.current_pin.errors %}<div class="field-error">{{ form.current_pin.errors }}</div>{% endif %}
+
+        <label for="{{ form.pin.id_for_label }}">Нов 6-цифрен PIN</label>
+        {{ form.pin }}
+        {% if form.pin.errors %}<div class="field-error">{{ form.pin.errors }}</div>{% endif %}
+
+        <label for="{{ form.pin_confirmation.id_for_label }}">Повтори новия PIN</label>
+        {{ form.pin_confirmation }}
+        {% if form.pin_confirmation.errors %}<div class="field-error">{{ form.pin_confirmation.errors }}</div>{% endif %}
+
+        <button class="button button-primary" type="submit">Запази новия PIN</button>
+    </form>
+</section>
+{% endblock %}

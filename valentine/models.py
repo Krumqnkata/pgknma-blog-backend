@@ -200,6 +200,26 @@ class Register(models.Model):
         on_delete=models.CASCADE,
         related_name="sessions",
     )
+    ip_address = models.CharField(
+        max_length=45,
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="IP адрес",
+    )
+    network_operator = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        editable=False,
+        verbose_name="Мрежов оператор",
+    )
+    network_asn = models.BigIntegerField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="Мрежов ASN",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField(default=default_session_expiry)
     revoked = models.BooleanField(default=False)
