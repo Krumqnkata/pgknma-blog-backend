@@ -60,6 +60,7 @@ class PostSerializer(serializers.ModelSerializer):
             'hook',
             'content',
             'created_at',
+            'published_at',
             'published',
             'allowed',
             'images',

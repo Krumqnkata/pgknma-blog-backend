@@ -7,6 +7,7 @@ from django.http import Http404, HttpResponseNotAllowed
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils.text import Truncator
+from django.utils import timezone
 import re
 from unfold_markdown.widgets import MarkdownWidget
 from unfold.widgets import UnfoldBooleanSwitchWidget
@@ -117,11 +118,21 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
 @admin.register(Posts)
 class PostsAdmin(ModelAdmin):
     form = PostAdminForm
-    readonly_fields_base = ('author',)
-    list_display = ('title', 'author', 'published', 'created_at')
-    list_filter = ('published', 'category', 'created_at')
+    readonly_fields_base = ('author', 'created_at')
+    list_display = ('title', 'author', 'publication_status', 'published_at', 'created_at')
+    list_filter = ('published', 'allowed', 'category', 'published_at', 'created_at')
     search_fields = ('title', 'content')
     exclude = ('author',)
+
+    @admin.display(description='Статус', ordering='published_at')
+    def publication_status(self, obj):
+        if not obj.published:
+            return 'Чернова'
+        if not obj.allowed:
+            return 'Чака одобрение'
+        if obj.published_at and obj.published_at > timezone.now():
+            return f'Планирана за {obj.published_at.strftime("%d.%m.%Y %H:%M")}'
+        return 'Публикувана'
 
     # V V V ДОБАВЯНЕ НА MARKDOWN ВИДЖЕТ V V V
     def formfield_for_dbfield(self, db_field, request, **kwargs):

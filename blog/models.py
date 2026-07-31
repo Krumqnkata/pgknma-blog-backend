@@ -137,8 +137,21 @@ class Posts(models.Model):
         blank=True,
         help_text="Авторът на публикацията. Полето се попълва автоматично.",
     )
-    created_at = models.DateTimeField(default=timezone.now, help_text="Дата и час на създаване на публикацията. Формат: YYYY-MM-DD HH:MM:SS.")
-    published = BooleanField(help_text="Отбележете, ако публикацията трябва да бъде видима за всички потребители.")
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Създадена на",
+        help_text="Записва се автоматично при първото създаване на публикацията.",
+    )
+    published_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Публикувай на",
+        help_text="Оставете празно за незабавно публикуване. Бъдеща дата пази статията скрита до зададения момент.",
+    )
+    published = BooleanField(
+        default=False,
+        help_text="Включете, за да бъде публикацията публикувана веднага или на зададената дата.",
+    )
     allowed = models.BooleanField(default=False, help_text="Отбележете, за да одобрите публикацията за показване (за публикации, изискващи одобрение).")
 
     class Meta:

@@ -18,6 +18,7 @@ from django.utils import timezone
 from datetime import timedelta
 import re
 from django.db.models import BooleanField, Count, Exists, OuterRef, Q, Value
+from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.authentication import JWTAuthentication
@@ -60,15 +61,20 @@ def _with_vote_status(queryset, request, relation):
 
 
 class PostViewSet(viewsets.ModelViewSet):
-    queryset = (
-        Posts.objects.filter(published=True, allowed=True)
-        .select_related('author', 'category')
-        .prefetch_related('images', 'documents')
-        .order_by('-created_at')
-    )
     serializer_class = PostSerializer
     permission_classes = [SiteIsAvailable, AllowAny]
     http_method_names = ['get', 'head', 'options']
+
+    def get_queryset(self):
+        now = timezone.now()
+        return (
+            Posts.objects.filter(published=True, allowed=True)
+            .filter(Q(published_at__isnull=True) | Q(published_at__lte=now))
+            .select_related('author', 'category')
+            .prefetch_related('images', 'documents')
+            .annotate(visible_at=Coalesce('published_at', 'created_at'))
+            .order_by('-visible_at')
+        )
 
 
 class ProtectedMemeImageView(APIView):
@@ -501,6 +507,8 @@ class CommentList(generics.ListAPIView):
             published=True,
             allowed=True,
         )
+        if post.published_at and post.published_at > timezone.now():
+            raise Http404
         # Fetch all comments for the post, ordered by creation date.
         # The frontend will be responsible for grouping replies.
         return (
@@ -522,6 +530,8 @@ class AddCommentAPIView(APIView):
             published=True,
             allowed=True,
         )
+        if post.published_at and post.published_at > timezone.now():
+            raise Http404
 
         with transaction.atomic():
             # Locking the user serializes cooldown/count checks for this author.
