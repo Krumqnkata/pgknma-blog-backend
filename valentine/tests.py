@@ -246,6 +246,43 @@ class ValentinePlatformTests(TestCase):
         self.assertTrue(active_session.revoked)
         self.assertNotIn("pin_hash", model_admin.get_readonly_fields(request, self.sender))
 
+    def test_custom_system_valentine_page_previews_and_sends_message(self):
+        admin_user = get_user_model().objects.create_superuser(
+            username="system-valentine-admin",
+            email="system-valentine-admin@example.com",
+            password="test-password",
+        )
+        self.client.force_login(admin_user)
+        url = reverse("admin:valentine_profile_send_system_valentine")
+
+        page = self.client.get(url)
+        self.assertContains(page, "Изпрати системна валентинка")
+
+        preview = self.client.post(
+            url,
+            {
+                "recipient_scope": "selected",
+                "recipients": [str(self.recipient.pk)],
+                "content": "Благодарим, че правиш деня по-добър!",
+                "theme": Valenitines.Theme.NEON,
+            },
+        )
+        self.assertContains(preview, "Потвърди изпращането")
+        token = preview.context["preview"]["token"]
+
+        response = self.client.post(
+            url,
+            {"confirm": "yes", "system_valentine_token": token},
+        )
+        self.assertRedirects(response, reverse("admin:valentine_profile_changelist"))
+        valentine = Valenitines.objects.get(sender_profile=None)
+        self.assertEqual(valentine.profile, self.recipient)
+        self.assertEqual(valentine.theme, Valenitines.Theme.NEON)
+        self.assertEqual(
+            valentine.content,
+            "Благодарим, че правиш деня по-добър!",
+        )
+
     def test_user_can_change_pin_with_current_pin_and_revoke_other_sessions(self):
         self.login()
         current_session = self.sender.sessions.get(revoked=False)
@@ -388,6 +425,25 @@ class ValentinePlatformTests(TestCase):
         self.assertEqual(valentine.profile, self.same_name_recipient)
         self.assertEqual(valentine.sender_profile, self.sender)
         self.assertTrue(valentine.is_anonymous)
+
+    def test_new_card_theme_can_be_selected_and_saved(self):
+        self.login()
+
+        response = self.client.post(
+            reverse("valentine:home"),
+            {
+                "recipient": self.recipient.pk,
+                "content": "Ти си цяла вселена!",
+                "theme": Valenitines.Theme.COSMIC,
+                "is_anonymous": "on",
+            },
+        )
+
+        self.assertRedirects(response, reverse("valentine:home"))
+        self.assertEqual(
+            Valenitines.objects.get().theme,
+            Valenitines.Theme.COSMIC,
+        )
 
     def test_daily_limit_is_enforced_on_server(self):
         self.platform_settings.daily_limit = 1

@@ -813,7 +813,7 @@ summary:focus-visible {
 
 .theme-picker {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 8px;
 }
 
@@ -857,6 +857,10 @@ summary:focus-visible {
 .theme-midnight { --theme-bg: linear-gradient(135deg, #17162d, #71335c); }
 .theme-candy { --theme-bg: linear-gradient(135deg, #f9c4dc, #b8d8ff); }
 .theme-bloom { --theme-bg: linear-gradient(135deg, #e4d3a5, #9abf98); }
+.theme-neon { --theme-bg: radial-gradient(circle at 20% 20%, #ff4fd8, transparent 24%), linear-gradient(135deg, #10072b, #271255); }
+.theme-letter { --theme-bg: repeating-linear-gradient(0deg, #f9f0d8 0 23px, #d7c39e 24px 25px); }
+.theme-cosmic { --theme-bg: radial-gradient(circle at 78% 23%, #f7c5ff 0 4%, transparent 5%), radial-gradient(circle at 20% 70%, #78d9ff 0 2%, transparent 3%), linear-gradient(135deg, #101d52, #592065); }
+.theme-pixel { --theme-bg: linear-gradient(90deg, #ec5e9b 50%, #ffcf5c 50%), linear-gradient(#20375a 50%, #5de4d1 50%); background-size: 18px 18px; }
 
 .privacy-toggle {
     margin: 27px 0;
@@ -967,6 +971,37 @@ summary:focus-visible {
     --card-bg: linear-gradient(145deg, #f1e6bf, #9fc39e);
     --card-ink: #294634;
     --card-accent: #714c35;
+}
+
+.valentine-preview.theme-neon,
+.received-card.theme-neon {
+    --card-bg: radial-gradient(circle at 18% 16%, rgba(255, 88, 217, .78), transparent 9rem), radial-gradient(circle at 86% 78%, rgba(88, 229, 255, .35), transparent 11rem), linear-gradient(145deg, #10052b, #321152);
+    --card-ink: #fff4ff;
+    --card-accent: #ff61d8;
+}
+
+.valentine-preview.theme-letter,
+.received-card.theme-letter {
+    --card-bg: repeating-linear-gradient(0deg, #fff9e9 0 29px, #d7c9a7 30px 31px);
+    --card-ink: #563b2a;
+    --card-accent: #a84545;
+    border: 2px solid #b18b65;
+}
+
+.valentine-preview.theme-cosmic,
+.received-card.theme-cosmic {
+    --card-bg: radial-gradient(circle at 80% 15%, #f2bcff 0 2px, transparent 3px), radial-gradient(circle at 22% 72%, #85e7ff 0 1px, transparent 2px), radial-gradient(circle at 65% 38%, rgba(255,255,255,.85) 0 1px, transparent 2px), linear-gradient(145deg, #0c1a4b, #4e1d68);
+    --card-ink: #f8f4ff;
+    --card-accent: #9cecff;
+}
+
+.valentine-preview.theme-pixel,
+.received-card.theme-pixel {
+    --card-bg: linear-gradient(90deg, rgba(236,94,155,.26) 50%, transparent 50%), linear-gradient(rgba(93,228,209,.2) 50%, transparent 50%), #26375d;
+    --card-ink: #fffce9;
+    --card-accent: #ffcf5c;
+    background-size: 18px 18px;
+    image-rendering: pixelated;
 }
 
 .valentine-preview {

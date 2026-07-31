@@ -98,6 +98,23 @@ class ContentVisibilityTests(TestCase):
             allowed=False,
         )
 
+    def test_list_apis_return_arrays_for_frontend_client_side_pagination(self):
+        """The React client fetches all items and paginates locally."""
+        BellSongSuggestion.objects.create(
+            user=self.user,
+            title="Approved song",
+            link="https://example.com/song",
+            status="approved",
+        )
+
+        posts_response = self.client.get(reverse("posts-list"))
+        songs_response = self.client.get(reverse("approved-songs-list"))
+
+        self.assertIsInstance(posts_response.json(), list)
+        self.assertIsInstance(songs_response.json(), list)
+        self.assertEqual(posts_response.json()[0]["id"], self.public.pk)
+        self.assertEqual(songs_response.json()[0]["title"], "Approved song")
+
     def test_unapproved_meme_cannot_be_retrieved_publicly(self):
         meme = MemeOfWeek.objects.create(
             user=self.user,

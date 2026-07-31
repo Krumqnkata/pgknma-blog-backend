@@ -294,6 +294,100 @@ class ProfilePromotionForm(forms.Form):
     )
 
 
+class SystemValentineForm(forms.Form):
+    SELECTED = "selected"
+    CLASS = "class"
+    TEACHERS = "teachers"
+    ALL = "all"
+
+    recipient_scope = forms.ChoiceField(
+        choices=(
+            (SELECTED, "Избрани профили"),
+            (CLASS, "Цял клас"),
+            (TEACHERS, "Всички учители"),
+            (ALL, "Всички активни профили"),
+        ),
+        initial=SELECTED,
+        label="Получатели",
+    )
+    target_class = forms.ChoiceField(
+        choices=(),
+        required=False,
+        label="Клас",
+    )
+    recipients = forms.ModelMultipleChoiceField(
+        queryset=Profile.objects.none(),
+        required=False,
+        label="Конкретни профили",
+        widget=forms.SelectMultiple(attrs={"size": 10}),
+        help_text="Използва се само при „Избрани профили“.",
+    )
+    content = forms.CharField(
+        min_length=2,
+        max_length=500,
+        label="Послание",
+        widget=forms.Textarea(
+            attrs={
+                "rows": 6,
+                "maxlength": 500,
+                "placeholder": "Напиши позитивно послание от Valentine екипа…",
+            }
+        ),
+    )
+    theme = forms.ChoiceField(
+        choices=Valenitines.Theme.choices,
+        initial=Valenitines.Theme.CLASSIC,
+        label="Дизайн на картичката",
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        active_profiles = Profile.objects.filter(is_active=True).order_by(
+            "clas", "first_name", "last_name"
+        )
+        self.fields["recipients"].queryset = active_profiles
+        classes = (
+            active_profiles.exclude(clas="U")
+            .values_list("clas", flat=True)
+            .distinct()
+        )
+        self.fields["target_class"].choices = [
+            ("", "Избери клас")
+        ] + [(class_code, class_code) for class_code in classes]
+
+    def clean_content(self):
+        return self.cleaned_data["content"].strip()
+
+    def clean(self):
+        cleaned_data = super().clean()
+        scope = cleaned_data.get("recipient_scope")
+        active_profiles = self.fields["recipients"].queryset
+        if scope == self.SELECTED:
+            recipients = list(cleaned_data.get("recipients") or ())
+            if not recipients:
+                self.add_error("recipients", "Избери поне един профил.")
+        elif scope == self.CLASS:
+            class_code = cleaned_data.get("target_class")
+            recipients = list(active_profiles.filter(clas=class_code))
+            if not class_code:
+                self.add_error("target_class", "Избери клас.")
+            elif not recipients:
+                self.add_error("target_class", "В този клас няма активни профили.")
+        elif scope == self.TEACHERS:
+            recipients = list(active_profiles.filter(clas="U"))
+            if not recipients:
+                self.add_error("recipient_scope", "Няма активни учители.")
+        elif scope == self.ALL:
+            recipients = list(active_profiles)
+            if not recipients:
+                self.add_error("recipient_scope", "Няма активни профили.")
+        else:
+            recipients = []
+            self.add_error("recipient_scope", "Невалиден тип получатели.")
+        cleaned_data["resolved_recipients"] = recipients
+        return cleaned_data
+
+
 class CampaignActivationForm(forms.Form):
     sending_starts_at = forms.DateTimeField(
         label="Начало на изпращането",

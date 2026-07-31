@@ -20,6 +20,7 @@ from .forms import (
     CampaignActivationForm,
     ProfileCsvImportForm,
     ProfilePromotionForm,
+    SystemValentineForm,
 )
 from .models import (
     ArchivedValentine,
@@ -177,6 +178,11 @@ class ProfileAdmin(ModelAdmin):
                 self.admin_site.admin_view(self.export_active_profiles_pdf),
                 name="valentine_profile_active_codes_pdf",
             ),
+            path(
+                "send-system-valentine/",
+                self.admin_site.admin_view(self.send_system_valentine_page),
+                name="valentine_profile_send_system_valentine",
+            ),
         ]
         return custom_urls + super().get_urls()
 
@@ -190,13 +196,130 @@ class ProfileAdmin(ModelAdmin):
                 "profile_pdf_url": reverse(
                     "admin:valentine_profile_active_codes_pdf"
                 ),
+                "system_valentine_url": reverse(
+                    "admin:valentine_profile_send_system_valentine"
+                ),
                 "can_import_profiles": self.has_add_permission(request),
+                "can_send_system_valentine": self.has_change_permission(
+                    request
+                ),
                 "can_view_profile_codes": (
                     self.has_view_codes_permission(request)
                 ),
             }
         )
         return super().changelist_view(request, extra_context)
+
+    def send_system_valentine_page(self, request):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+
+        changelist_url = reverse("admin:valentine_profile_changelist")
+        platform_settings = Settings.objects.first()
+        if platform_settings is None:
+            self.message_user(
+                request,
+                "Първо създай Valentine настройки и активна кампания.",
+                messages.ERROR,
+            )
+            return HttpResponseRedirect(changelist_url)
+        campaign = platform_settings.ensure_active_campaign()
+        if campaign.is_archived:
+            self.message_user(
+                request,
+                "Не може да се изпраща в архивирана кампания.",
+                messages.ERROR,
+            )
+            return HttpResponseRedirect(changelist_url)
+
+        preview = None
+        form = SystemValentineForm(request.POST or None)
+        if request.method == "POST" and request.POST.get("confirm") == "yes":
+            try:
+                payload = signing.loads(
+                    request.POST.get("system_valentine_token", ""),
+                    salt="valentine-system-message",
+                    max_age=30 * 60,
+                )
+                if payload.get("user_id") != request.user.pk:
+                    raise signing.BadSignature
+                recipient_ids = payload["recipient_ids"]
+                content = payload["content"]
+                theme = payload["theme"]
+            except (signing.BadSignature, signing.SignatureExpired, KeyError, TypeError):
+                self.message_user(
+                    request,
+                    "Предварителният преглед е невалиден или е изтекъл.",
+                    messages.ERROR,
+                )
+                return HttpResponseRedirect(
+                    reverse("admin:valentine_profile_send_system_valentine")
+                )
+
+            recipients = list(
+                Profile.objects.filter(pk__in=recipient_ids, is_active=True).order_by(
+                    "clas", "first_name", "last_name"
+                )
+            )
+            if not recipients:
+                self.message_user(
+                    request,
+                    "Няма активни профили за изпращане.",
+                    messages.ERROR,
+                )
+                return HttpResponseRedirect(changelist_url)
+            Valenitines.objects.bulk_create(
+                [
+                    Valenitines(
+                        profile=profile,
+                        sender_profile=None,
+                        campaign=campaign,
+                        recipient_class_snapshot=normalize_class_code(profile.clas),
+                        audience_label=profile.full_name,
+                        content=content,
+                        theme=theme,
+                        is_anonymous=True,
+                    )
+                    for profile in recipients
+                ]
+            )
+            self.message_user(
+                request,
+                f"Системната валентинка е изпратена до {len(recipients)} профила.",
+                messages.SUCCESS,
+            )
+            return HttpResponseRedirect(changelist_url)
+
+        if request.method == "POST" and form.is_valid():
+            recipients = form.cleaned_data["resolved_recipients"]
+            preview = {
+                "recipient_count": len(recipients),
+                "content": form.cleaned_data["content"],
+                "theme": form.cleaned_data["theme"],
+                "token": signing.dumps(
+                    {
+                        "user_id": request.user.pk,
+                        "recipient_ids": [str(profile.pk) for profile in recipients],
+                        "content": form.cleaned_data["content"],
+                        "theme": form.cleaned_data["theme"],
+                    },
+                    salt="valentine-system-message",
+                ),
+            }
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Изпрати системна валентинка",
+            "form": form,
+            "preview": preview,
+            "campaign": campaign,
+            "changelist_url": changelist_url,
+        }
+        return TemplateResponse(
+            request,
+            "admin/valentine/profile/send_system_valentine.html",
+            context,
+        )
 
     def _pdf_response(self, request, queryset, title, filename):
         try:

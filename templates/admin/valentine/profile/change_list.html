@@ -1,6 +1,15 @@
 {% extends "admin/change_list.html" %}
 
 {% block object-tools-items %}
+    {% if can_send_system_valentine %}
+    <div class="flex flex-row items-center">
+        <a class="bg-primary-600 border border-transparent flex font-medium gap-2 items-center px-3 py-2 rounded-default text-sm text-white hover:bg-primary-700"
+           href="{{ system_valentine_url }}">
+            <span class="material-symbols-outlined">favorite</span>
+            <span>Системна валентинка</span>
+        </a>
+    </div>
+    {% endif %}
     {% if can_view_profile_codes %}
     <div class="flex flex-row items-center">
         <a class="border border-base-200 flex font-medium gap-2 items-center px-3 py-2 rounded-default text-sm hover:bg-base-50 dark:border-base-700 dark:hover:bg-base-800"

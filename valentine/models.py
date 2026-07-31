@@ -319,6 +319,10 @@ class Valenitines(models.Model):
         MIDNIGHT = "midnight", "Среднощна"
         CANDY = "candy", "Бонбонена"
         BLOOM = "bloom", "Цветна"
+        NEON = "neon", "Неонова любов"
+        LETTER = "letter", "Писмо в плик"
+        COSMIC = "cosmic", "Космическа"
+        PIXEL = "pixel", "Пиксел арт"
 
     class ReportReason(models.TextChoices):
         OFFENSIVE = "offensive", "Обидно съдържание"

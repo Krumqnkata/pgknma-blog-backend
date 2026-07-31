@@ -146,6 +146,22 @@
                     <input type="radio" name="theme" value="bloom" {% if selected_theme == "bloom" %}checked{% endif %}>
                     <span>Цветна</span>
                 </label>
+                <label class="theme-chip theme-neon">
+                    <input type="radio" name="theme" value="neon" {% if selected_theme == "neon" %}checked{% endif %}>
+                    <span>Неон</span>
+                </label>
+                <label class="theme-chip theme-letter">
+                    <input type="radio" name="theme" value="letter" {% if selected_theme == "letter" %}checked{% endif %}>
+                    <span>Писмо</span>
+                </label>
+                <label class="theme-chip theme-cosmic">
+                    <input type="radio" name="theme" value="cosmic" {% if selected_theme == "cosmic" %}checked{% endif %}>
+                    <span>Космос</span>
+                </label>
+                <label class="theme-chip theme-pixel">
+                    <input type="radio" name="theme" value="pixel" {% if selected_theme == "pixel" %}checked{% endif %}>
+                    <span>Пиксел</span>
+                </label>
                 {% endwith %}
             </div>
             {% if form.theme.errors %}<div class="field-error">{{ form.theme.errors }}</div>{% endif %}
