@@ -1,0 +1,25 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+  <div id="content-main" style="max-width: 720px; margin: 0 auto;">
+    <div class="module" style="padding: 28px; border-radius: 12px;">
+      <h1>Възстановяване на стара програма</h1>
+      <p>Наистина ли искаш да върнеш тази версия?</p>
+      <ul>
+        <li><strong>Дата на импорта:</strong> {{ schedule_import.imported_at|date:"d.m.Y H:i" }}</li>
+        <li><strong>Импортирана от:</strong> {{ schedule_import.imported_by|default:"Неизвестен потребител" }}</li>
+        <li><strong>Брой редове:</strong> {{ schedule_import.entry_count }}</li>
+      </ul>
+      <p style="padding: 12px 14px; border-left: 4px solid #f59e0b; background: #fffbeb; color: #78350f; border-radius: 6px;">
+        Текущата програма ще бъде заменена. Версията, която връщаш, ще стане текуща.
+      </p>
+      <form method="post">
+        {% csrf_token %}
+        <div class="submit-row">
+          <input type="submit" value="Възстанови версията" class="default">
+          <a href="{% url 'admin:blog_scheduleimport_changelist' %}" class="button cancel-link">Отказ</a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

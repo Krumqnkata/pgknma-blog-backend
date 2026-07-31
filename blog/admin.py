@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -26,6 +26,10 @@ from unfold.forms import UserChangeForm, UserCreationForm
 from django.contrib import messages
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
+from django.core.files.base import ContentFile
+from django.core.files.uploadedfile import SimpleUploadedFile
+from io import StringIO
+import csv
 
 try:
     admin.site.unregister(Group)
@@ -68,7 +72,15 @@ class ScheduleEntryAdmin(ModelAdmin):
             if form.is_valid():
                 entries = form.entries
                 with transaction.atomic():
+                    self._create_current_snapshot_if_missing(request)
                     previous_count = ScheduleEntry.objects.count()
+                    ScheduleImport.objects.filter(is_current=True).update(is_current=False)
+                    ScheduleImport.objects.create(
+                        source_file=form.cleaned_data['csv_file'],
+                        imported_by=request.user,
+                        entry_count=len(entries),
+                        is_current=True,
+                    )
                     ScheduleEntry.objects.all().delete()
                     ScheduleEntry.objects.bulk_create(entries)
                 self.message_user(
@@ -87,6 +99,111 @@ class ScheduleEntryAdmin(ModelAdmin):
             'form': form,
         }
         return TemplateResponse(request, 'admin/scheduleentry/import_csv.html', context)
+
+    def _create_current_snapshot_if_missing(self, request):
+        """Preserve the schedule that existed before history support was enabled."""
+        if ScheduleImport.objects.filter(is_current=True).exists():
+            return
+
+        existing_entries = list(ScheduleEntry.objects.all())
+        if not existing_entries:
+            return
+
+        csv_buffer = StringIO()
+        writer = csv.writer(csv_buffer, delimiter=';')
+        writer.writerow(['Клас', 'Час', 'Понеделник', 'Вторник', 'Сряда', 'Четвъртък', 'Петък'])
+        for entry in existing_entries:
+            writer.writerow([
+                entry.class_name,
+                entry.lesson_number,
+                entry.monday,
+                entry.tuesday,
+                entry.wednesday,
+                entry.thursday,
+                entry.friday,
+            ])
+
+        snapshot = ScheduleImport(
+            imported_by=request.user,
+            entry_count=len(existing_entries),
+            is_current=True,
+        )
+        snapshot.source_file.save(
+            'schedule_before_history.csv',
+            ContentFile(csv_buffer.getvalue().encode('utf-8-sig')),
+            save=False,
+        )
+        snapshot.save()
+
+
+@admin.register(ScheduleImport)
+class ScheduleImportAdmin(ModelAdmin):
+    list_display = ('__str__', 'imported_by', 'entry_count', 'is_current', 'restore_link')
+    list_filter = ('is_current', 'imported_at')
+    readonly_fields = ('source_file', 'imported_at', 'imported_by', 'entry_count', 'is_current')
+    ordering = ('-imported_at',)
+
+    def get_urls(self):
+        opts = self.model._meta
+        custom_urls = [
+            path(
+                '<int:pk>/restore/',
+                self.admin_site.admin_view(self.restore_view),
+                name=f'{opts.app_label}_{opts.model_name}_restore',
+            ),
+        ]
+        return custom_urls + super().get_urls()
+
+    @admin.display(description='Действие')
+    def restore_link(self, obj):
+        if obj.is_current:
+            return 'Текуща версия'
+        url = reverse('admin:blog_scheduleimport_restore', args=(obj.pk,))
+        return format_html('<a class="button" href="{}">Върни тази версия</a>', url)
+
+    def restore_view(self, request, pk):
+        schedule_import = self.get_object(request, pk)
+        if schedule_import is None:
+            raise Http404
+        if not self.has_change_permission(request, schedule_import):
+            raise PermissionDenied
+
+        if request.method == 'POST':
+            with schedule_import.source_file.open('rb') as source_file:
+                uploaded_file = SimpleUploadedFile(
+                    schedule_import.source_file.name.rsplit('/', 1)[-1],
+                    source_file.read(),
+                    content_type='text/csv',
+                )
+            form = ScheduleCsvImportForm({}, {'csv_file': uploaded_file})
+            if not form.is_valid():
+                self.message_user(
+                    request,
+                    'Версията не може да бъде възстановена, защото CSV файлът е невалиден: '
+                    + '; '.join(form.errors.get('csv_file', [])),
+                    messages.ERROR,
+                )
+                return redirect('admin:blog_scheduleimport_changelist')
+
+            with transaction.atomic():
+                ScheduleImport.objects.filter(is_current=True).update(is_current=False)
+                schedule_import.is_current = True
+                schedule_import.save(update_fields=['is_current'])
+                ScheduleEntry.objects.all().delete()
+                ScheduleEntry.objects.bulk_create(form.entries)
+            self.message_user(request, 'Старата версия на програмата е възстановена успешно.', messages.SUCCESS)
+            return redirect('admin:blog_scheduleentry_changelist')
+
+        context = {
+            **self.admin_site.each_context(request),
+            'opts': self.model._meta,
+            'title': 'Възстановяване на учебна програма',
+            'schedule_import': schedule_import,
+        }
+        return TemplateResponse(request, 'admin/scheduleimport/restore_confirm.html', context)
+
+    def has_add_permission(self, request):
+        return False
 
 # 2. Регистрираме Group наново, но с Unfold класа
 @admin.register(Group)

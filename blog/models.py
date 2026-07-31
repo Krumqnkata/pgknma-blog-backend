@@ -597,6 +597,31 @@ class ScheduleEntry(models.Model):
         return f"{self.class_name} — {self.lesson_number}. час"
 
 
+class ScheduleImport(models.Model):
+    """A restorable CSV snapshot of the school schedule."""
+
+    source_file = models.FileField(upload_to='schedule_imports/%Y/%m/')
+    imported_at = models.DateTimeField(auto_now_add=True, verbose_name="Импортирана на")
+    imported_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='schedule_imports',
+        verbose_name="Импортирана от",
+    )
+    entry_count = models.PositiveIntegerField(default=0, verbose_name="Брой редове")
+    is_current = models.BooleanField(default=False, verbose_name="Текуща версия")
+
+    class Meta:
+        verbose_name = "Импорт на учебна програма"
+        verbose_name_plural = "История на импортираните програми"
+        ordering = ('-imported_at',)
+
+    def __str__(self):
+        return f"Програма от {self.imported_at.strftime('%d.%m.%Y %H:%M')}"
+
+
 class Changelog(models.Model):
     content = models.TextField(help_text="Съдържание на промените в Markdown формат.")
     created_at = models.DateTimeField(auto_now_add=True, help_text="Дата на създаване.")

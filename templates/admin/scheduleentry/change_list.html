@@ -2,6 +2,9 @@
 
 {% block object-tools-items %}
   <li>
+    <a href="{% url 'admin:blog_scheduleimport_changelist' %}">История на импорти</a>
+  </li>
+  <li>
     <a href="{% url 'admin:blog_scheduleentry_import_csv' %}" class="addlink">Импортиране на CSV</a>
   </li>
   {{ block.super }}
