@@ -1637,6 +1637,125 @@ summary:focus-visible {
     }
 }
 
+/* Compact phones: keep every action readable and reachable without overflow. */
+@media (max-width: 480px) {
+    .site-header {
+        align-items: center;
+    }
+
+    .brand strong {
+        font-size: 1.08rem;
+    }
+
+    .main-nav {
+        justify-content: flex-start;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-width: none;
+    }
+
+    .main-nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .main-nav a {
+        flex: 0 0 auto;
+        padding-inline: 10px;
+        white-space: nowrap;
+    }
+
+    .logout-form .button {
+        min-width: 44px;
+        padding-inline: 10px;
+    }
+
+    .toast-stack {
+        top: 84px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+    }
+
+    .hero {
+        padding: 27px 18px;
+    }
+
+    .hero h1,
+    .page-hero h1 {
+        font-size: clamp(2.25rem, 12vw, 2.75rem);
+    }
+
+    .hero-actions,
+    .edit-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .hero-actions .button,
+    .edit-actions .button,
+    .card-download-row .button,
+    .sent-card-actions .button {
+        width: 100%;
+    }
+
+    .composer-form,
+    .edit-panel {
+        padding: 22px 16px;
+        border-radius: 22px;
+    }
+
+    .field-meta {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    .theme-picker {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .theme-chip {
+        min-height: 66px;
+    }
+
+    .countdown {
+        gap: 6px;
+    }
+
+    .countdown strong {
+        font-size: 1.55rem;
+    }
+
+    .locked-inbox {
+        min-height: 0;
+        padding: 42px 18px;
+    }
+
+    .received-card {
+        min-height: 0;
+        padding: 30px 20px 22px;
+    }
+
+    .sent-card-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .report-details .button {
+        width: 100%;
+    }
+
+    .guide-card {
+        min-height: 0;
+        padding: 24px 20px;
+    }
+
+    .guide-card h2 {
+        margin-top: 20px;
+        font-size: 1.45rem;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
