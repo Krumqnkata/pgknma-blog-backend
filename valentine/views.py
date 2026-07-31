@@ -502,6 +502,38 @@ def logout(request):
 
 
 @never_cache
+@require_GET
+@valentine_login_required
+def active_sessions(request):
+    now = timezone.now()
+    sessions = list(
+        Register.objects.filter(profile=request.valentine_profile).order_by(
+            "-created_at"
+        )
+    )
+    for session in sessions:
+        session.is_current = session.pk == request.valentine_session.pk
+        if session.is_current:
+            session.status_label = "Текуща"
+            session.status_class = "current"
+        elif session.revoked:
+            session.status_label = "Прекратена при следващ вход"
+            session.status_class = "ended"
+        elif session.expires_at <= now:
+            session.status_label = "Изтекла"
+            session.status_class = "ended"
+        else:
+            session.status_label = "Активна"
+            session.status_class = "active"
+
+    return render(
+        request,
+        "valentine/sessions.html",
+        {"sessions": sessions},
+    )
+
+
+@never_cache
 @require_http_methods(["GET", "POST"])
 @valentine_login_required
 def change_pin(request):

@@ -10,6 +10,7 @@ urlpatterns = [
     path("pin/", views.pin, name="pin"),
     path("home/", views.home, name="home"),
     path("change-pin/", views.change_pin, name="change_pin"),
+    path("sessions/", views.active_sessions, name="sessions"),
     path("logout/", views.logout, name="logout"),
     path("students/<str:class_name>/", views.get_students, name="students"),
     path("inbox/", views.inbox, name="inbox"),

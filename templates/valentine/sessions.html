@@ -1,0 +1,46 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}История на входовете · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">Защита на профила</span>
+    <h1>История на входовете</h1>
+    <p>Тук виждаш всички влизания в профила си. При нов вход предишната активна сесия се прекратява автоматично.</p>
+</section>
+
+<section class="sessions-shell wrap">
+    <div class="sessions-toolbar">
+        <p>Ако не разпознаваш вход, смени PIN кода си. Това автоматично прекратява всички други активни сесии.</p>
+    </div>
+
+    <div class="session-list">
+        {% for session in sessions %}
+        <article class="session-card {% if session.is_current %}session-card-current{% endif %}">
+            <div>
+                <h2>
+                    {% if session.is_current %}
+                    Този телефон/браузър <span class="session-current-badge">Текуща</span>
+                    {% else %}
+                    Вход в профила
+                    {% endif %}
+                </h2>
+                <p>IP адрес: <strong>{{ session.ip_address|default:"Неустановен" }}</strong></p>
+                <small>
+                    Оператор: {{ session.network_operator|default:"Неустановен" }}
+                    {% if session.network_asn %}· AS{{ session.network_asn }}{% endif %}
+                </small>
+                <small>Вход: {{ session.created_at|date:"d.m.Y · H:i" }} · Валидна до: {{ session.expires_at|date:"d.m.Y · H:i" }}</small>
+            </div>
+            <span class="session-status session-status-{{ session.status_class }}">{{ session.status_label }}</span>
+        </article>
+        {% empty %}
+        <div class="empty-state">
+            <span aria-hidden="true">⌁</span>
+            <h2>Няма активни сесии</h2>
+            <p>Влез отново с кода и PIN кода си.</p>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

@@ -1138,6 +1138,95 @@ summary:focus-visible {
     color: var(--muted);
 }
 
+.sessions-shell {
+    max-width: 860px;
+}
+
+.sessions-toolbar {
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.sessions-toolbar p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.session-list {
+    display: grid;
+    gap: 12px;
+}
+
+.session-card {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(75, 21, 47, 0.05);
+}
+
+.session-card-current {
+    border-color: rgba(35, 102, 73, 0.34);
+    background: linear-gradient(135deg, #f5fcf7, #fff);
+}
+
+.session-card h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    font-weight: 500;
+}
+
+.session-card p,
+.session-card small {
+    margin: 5px 0 0;
+    display: block;
+    color: var(--muted);
+}
+
+.session-card p {
+    overflow-wrap: anywhere;
+}
+
+.session-current-badge {
+    margin-left: 8px;
+    padding: 3px 7px;
+    display: inline-block;
+    color: var(--success);
+    border-radius: 999px;
+    background: rgba(35, 102, 73, 0.1);
+    font-family: var(--font-body);
+    font-size: 0.68rem;
+    font-weight: 850;
+    vertical-align: middle;
+}
+
+.session-status {
+    padding: 6px 9px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 850;
+    text-align: center;
+}
+
+.session-status-current,
+.session-status-active {
+    color: var(--success);
+    background: rgba(35, 102, 73, 0.1);
+}
+
+.session-status-ended {
+    color: var(--muted);
+    background: rgba(114, 95, 107, 0.1);
+}
+
 .locked-envelope {
     width: 105px;
     height: 72px;
@@ -1630,6 +1719,20 @@ summary:focus-visible {
     .field-grid,
     .guide-grid,
     .kindness-panel {
+        grid-template-columns: 1fr;
+    }
+
+    .sessions-toolbar,
+    .session-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .sessions-toolbar {
+        display: flex;
+    }
+
+    .session-card {
         grid-template-columns: 1fr;
     }
 

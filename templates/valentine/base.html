@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#741d45">
     <title>{% block title %}Valentine ПГКНМА{% endblock %}</title>
     <link rel="icon" href="{% static 'valentines/favicon.svg' %}" type="image/svg+xml">
-    <link rel="stylesheet" href="{% static 'valentines/style.css' %}">
+    <link rel="stylesheet" href="{% static 'valentines/style.css' %}?v=20260731-session-history">
     {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -30,6 +30,7 @@
             <a href="{% url 'valentine:archive' %}">Архив</a>
             <a href="{% url 'valentine:outbox' %}">Изпратени</a>
             <a href="{% url 'valentine:change_pin' %}">Смени PIN</a>
+            <a href="{% url 'valentine:sessions' %}">Сесии</a>
             <a href="{% url 'valentine:guide' %}">Помощ</a>
         </nav>
         <form method="post" action="{% url 'valentine:logout' %}" class="logout-form" data-confirm-logout>
@@ -56,7 +57,7 @@
         <a href="https://pgknma.space">Към блога</a>
     </footer>
 
-    <script src="{% static 'valentines/app.js' %}?v=20260731-logout" defer></script>
+    <script src="{% static 'valentines/app.js' %}?v=20260731-session-history" defer></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -305,6 +305,36 @@ class ValentinePlatformTests(TestCase):
         self.assertFalse(current_session.revoked)
         self.assertTrue(second_session.revoked)
 
+    def test_user_can_view_full_own_session_history(self):
+        self.login()
+        Register.objects.create(
+            profile=self.sender,
+            ip_address="203.0.113.7",
+            network_operator="Test operator",
+            network_asn=64500,
+            revoked=True,
+        )
+        Register.objects.create(
+            profile=self.sender,
+            ip_address="203.0.113.8",
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
+        Register.objects.create(
+            profile=self.recipient,
+            ip_address="203.0.113.9",
+        )
+
+        response = self.client.get(reverse("valentine:sessions"))
+
+        self.assertContains(response, "История на входовете")
+        self.assertContains(response, "203.0.113.7")
+        self.assertContains(response, "Test operator")
+        self.assertContains(response, "Текуща")
+        self.assertContains(response, "Прекратена при следващ вход")
+        self.assertContains(response, "Изтекла")
+        self.assertNotContains(response, "203.0.113.9")
+        self.assertNotContains(response, "Прекрати всички други")
+
     def test_pin_cannot_be_changed_with_an_incorrect_current_pin(self):
         self.login()
 
