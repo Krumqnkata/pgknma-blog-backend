@@ -1,16 +1,21 @@
 from django.contrib.sitemaps import Sitemap
+from django.conf import settings
 from .models import Posts
 
 
-class PostSitemap(Sitemap):
-    changefreq = "daily"
-    priority = 0.9
+class CanonicalSitemap(Sitemap):
+    """Sitemap base that never derives the public host from the proxy request."""
+
+    def get_domain(self, site=None):
+        return settings.SITEMAP_DOMAIN
 
     def get_protocol(self, protocol=None):
-        request = getattr(self, "request", None)
-        if request:
-            return request.scheme
-        return "https"
+        return settings.SITEMAP_PROTOCOL
+
+
+class PostSitemap(CanonicalSitemap):
+    changefreq = "daily"
+    priority = 0.9
 
     def items(self):
         return Posts.objects.filter(
@@ -25,13 +30,7 @@ class PostSitemap(Sitemap):
         return obj.created_at
 
 
-class StaticSitemap(Sitemap):
-
-    def get_protocol(self, protocol=None):
-        request = getattr(self, "request", None)
-        if request:
-            return request.scheme
-        return "https"
+class StaticSitemap(CanonicalSitemap):
 
     def items(self):
         return [

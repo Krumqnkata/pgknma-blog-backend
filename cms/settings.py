@@ -101,6 +101,13 @@ TRUSTED_PROXY_IPS = env_list(
 )
 MAXMIND_ASN_DATABASE = os.getenv("MAXMIND_ASN_DATABASE", "").strip()
 
+# Canonical host used when Django builds absolute sitemap URLs.  Keeping this
+# separate from the incoming request host prevents internal proxy addresses
+# (for example 127.0.0.1:8000) from leaking into sitemap.xml.
+SITEMAP_DOMAIN = os.getenv("SITEMAP_DOMAIN", "pgknma.space").strip()
+SITEMAP_DOMAIN = SITEMAP_DOMAIN.removeprefix("https://").removeprefix("http://").rstrip("/")
+SITEMAP_PROTOCOL = os.getenv("SITEMAP_PROTOCOL", "https").strip().lower() or "https"
+
 DJANGO_ADMIN_LOGS_ENABLED = True
 # Application definition
 
