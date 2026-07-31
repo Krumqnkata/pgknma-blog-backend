@@ -1,0 +1,1505 @@
+openapi: 3.0.3
+info:
+  title: PGKNMA API
+  version: 1.0.0
+  description: Вътрешна документация на API-то. Достъпна е само за superuser.
+paths:
+  /api/approved-songs/:
+    get:
+      operationId: approved_songs_list
+      tags:
+      - approved-songs
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BellSongSuggestion'
+          description: ''
+  /api/auth/check-username/:
+    get:
+      operationId: auth_check_username_retrieve
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/auth/google/:
+    post:
+      operationId: auth_google_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/auth/google/link/:
+    post:
+      operationId: auth_google_link_create
+      description: Explicitly link Google from an already authenticated local account.
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/auth/logout/:
+    post:
+      operationId: auth_logout_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/auth/profile/change-password/:
+    put:
+      operationId: auth_profile_change_password_update
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordChange'
+          description: ''
+    patch:
+      operationId: auth_profile_change_password_partial_update
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPasswordChange'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPasswordChange'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPasswordChange'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasswordChange'
+          description: ''
+  /api/auth/profile/change-username/:
+    put:
+      operationId: auth_profile_change_username_update
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsernameChange'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UsernameChange'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UsernameChange'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsernameChange'
+          description: ''
+    patch:
+      operationId: auth_profile_change_username_partial_update
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedUsernameChange'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedUsernameChange'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedUsernameChange'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsernameChange'
+          description: ''
+  /api/auth/profile/deactivate/:
+    post:
+      operationId: auth_profile_deactivate_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    put:
+      operationId: auth_profile_deactivate_update
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: auth_profile_deactivate_partial_update
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/auth/register/:
+    post:
+      operationId: auth_register_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Register'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Register'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Register'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Register'
+          description: ''
+  /api/auth/token/:
+    post:
+      operationId: auth_token_create
+      description: |-
+        Takes a set of user credentials and returns an access and refresh JSON web
+        token pair to prove the authentication of those credentials.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenObtainPair'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenObtainPair'
+          description: ''
+  /api/auth/token/refresh/:
+    post:
+      operationId: auth_token_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/auth/validate-password/:
+    post:
+      operationId: auth_validate_password_create
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/bell-song-suggestions/submit/:
+    post:
+      operationId: bell_song_suggestions_submit_create
+      tags:
+      - bell-song-suggestions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BellSongSuggestion'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BellSongSuggestion'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BellSongSuggestion'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BellSongSuggestion'
+          description: ''
+  /api/changelog/:
+    get:
+      operationId: changelog_list
+      tags:
+      - changelog
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Changelog'
+          description: ''
+  /api/consent/:
+    post:
+      operationId: consent_create
+      tags:
+      - consent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentRecord'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConsentRecord'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConsentRecord'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentRecord'
+          description: ''
+  /api/contact/:
+    post:
+      operationId: contact_create
+      tags:
+      - contact
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/events/:
+    get:
+      operationId: events_list
+      tags:
+      - events
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Event'
+          description: ''
+  /api/memes/:
+    get:
+      operationId: memes_list
+      tags:
+      - memes
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemeOfWeek'
+          description: ''
+    post:
+      operationId: memes_create
+      tags:
+      - memes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemeOfWeek'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MemeOfWeek'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MemeOfWeek'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemeOfWeek'
+          description: ''
+  /api/memes/{id}/:
+    get:
+      operationId: memes_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this Меме на седмицата.
+        required: true
+      tags:
+      - memes
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemeOfWeek'
+          description: ''
+  /api/memes/{id}/image/:
+    get:
+      operationId: memes_image_retrieve
+      description: Serve meme files without exposing pending uploads through MEDIA_URL.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - memes
+      security:
+      - jwtAuth: []
+      - cookieAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/memes/{id}/vote/:
+    post:
+      operationId: memes_vote_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - memes
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/my-content/comments/:
+    get:
+      operationId: my_content_comments_list
+      tags:
+      - my-content
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+          description: ''
+  /api/my-content/comments/{id}/delete/:
+    delete:
+      operationId: my_content_comments_delete_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - my-content
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/my-content/memes/:
+    get:
+      operationId: my_content_memes_list
+      tags:
+      - my-content
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MemeOfWeek'
+          description: ''
+  /api/my-content/memes/{id}/delete/:
+    delete:
+      operationId: my_content_memes_delete_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - my-content
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/my-content/songs/:
+    get:
+      operationId: my_content_songs_list
+      tags:
+      - my-content
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BellSongSuggestion'
+          description: ''
+  /api/my-content/songs/{id}/delete/:
+    delete:
+      operationId: my_content_songs_delete_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - my-content
+      security:
+      - jwtAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/notifications/:
+    get:
+      operationId: notifications_list
+      tags:
+      - notifications
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+          description: ''
+  /api/poll/statistics/:
+    get:
+      operationId: poll_statistics_retrieve
+      tags:
+      - poll
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PollStatistics'
+          description: ''
+  /api/poll/status/:
+    get:
+      operationId: poll_status_retrieve
+      tags:
+      - poll
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPollStatus'
+          description: ''
+  /api/poll/submit/:
+    post:
+      operationId: poll_submit_create
+      tags:
+      - poll
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PollAnswer'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PollAnswer'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PollAnswer'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PollAnswer'
+          description: ''
+  /api/posts/:
+    get:
+      operationId: posts_list
+      tags:
+      - posts
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Post'
+          description: ''
+  /api/posts/{id}/:
+    get:
+      operationId: posts_retrieve
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        description: A unique integer value identifying this Публикация.
+        required: true
+      tags:
+      - posts
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+          description: ''
+  /api/posts/{post_pk}/comments/:
+    get:
+      operationId: posts_comments_list
+      parameters:
+      - in: path
+        name: post_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - posts
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Comment'
+          description: ''
+  /api/posts/{post_pk}/comments/add/:
+    post:
+      operationId: posts_comments_add_create
+      parameters:
+      - in: path
+        name: post_pk
+        schema:
+          type: integer
+        required: true
+      tags:
+      - posts
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/privacy-policy/:
+    get:
+      operationId: privacy_policy_retrieve
+      tags:
+      - privacy-policy
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrivacyPolicy'
+          description: ''
+  /api/program/:
+    get:
+      operationId: program_retrieve
+      description: Public schedule API. The shape deliberately matches the former
+        CSV columns.
+      tags:
+      - program
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          description: No response body
+  /api/site-status/:
+    get:
+      operationId: site_status_retrieve
+      tags:
+      - site-status
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteSettings'
+          description: ''
+  /api/songs/{id}/vote/:
+    post:
+      operationId: songs_vote_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: integer
+        required: true
+      tags:
+      - songs
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/terms-of-service/:
+    get:
+      operationId: terms_of_service_retrieve
+      tags:
+      - terms-of-service
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TermsOfService'
+          description: ''
+components:
+  schemas:
+    BellSongSuggestion:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        link:
+          type: string
+          format: uri
+          title: Линк към песента
+          description: URL към песента в Spotify или YouTube.
+          maxLength: 2048
+        slot:
+          allOf:
+          - $ref: '#/components/schemas/SlotEnum'
+          title: Кога да звучи
+          description: |-
+            Изберете кога да звучи песента.
+
+            * `startClass` - Начало на час
+            * `endClass` - Край на час
+            * `beforeLunch` - Преди голямо междучасие
+            * `afterLunch` - След голямо междучасие
+            * `morning` - Сутрешен звънец
+            * `special` - Специален повод
+        note:
+          type: string
+          nullable: true
+          maxLength: 1000
+        title:
+          type: string
+          maxLength: 255
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
+          readOnly: true
+          title: Статус
+          description: |-
+            Статус на предложението (чакащо, одобрено, отхвърлено).
+
+            * `pending` - Чакащо одобрение
+            * `approved` - Одобрено
+            * `rejected` - Отхвърлено
+        submitted_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Изпратено на
+          description: 'Дата и час на изпращане на предложението. Формат: YYYY-MM-DD
+            HH:MM:SS.'
+        user_username:
+          type: string
+          readOnly: true
+        votes:
+          type: integer
+          readOnly: true
+          title: Гласове
+          description: Брой на гласовете за песента.
+        has_voted:
+          type: string
+          readOnly: true
+      required:
+      - has_voted
+      - id
+      - link
+      - status
+      - submitted_at
+      - title
+      - user_username
+      - votes
+    Changelog:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Съдържание на промените в Markdown формат.
+        updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: Дата на последна редакция.
+      required:
+      - content
+      - updated_at
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        post_id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+        content:
+          type: string
+          maxLength: 5000
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: 'Дата и час на създаване на коментара. Формат: YYYY-MM-DD HH:MM:SS.'
+        parent:
+          type: integer
+          writeOnly: true
+          nullable: true
+          description: Родителският коментар, ако този е отговор.
+        parent_id:
+          type: integer
+          readOnly: true
+        parent_username:
+          type: string
+          readOnly: true
+        reply_count:
+          type: string
+          readOnly: true
+      required:
+      - content
+      - created_at
+      - id
+      - parent_id
+      - parent_username
+      - post_id
+      - reply_count
+      - username
+    ConsentRecord:
+      type: object
+      properties:
+        consent_status:
+          allOf:
+          - $ref: '#/components/schemas/ConsentStatusEnum'
+          description: |-
+            Статус на даденото съгласие.
+
+            * `INFORMED` - Информиран (Необходими)
+            * `ACCEPTED` - Приел
+            * `REJECTED` - Отказал
+        policy_version:
+          type: string
+          description: Версия на политиката за бисквитки, за която е дадено съгласието.
+          maxLength: 50
+      required:
+      - consent_status
+    ConsentStatusEnum:
+      enum:
+      - INFORMED
+      - ACCEPTED
+      - REJECTED
+      type: string
+      description: |-
+        * `INFORMED` - Информиран (Необходими)
+        * `ACCEPTED` - Приел
+        * `REJECTED` - Отказал
+    Event:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          title: Заглавие
+          description: Име на събитието.
+          maxLength: 255
+        start_datetime:
+          type: string
+          format: date-time
+          title: Начална дата и час
+          description: 'Кога започва събитието. Формат: YYYY-MM-DD HH:MM:SS.'
+        end_datetime:
+          type: string
+          format: date-time
+          nullable: true
+          title: Крайна дата и час (по избор)
+          description: 'Кога приключва събитието (ако е приложимо). Формат: YYYY-MM-DD
+            HH:MM:SS.'
+        location:
+          type: string
+          title: Местоположение
+          description: Къде ще се проведе събитието.
+          maxLength: 255
+        category:
+          type: string
+          title: Категория
+          description: Тип на събитието (напр. 'Училищно', 'Спортно').
+          maxLength: 100
+        description:
+          type: string
+          title: Описание
+          description: Подробно описание на събитието. Поддържа се Markdown.
+        attendees_text:
+          type: string
+          title: Участници (текст)
+          description: Кой може да присъства (напр. 'Всички ученици', '8-12 клас').
+          maxLength: 255
+        published:
+          type: boolean
+          title: Публикувано
+          description: Отбележете, за да се показва събитието на сайта.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Създадено на
+          description: 'Дата на създаване на записа за събитието. Формат: YYYY-MM-DD
+            HH:MM:SS.'
+      required:
+      - attendees_text
+      - category
+      - created_at
+      - description
+      - id
+      - location
+      - start_datetime
+      - title
+    KeyEnum:
+      enum:
+      - a
+      - b
+      - c
+      - d
+      type: string
+      description: |-
+        * `a` - A
+        * `b` - B
+        * `c` - C
+        * `d` - D
+    MemeOfWeek:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          maxLength: 100
+        image:
+          type: string
+          format: uri
+          writeOnly: true
+        image_url:
+          type: string
+          readOnly: true
+        user_username:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          title: Дата на качване
+          description: 'Дата и час на качване на мемето. Формат: YYYY-MM-DD HH:MM:SS.'
+        is_approved:
+          type: boolean
+          readOnly: true
+          title: Одобрено
+          description: Отбележете, ако мемето е одобрено за участие в 'Меме на седмицата'.
+        votes:
+          type: integer
+          readOnly: true
+          title: Гласове
+          description: Брой на гласовете за мемето.
+        has_voted:
+          type: string
+          readOnly: true
+      required:
+      - created_at
+      - has_voted
+      - id
+      - image
+      - image_url
+      - is_approved
+      - title
+      - user_username
+      - votes
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        text:
+          type: string
+          title: Текст на известието
+          description: Съдържанието на известието, което ще се показва на потребителите.
+        enabled:
+          type: boolean
+          title: Активирано
+          description: Отбележете, за да активирате и покажете известието на сайта.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Създадено на
+          description: 'Дата и час на създаване на известието. Формат: YYYY-MM-DD
+            HH:MM:SS.'
+        html_text:
+          type: string
+          readOnly: true
+      required:
+      - created_at
+      - html_text
+      - id
+      - text
+    PasswordChange:
+      type: object
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+        new_password_confirm:
+          type: string
+      required:
+      - current_password
+      - new_password
+      - new_password_confirm
+    PatchedPasswordChange:
+      type: object
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+        new_password_confirm:
+          type: string
+    PatchedUsernameChange:
+      type: object
+      properties:
+        current_password:
+          type: string
+        new_username:
+          type: string
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+    PollAnswer:
+      type: object
+      properties:
+        question:
+          type: integer
+          title: Въпрос
+          description: Въпросът, на който е отговорено.
+        selected_option:
+          type: integer
+          title: Избрана опция
+          description: Опцията, която потребителят е избрал.
+      required:
+      - question
+      - selected_option
+    PollLeaderboardEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        correct_answers:
+          type: integer
+      required:
+      - correct_answers
+      - id
+      - username
+    PollOption:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        key:
+          allOf:
+          - $ref: '#/components/schemas/KeyEnum'
+          title: Ключ
+          description: |-
+            Буквеният ключ за тази опция (a, b, c, d).
+
+            * `a` - A
+            * `b` - B
+            * `c` - C
+            * `d` - D
+        text:
+          type: string
+          title: Текст на опция
+          description: Текстът на отговора.
+          maxLength: 255
+        image_url:
+          type: string
+          readOnly: true
+      required:
+      - id
+      - image_url
+      - key
+      - text
+    PollQuestion:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        title:
+          type: string
+          title: Заглавие
+          description: Заглавието на анкетата.
+          maxLength: 255
+        subtitle:
+          type: string
+          nullable: true
+          title: Подзаглавие
+          description: Подзаглавие на анкетата (по избор).
+          maxLength: 255
+        task_description:
+          type: string
+          title: Описание на задачата
+          description: Текст на въпроса или описание на задачата.
+        image_url:
+          type: string
+          readOnly: true
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/PollOption'
+          readOnly: true
+      required:
+      - id
+      - image_url
+      - options
+      - title
+    PollStatistics:
+      type: object
+      properties:
+        total_participants:
+          type: integer
+        total_answers:
+          type: integer
+        correct_answers:
+          type: integer
+        leaderboard:
+          type: array
+          items:
+            $ref: '#/components/schemas/PollLeaderboardEntry'
+      required:
+      - correct_answers
+      - leaderboard
+      - total_answers
+      - total_participants
+    Post:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        category:
+          type: integer
+          description: Категорията, към която принадлежи публикацията.
+        category_name:
+          type: string
+          readOnly: true
+        author:
+          type: integer
+          nullable: true
+          description: Авторът на публикацията. Полето се попълва автоматично.
+        author_username:
+          type: string
+          readOnly: true
+        title:
+          type: string
+          description: Заглавието на публикацията до 100 символа.
+          maxLength: 100
+        banner:
+          type: string
+          readOnly: true
+        hook:
+          type: string
+          description: Кратко въведение или 'кукичка', което да привлече вниманието
+            на читателя до 100 символа.
+          maxLength: 100
+        content:
+          type: string
+          description: Пълното съдържание на публикацията. Поддържа се Markdown формат.
+        created_at:
+          type: string
+          format: date-time
+          description: 'Дата и час на създаване на публикацията. Формат: YYYY-MM-DD
+            HH:MM:SS.'
+        published:
+          type: boolean
+          description: Отбележете, ако публикацията трябва да бъде видима за всички
+            потребители.
+        allowed:
+          type: boolean
+          description: Отбележете, за да одобрите публикацията за показване (за публикации,
+            изискващи одобрение).
+        images:
+          type: string
+          readOnly: true
+        documents:
+          type: string
+          readOnly: true
+      required:
+      - author_username
+      - banner
+      - category
+      - category_name
+      - content
+      - documents
+      - hook
+      - id
+      - images
+      - published
+      - title
+    PrivacyPolicy:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Пълният текст на Политиката за поверителност. Поддържа се Markdown.
+        date:
+          type: string
+          format: date-time
+          readOnly: true
+          description: 'Дата на последната промяна. Формат: YYYY-MM-DD HH:MM:SS.'
+      required:
+      - content
+      - date
+    Register:
+      type: object
+      properties:
+        username:
+          type: string
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+        password:
+          type: string
+          writeOnly: true
+        password2:
+          type: string
+          writeOnly: true
+        email:
+          type: string
+          format: email
+        first_name:
+          type: string
+          maxLength: 150
+        last_name:
+          type: string
+          maxLength: 150
+        captcha_answer:
+          type: string
+          writeOnly: true
+      required:
+      - captcha_answer
+      - email
+      - first_name
+      - last_name
+      - password
+      - password2
+      - username
+    SiteSettings:
+      type: object
+      properties:
+        maintenance_mode:
+          type: boolean
+          title: Режим на поддръжка
+          description: Ако е активиран, сайтът ще показва страница за поддръжка на
+            всички потребители, които не са администратори.
+        enable_bell_suggestions:
+          type: boolean
+          title: Активирани 'Предложения за песни'
+          description: Позволява на потребителите да предлагат песни за училищния
+            звънец.
+        enable_weekly_poll:
+          type: boolean
+          title: Активирана 'Седмична анкета'
+          description: Активира/деактивира показването на седмичната анкета на сайта.
+        enable_meme_of_the_week:
+          type: boolean
+          title: Активирано 'Меме на седмицата'
+          description: Позволява на потребителите да качват и гласуват за мемета.
+        enable_user_registration:
+          type: boolean
+          title: Активирани 'Регистрации на потребители'
+          description: Позволява на нови потребители да се регистрират в системата.
+        enable_program_page:
+          type: boolean
+          title: Активирана страница 'Програма'
+          description: Показва или скрива страницата с учебната програма.
+    SlotEnum:
+      enum:
+      - startClass
+      - endClass
+      - beforeLunch
+      - afterLunch
+      - morning
+      - special
+      type: string
+      description: |-
+        * `startClass` - Начало на час
+        * `endClass` - Край на час
+        * `beforeLunch` - Преди голямо междучасие
+        * `afterLunch` - След голямо междучасие
+        * `morning` - Сутрешен звънец
+        * `special` - Специален повод
+    StatusEnum:
+      enum:
+      - pending
+      - approved
+      - rejected
+      type: string
+      description: |-
+        * `pending` - Чакащо одобрение
+        * `approved` - Одобрено
+        * `rejected` - Отхвърлено
+    TermsOfService:
+      type: object
+      properties:
+        content:
+          type: string
+          description: Пълният текст на Условията за ползване. Поддържа се Markdown.
+        date:
+          type: string
+          format: date-time
+          readOnly: true
+          description: 'Дата на последната промяна. Формат: YYYY-MM-DD HH:MM:SS.'
+      required:
+      - content
+      - date
+    TokenObtainPair:
+      type: object
+      properties:
+        username:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - password
+      - refresh
+      - username
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+      required:
+      - access
+      - refresh
+    UserPollStatus:
+      type: object
+      properties:
+        is_locked:
+          type: boolean
+        unlocks_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_result:
+          nullable: true
+        question:
+          allOf:
+          - $ref: '#/components/schemas/PollQuestion'
+          nullable: true
+      required:
+      - is_locked
+      - last_result
+      - question
+      - unlocks_at
+    UsernameChange:
+      type: object
+      properties:
+        current_password:
+          type: string
+        new_username:
+          type: string
+          pattern: ^[\w.@+-]+$
+          maxLength: 150
+      required:
+      - current_password
+      - new_username
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

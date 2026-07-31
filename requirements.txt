@@ -6,6 +6,7 @@ django-unfold==0.102.0
 django-unfold-markdown==0.1.2
 djangorestframework==3.17.1
 djangorestframework-simplejwt==5.5.1
+drf-spectacular==0.30.0
 google-auth==2.56.2
 geoip2==5.2.0
 gunicorn==26.0.0

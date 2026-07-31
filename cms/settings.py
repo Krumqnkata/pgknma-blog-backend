@@ -144,6 +144,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_spectacular',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'blog',
@@ -326,6 +327,7 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': (
         'rest_framework.renderers.JSONRenderer',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_THROTTLE_CLASSES': (
         'blog.throttling.TrustedProxyAnonRateThrottle',
         'blog.throttling.TrustedProxyUserRateThrottle',
@@ -351,6 +353,13 @@ REST_FRAMEWORK = {
         'meme_submit': os.getenv("THROTTLE_MEME_SUBMIT", "5/day"),
         'vote': os.getenv("THROTTLE_VOTE", "60/hour"),
     },
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'PGKNMA API',
+    'DESCRIPTION': 'Вътрешна документация на API-то. Достъпна е само за superuser.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 MEDIA_URL = '/files/'

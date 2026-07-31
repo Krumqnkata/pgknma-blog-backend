@@ -1,5 +1,7 @@
 from django.urls import path, include
+from django.contrib.auth.decorators import user_passes_test
 from rest_framework.routers import DefaultRouter
+from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from . import views as blog_views
 from blog.auth import GoogleAuthView, GoogleLinkView
 
@@ -9,8 +11,31 @@ router.register('posts', blog_views.PostViewSet, basename='posts')
 router.register('poll', blog_views.WeeklyPollViewSet, basename='poll')
 router.register('memes', blog_views.MemeOfWeekViewSet, basename='memes')
 
+# The schema itself is protected too, so no API map is exposed to staff users.
+superuser_required = user_passes_test(
+    lambda user: user.is_active and user.is_superuser,
+    login_url='/admin/login/',
+)
+
 # URL пътища
 urlpatterns = [
+    # OpenAPI documentation: accessible only to active superusers.
+    path(
+        'schema/',
+        superuser_required(SpectacularAPIView.as_view()),
+        name='openapi-schema',
+    ),
+    path(
+        'docs/',
+        superuser_required(SpectacularSwaggerView.as_view(url_name='openapi-schema')),
+        name='swagger-ui',
+    ),
+    path(
+        'redoc/',
+        superuser_required(SpectacularRedocView.as_view(url_name='openapi-schema')),
+        name='redoc',
+    ),
+
     # Meme binaries are authorization-aware and must not use MEDIA_URL.
     path(
         'memes/<int:pk>/image/',
