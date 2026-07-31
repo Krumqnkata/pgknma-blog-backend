@@ -1,0 +1,75 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <style>
+    .schedule-import { max-width: 920px; margin: 0 auto; }
+    .schedule-import__hero {
+      padding: 28px; margin-bottom: 22px; border-radius: 12px;
+      color: #fff; background: linear-gradient(135deg, #1d4ed8, #4338ca);
+      box-shadow: 0 12px 28px rgba(37, 99, 235, .22);
+    }
+    .schedule-import__hero h1 { margin: 0 0 8px; color: inherit; font-size: 1.7rem; }
+    .schedule-import__hero p { margin: 0; max-width: 680px; opacity: .92; }
+    .schedule-import__grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(250px, .75fr); gap: 20px; }
+    .schedule-import__card { padding: 24px; border: 1px solid var(--border-color, #d9d9df); border-radius: 12px; background: var(--body-bg, #fff); }
+    .schedule-import__card h2 { margin: 0 0 14px; font-size: 1.15rem; }
+    .schedule-import__warning { margin: 0 0 18px; padding: 13px 15px; border-left: 4px solid #f59e0b; border-radius: 6px; background: #fffbeb; color: #78350f; }
+    .schedule-import__steps { margin: 0; padding-left: 20px; }
+    .schedule-import__steps li { margin: 0 0 10px; }
+    .schedule-import__columns { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 12px; }
+    .schedule-import__columns code { padding: 4px 7px; border-radius: 5px; background: #eef2ff; color: #3730a3; font-size: .8rem; }
+    .schedule-import .form-row { padding: 0; border: 0; }
+    .schedule-import input[type=file] { width: 100%; margin: 10px 0 6px; padding: 12px; border: 1px dashed #6366f1; border-radius: 8px; background: #f8faff; }
+    .schedule-import .errorlist { margin: 0 0 12px; color: #b91c1c; }
+    .schedule-import__actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+    .schedule-import__actions input { min-height: 42px; padding: 0 18px; border-radius: 7px; }
+    .schedule-import__actions .button { display: inline-flex; align-items: center; min-height: 42px; padding: 0 18px; border-radius: 7px; }
+    @media (max-width: 720px) { .schedule-import__grid { grid-template-columns: 1fr; } .schedule-import__hero { padding: 22px; } }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="schedule-import">
+    <section class="schedule-import__hero">
+      <h1>Импортиране на учебна програма</h1>
+      <p>Качи актуалния CSV файл и програмата на сайта ще се обнови веднага.</p>
+    </section>
+
+    <div class="schedule-import__grid">
+      <section class="schedule-import__card">
+        <h2>Качи CSV файл</h2>
+        <p class="schedule-import__warning"><strong>Важно:</strong> след успешен импорт всички текущи редове от програмата ще бъдат заменени с тези от файла.</p>
+        <form method="post" enctype="multipart/form-data" novalidate>
+          {% csrf_token %}
+          {{ form.non_field_errors }}
+          {% for field in form %}
+            <div class="form-row">
+              {{ field.errors }}
+              <label for="{{ field.id_for_label }}"><strong>{{ field.label }}</strong></label>
+              {{ field }}
+              {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+            </div>
+          {% endfor %}
+          <div class="schedule-import__actions">
+            <input type="submit" value="Импортирай и замени програмата" class="default">
+            <a href="{% url 'admin:blog_scheduleentry_changelist' %}" class="button">Отказ</a>
+          </div>
+        </form>
+      </section>
+
+      <aside class="schedule-import__card">
+        <h2>Формат на файла</h2>
+        <ol class="schedule-import__steps">
+          <li>Запази файла с първи ред, съдържащ имената на колоните.</li>
+          <li>Използвай <strong>;</strong> като разделител (поддържат се и запетая или табулация).</li>
+          <li>Файлът може да е в UTF-8 или Windows-1251.</li>
+        </ol>
+        <div class="schedule-import__columns" aria-label="Задължителни колони">
+          <code>Клас</code><code>Час</code><code>Понеделник</code><code>Вторник</code>
+          <code>Сряда</code><code>Четвъртък</code><code>Петък</code>
+        </div>
+      </aside>
+    </div>
+  </div>
+{% endblock %}
