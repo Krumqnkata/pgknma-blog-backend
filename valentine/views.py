@@ -1,5 +1,6 @@
 import hashlib
 import ipaddress
+import json
 import uuid
 from datetime import date, timedelta
 from functools import wraps
@@ -7,9 +8,10 @@ from functools import wraps
 from django.conf import settings as django_settings
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Count, Max, Q
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -25,6 +27,7 @@ from .forms import (
     PinChangeForm,
     PinSetupForm,
     ReportValentineForm,
+    ValentineDataExportForm,
     ValentineCreateForm,
     ValentineEditForm,
 )
@@ -37,6 +40,7 @@ from .models import (
     Valenitines,
     normalize_class_code,
 )
+from .personal_data_export import build_valentine_personal_data_export
 
 
 AUTH_COOKIE = "authv"
@@ -530,6 +534,94 @@ def active_sessions(request):
         request,
         "valentine/sessions.html",
         {"sessions": sessions},
+    )
+
+
+def _confirm_export_pin(profile, pin, form):
+    now = timezone.now()
+    with transaction.atomic():
+        locked_profile = Profile.objects.select_for_update().get(pk=profile.pk)
+        if not locked_profile.has_pin:
+            form.add_error(
+                None,
+                "Профилът няма активен PIN. Влез отново или се свържи с администратор.",
+            )
+            return None
+        if (
+            locked_profile.pin_locked_until
+            and locked_profile.pin_locked_until > now
+        ):
+            form.add_error(
+                None,
+                "PIN кодът е временно заключен. Опитай отново по-късно.",
+            )
+            return None
+        if not locked_profile.check_pin(pin):
+            locked_profile.pin_failed_attempts += 1
+            if locked_profile.pin_failed_attempts >= _pin_limit():
+                locked_profile.pin_locked_until = now + timedelta(
+                    seconds=_pin_lock_window()
+                )
+            locked_profile.save(
+                update_fields=("pin_failed_attempts", "pin_locked_until")
+            )
+            form.add_error(None, "Текущият PIN код е невалиден.")
+            return None
+
+        if (
+            locked_profile.pin_failed_attempts
+            or locked_profile.pin_locked_until is not None
+        ):
+            locked_profile.pin_failed_attempts = 0
+            locked_profile.pin_locked_until = None
+            locked_profile.save(
+                update_fields=("pin_failed_attempts", "pin_locked_until")
+            )
+        return locked_profile
+
+
+@never_cache
+@require_http_methods(["GET", "POST"])
+@valentine_login_required
+def personal_data_export(request):
+    form = ValentineDataExportForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        profile = _confirm_export_pin(
+            request.valentine_profile,
+            form.cleaned_data["pin"],
+            form,
+        )
+        if profile is not None:
+            payload = build_valentine_personal_data_export(
+                profile,
+                get_platform_settings(),
+                current_session_id=request.valentine_session.pk,
+            )
+            content = json.dumps(
+                payload,
+                cls=DjangoJSONEncoder,
+                ensure_ascii=False,
+                indent=2,
+            ).encode("utf-8")
+            filename = (
+                f"pgknma-valentine-data-{timezone.localdate():%Y-%m-%d}.json"
+            )
+            response = HttpResponse(
+                content,
+                content_type="application/json; charset=utf-8",
+            )
+            response["Content-Disposition"] = (
+                f'attachment; filename="{filename}"'
+            )
+            response["Cache-Control"] = "private, no-store, max-age=0"
+            response["Pragma"] = "no-cache"
+            response["X-Content-Type-Options"] = "nosniff"
+            return response
+
+    return render(
+        request,
+        "valentine/data_export.html",
+        {"form": form},
     )
 
 

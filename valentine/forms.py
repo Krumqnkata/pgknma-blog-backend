@@ -51,6 +51,12 @@ class PinAuthenticationForm(forms.Form):
         return pin
 
 
+class ValentineDataExportForm(PinAuthenticationForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["pin"].label = "Текущ 6-цифрен PIN"
+
+
 class PinSetupForm(PinAuthenticationForm):
     pin_confirmation = forms.CharField(
         min_length=6,

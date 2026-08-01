@@ -1,0 +1,52 @@
+{% extends "valentine/base.html" %}
+
+{% block title %}Моите данни · Valentine ПГКНМА{% endblock %}
+
+{% block content %}
+<section class="page-hero compact wrap">
+    <span class="eyebrow">Лични данни</span>
+    <h1>Изтегли своите Valentine данни</h1>
+    <p>Получи защитено JSON копие на информацията, свързана с твоя Valentine профил.</p>
+</section>
+
+<section class="panel data-export-panel wrap">
+    <div class="data-export-layout">
+        <div class="data-export-summary">
+            <span class="eyebrow">Какво съдържа файлът</span>
+            <h2>Твоята история от всички кампании</h2>
+            <ul>
+                <li>Профил, клас и запазена история на входовете</li>
+                <li>Изпратени пратки от всички години</li>
+                <li>Разкрити и архивирани получени валентинки</li>
+                <li>Подадените от теб сигнали и техният статус</li>
+            </ul>
+            <p class="data-export-privacy-note">
+                PIN кодове, session token-и, самоличности на анонимни податели,
+                чужди данни и скрито съдържание никога не се включват.
+            </p>
+        </div>
+
+        <div class="data-export-form-box">
+            <h2>Потвърди, че това си ти</h2>
+            <p>Въведи текущия си PIN при всяко изтегляне.</p>
+            <form method="post" class="stack-form" novalidate>
+                {% csrf_token %}
+                {% if form.non_field_errors %}
+                <div class="form-alert">{{ form.non_field_errors }}</div>
+                {% endif %}
+
+                <label for="{{ form.pin.id_for_label }}">{{ form.pin.label }}</label>
+                {{ form.pin }}
+                {% if form.pin.errors %}<div class="field-error">{{ form.pin.errors }}</div>{% endif %}
+
+                <button class="button button-primary" type="submit">
+                    Изтегли JSON файла
+                </button>
+            </form>
+            <small>
+                Файлът може да съдържа IP адреси. Запази го на сигурно място.
+            </small>
+        </div>
+    </div>
+</section>
+{% endblock %}

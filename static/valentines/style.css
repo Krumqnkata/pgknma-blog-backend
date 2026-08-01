@@ -1259,6 +1259,98 @@ summary:focus-visible {
     background: rgba(114, 95, 107, 0.1);
 }
 
+.sessions-export-card {
+    margin-top: 24px;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    border: 1px solid rgba(116, 29, 69, 0.16);
+    border-radius: 20px;
+    background: linear-gradient(135deg, #fff8fa, #fff);
+    box-shadow: 0 8px 24px rgba(75, 21, 47, 0.05);
+}
+
+.sessions-export-card h2 {
+    margin: 5px 0 6px;
+    font-family: var(--font-display);
+    font-size: 1.65rem;
+    font-weight: 500;
+}
+
+.sessions-export-card p {
+    max-width: 600px;
+    margin: 0;
+    color: var(--muted);
+}
+
+.sessions-export-card .button {
+    flex: 0 0 auto;
+}
+
+.data-export-panel {
+    max-width: 940px;
+    margin-bottom: 3rem;
+    padding: clamp(24px, 5vw, 48px);
+}
+
+.data-export-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+    gap: clamp(28px, 5vw, 56px);
+    align-items: start;
+}
+
+.data-export-summary h2,
+.data-export-form-box h2 {
+    margin: 7px 0 12px;
+    font-family: var(--font-display);
+    font-size: clamp(1.75rem, 4vw, 2.4rem);
+    font-weight: 500;
+}
+
+.data-export-summary ul {
+    margin: 24px 0;
+    padding-left: 21px;
+    display: grid;
+    gap: 10px;
+    color: var(--muted);
+}
+
+.data-export-summary li::marker {
+    color: var(--rose);
+}
+
+.data-export-privacy-note {
+    padding: 16px 18px;
+    color: var(--wine);
+    border-left: 4px solid var(--rose);
+    border-radius: 12px;
+    background: rgba(185, 63, 111, 0.08);
+}
+
+.data-export-form-box {
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    background: #fff;
+    box-shadow: var(--shadow-soft);
+}
+
+.data-export-form-box > p,
+.data-export-form-box > small {
+    color: var(--muted);
+}
+
+.data-export-form-box .stack-form {
+    margin: 22px 0 16px;
+}
+
+.data-export-form-box .button {
+    width: 100%;
+}
+
 .locked-envelope {
     width: 105px;
     height: 72px;
@@ -1706,6 +1798,24 @@ summary:focus-visible {
     .wrap,
     .login-shell {
         width: min(100% - 24px, 1180px);
+    }
+
+    .sessions-export-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .sessions-export-card .button {
+        width: 100%;
+    }
+
+    .data-export-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .data-export-panel {
+        padding: 22px 16px;
+        border-radius: 22px;
     }
 
     .login-shell {

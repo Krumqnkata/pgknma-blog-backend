@@ -11,6 +11,11 @@ urlpatterns = [
     path("home/", views.home, name="home"),
     path("change-pin/", views.change_pin, name="change_pin"),
     path("sessions/", views.active_sessions, name="sessions"),
+    path(
+        "data-export/",
+        views.personal_data_export,
+        name="data_export",
+    ),
     path("logout/", views.logout, name="logout"),
     path("students/<str:class_name>/", views.get_students, name="students"),
     path("inbox/", views.inbox, name="inbox"),

@@ -42,5 +42,16 @@
         </div>
         {% endfor %}
     </div>
+
+    <div class="sessions-export-card">
+        <div>
+            <span class="eyebrow">Лични данни</span>
+            <h2>Изтегли своето копие</h2>
+            <p>Експортирай профила, историята на сесиите и валентинките си от всички кампании.</p>
+        </div>
+        <a class="button button-secondary" href="{% url 'valentine:data_export' %}">
+            Към експорта
+        </a>
+    </div>
 </section>
 {% endblock %}

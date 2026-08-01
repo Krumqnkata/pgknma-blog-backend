@@ -1,3 +1,4 @@
+import json
 import re
 import uuid
 from datetime import date, datetime, timedelta, timezone as datetime_timezone
@@ -334,6 +335,274 @@ class ValentinePlatformTests(TestCase):
         self.assertContains(response, "Изтекла")
         self.assertNotContains(response, "203.0.113.9")
         self.assertNotContains(response, "Прекрати всички други")
+
+    def test_valentine_data_export_requires_login(self):
+        response = self.client.get(reverse("valentine:data_export"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("valentine:login"), response.url)
+
+    def test_valentine_data_export_requires_current_pin_and_honours_lock(self):
+        self.login()
+        export_url = reverse("valentine:data_export")
+
+        for _index in range(5):
+            response = self.client.post(export_url, {"pin": "000000"})
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "Текущият PIN код е невалиден")
+            self.assertNotIn("Content-Disposition", response)
+
+        blocked = self.client.post(export_url, {"pin": "123456"})
+
+        self.assertContains(blocked, "PIN кодът е временно заключен")
+        self.assertNotIn("Content-Disposition", blocked)
+        self.sender.refresh_from_db()
+        self.assertEqual(self.sender.pin_failed_attempts, 5)
+        self.assertGreater(self.sender.pin_locked_until, timezone.now())
+
+    def test_valentine_data_export_contains_only_own_safe_session_data(self):
+        self.login()
+        self.sender.refresh_from_db()
+        current_session = Register.objects.get(
+            profile=self.sender,
+            revoked=False,
+        )
+        previous_session = Register.objects.create(
+            profile=self.sender,
+            ip_address="198.51.100.20",
+            network_operator="Example Network",
+            network_asn=64520,
+            revoked=True,
+        )
+        Register.objects.create(
+            profile=self.recipient,
+            ip_address="203.0.113.99",
+            network_operator="Foreign Network",
+            network_asn=64599,
+        )
+
+        response = self.client.post(
+            reverse("valentine:data_export"),
+            {"pin": "123456"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["Content-Type"],
+            "application/json; charset=utf-8",
+        )
+        self.assertIn("attachment;", response["Content-Disposition"])
+        self.assertIn("private", response["Cache-Control"])
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertIn("max-age=0", response["Cache-Control"])
+        payload = json.loads(response.content.decode("utf-8"))
+        body = response.content.decode("utf-8")
+
+        self.assertEqual(payload["scope"], "pgknma-valentines")
+        self.assertEqual(payload["profile"]["access_code"], "SEND01")
+        self.assertEqual(len(payload["sessions"]), 2)
+        self.assertTrue(
+            any(
+                session["ip_address"] == "198.51.100.20"
+                and session["network_operator"] == "Example Network"
+                for session in payload["sessions"]
+            )
+        )
+        self.assertNotIn("203.0.113.99", body)
+        self.assertNotIn("Foreign Network", body)
+        self.assertNotIn(str(current_session.pk), body)
+        self.assertNotIn(str(previous_session.pk), body)
+        self.assertNotIn(self.sender.pin_hash, body)
+
+    def test_valentine_data_export_respects_reveal_and_anonymous_sender(self):
+        secret_sender = Profile.objects.create(
+            code="SECR01",
+            first_name="Тайният",
+            last_name="Подател",
+            clas="12A",
+            email="secret@example.com",
+        )
+        archived_campaign = ValentineCampaign.objects.create(
+            year=self.campaign.year - 1,
+            is_archived=True,
+            archived_at=timezone.now(),
+        )
+        archived_content = "Архивно анонимно послание за експорта"
+        current_content = "Запечатано послание от текущата кампания"
+        Valenitines.objects.create(
+            profile=self.sender,
+            sender_profile=secret_sender,
+            campaign=archived_campaign,
+            content=archived_content,
+            is_anonymous=True,
+        )
+        Valenitines.objects.create(
+            profile=self.sender,
+            sender_profile=secret_sender,
+            campaign=self.campaign,
+            content=current_content,
+            is_anonymous=True,
+        )
+        self.login()
+
+        sealed_response = self.client.post(
+            reverse("valentine:data_export"),
+            {"pin": "123456"},
+        )
+        sealed_payload = json.loads(sealed_response.content.decode("utf-8"))
+        sealed_body = sealed_response.content.decode("utf-8")
+
+        self.assertIn(archived_content, sealed_body)
+        self.assertNotIn(current_content, sealed_body)
+        self.assertNotIn(secret_sender.full_name, sealed_body)
+        self.assertEqual(
+            sealed_payload["sealed_current_campaign"]["received_count"],
+            1,
+        )
+        archived_entry = next(
+            item
+            for item in sealed_payload["received_valentines"]
+            if item["content"] == archived_content
+        )
+        self.assertEqual(archived_entry["sender"]["type"], "anonymous")
+        self.assertIsNone(archived_entry["sender"]["display_name"])
+
+        self.reveal_campaign()
+        revealed_response = self.client.post(
+            reverse("valentine:data_export"),
+            {"pin": "123456"},
+        )
+        revealed_payload = json.loads(
+            revealed_response.content.decode("utf-8")
+        )
+        revealed_body = revealed_response.content.decode("utf-8")
+
+        self.assertIn(current_content, revealed_body)
+        self.assertNotIn(secret_sender.full_name, revealed_body)
+        self.assertIsNone(revealed_payload["sealed_current_campaign"])
+        current_entry = next(
+            item
+            for item in revealed_payload["received_valentines"]
+            if item["content"] == current_content
+        )
+        self.assertEqual(current_entry["sender"]["type"], "anonymous")
+        self.assertIsNone(current_entry["sender"]["display_name"])
+
+    def test_valentine_data_export_groups_sent_dispatches_across_years(self):
+        second_recipient = Profile.objects.create(
+            code="RECV03",
+            first_name="Елица",
+            last_name="Георгиева",
+            clas="10B",
+            email="elitsa@example.com",
+        )
+        archived_campaign = ValentineCampaign.objects.create(
+            year=self.campaign.year - 1,
+            is_archived=True,
+            archived_at=timezone.now(),
+        )
+        dispatch_id = uuid.uuid4()
+        content = "Една пратка до целия 10Б клас"
+        for recipient in (self.recipient, second_recipient):
+            Valenitines.objects.create(
+                profile=recipient,
+                sender_profile=self.sender,
+                campaign=archived_campaign,
+                dispatch_id=dispatch_id,
+                audience_type=Valenitines.AudienceType.CLASS,
+                audience_label="10Б клас",
+                content=content,
+                theme=Valenitines.Theme.COSMIC,
+                is_anonymous=True,
+            )
+        self.login()
+
+        response = self.client.post(
+            reverse("valentine:data_export"),
+            {"pin": "123456"},
+        )
+        payload = json.loads(response.content.decode("utf-8"))
+        body = response.content.decode("utf-8")
+        dispatch = next(
+            item
+            for item in payload["sent_dispatches"]
+            if item["dispatch_id"] == str(dispatch_id)
+        )
+
+        self.assertEqual(dispatch["campaign"]["year"], archived_campaign.year)
+        self.assertEqual(dispatch["recipient_count"], 2)
+        self.assertEqual(dispatch["audience_type"], "class")
+        self.assertEqual(dispatch["audience_label"], "10Б клас")
+        self.assertEqual(dispatch["content"], content)
+        self.assertNotIn(self.recipient.full_name, body)
+        self.assertNotIn(second_recipient.full_name, body)
+        self.assertNotIn(str(self.recipient.pk), body)
+        self.assertNotIn(str(second_recipient.pk), body)
+
+    def test_valentine_data_export_keeps_report_metadata_but_hides_content(self):
+        secret_sender = Profile.objects.create(
+            code="SECR02",
+            first_name="Скрит",
+            last_name="Изпращач",
+            clas="12B",
+            email="hidden@example.com",
+        )
+        archived_campaign = ValentineCampaign.objects.create(
+            year=self.campaign.year - 1,
+            is_archived=True,
+            archived_at=timezone.now(),
+        )
+        dispatch_id = uuid.uuid4()
+        hidden_content = "Съдържание, което не трябва да напуска модерацията"
+        Valenitines.objects.create(
+            profile=self.sender,
+            sender_profile=secret_sender,
+            campaign=archived_campaign,
+            dispatch_id=dispatch_id,
+            content=hidden_content,
+            is_anonymous=False,
+            is_reported=True,
+            report_reason=Valenitines.ReportReason.HARASSMENT,
+            reported_at=timezone.now(),
+            moderation_status=Valenitines.ModerationStatus.HIDDEN,
+        )
+        moderator = get_user_model().objects.create_user(
+            username="private-moderator-name",
+            password="test-password",
+        )
+        ValentineModerationEvent.objects.create(
+            campaign=archived_campaign,
+            dispatch_id=dispatch_id,
+            reporter_profile=self.sender,
+            event_type=ValentineModerationEvent.EventType.REPORTED,
+            reason=Valenitines.ReportReason.HARASSMENT,
+        )
+        ValentineModerationEvent.objects.create(
+            campaign=archived_campaign,
+            dispatch_id=dispatch_id,
+            moderator=moderator,
+            event_type=ValentineModerationEvent.EventType.HIDDEN,
+            reason=Valenitines.ReportReason.HARASSMENT,
+        )
+        self.login()
+
+        response = self.client.post(
+            reverse("valentine:data_export"),
+            {"pin": "123456"},
+        )
+        payload = json.loads(response.content.decode("utf-8"))
+        body = response.content.decode("utf-8")
+        report = next(
+            item
+            for item in payload["submitted_reports"]
+            if item["dispatch_id"] == str(dispatch_id)
+        )
+
+        self.assertEqual(report["reason"], "harassment")
+        self.assertEqual(report["current_moderation_status"], "hidden")
+        self.assertNotIn(hidden_content, body)
+        self.assertNotIn(secret_sender.full_name, body)
+        self.assertNotIn(moderator.username, body)
 
     def test_pin_cannot_be_changed_with_an_incorrect_current_pin(self):
         self.login()
