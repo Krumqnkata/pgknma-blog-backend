@@ -150,6 +150,40 @@ class ValentinePlatformTests(TestCase):
         self.assertEqual(session.network_asn, 8717)
         lookup_operator.assert_called_once_with("213.91.211.175")
 
+    def test_active_session_updates_network_when_ip_changes(self):
+        self.login()
+        session = Register.objects.get(profile=self.sender, revoked=False)
+
+        with patch(
+            "valentine.views.lookup_network_operator",
+            return_value=("Updated Mobile Network", 64543),
+        ) as lookup:
+            response = self.client.get(
+                reverse("valentine:sessions"),
+                REMOTE_ADDR="198.51.100.43",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        session.refresh_from_db()
+        self.assertEqual(session.ip_address, "198.51.100.43")
+        self.assertEqual(session.network_operator, "Updated Mobile Network")
+        self.assertEqual(session.network_asn, 64543)
+        self.assertContains(response, "198.51.100.43")
+        lookup.assert_called_once_with("198.51.100.43")
+
+    def test_active_session_skips_lookup_when_ip_is_unchanged(self):
+        self.login()
+        session = Register.objects.get(profile=self.sender, revoked=False)
+
+        with patch("valentine.views.lookup_network_operator") as lookup:
+            response = self.client.get(
+                reverse("valentine:home"),
+                REMOTE_ADDR=session.ip_address,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        lookup.assert_not_called()
+
     def test_first_login_requires_creating_a_six_digit_pin(self):
         response = self.client.post(
             reverse("valentine:login"), {"code": self.sender.code}

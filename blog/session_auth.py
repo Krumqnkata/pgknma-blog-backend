@@ -118,6 +118,51 @@ def revoke_login_session(login_session, reason):
     return True
 
 
+def update_login_session_activity(login_session, request, *, now=None):
+    """Refresh last activity and network metadata without writing every request."""
+    now = now or timezone.now()
+    client_ip = get_client_ip(request)
+    ip_changed = bool(
+        client_ip
+        and client_ip != login_session.ip_address
+    )
+    update_seconds = int(
+        getattr(settings, 'BLOG_SESSION_LAST_SEEN_UPDATE_SECONDS', 900)
+    )
+    stale_before = now - timedelta(seconds=max(update_seconds, 60))
+
+    if ip_changed:
+        network_operator, network_asn = lookup_network_operator(client_ip)
+        updated = BlogLoginSession.objects.filter(
+            pk=login_session.pk,
+            revoked_at__isnull=True,
+            expires_at__gt=now,
+        ).update(
+            ip_address=client_ip,
+            network_operator=network_operator,
+            network_asn=network_asn,
+            last_seen_at=now,
+        )
+        if updated:
+            login_session.ip_address = client_ip
+            login_session.network_operator = network_operator
+            login_session.network_asn = network_asn
+            login_session.last_seen_at = now
+        return bool(updated)
+
+    if login_session.last_seen_at <= stale_before:
+        updated = BlogLoginSession.objects.filter(
+            pk=login_session.pk,
+            last_seen_at__lte=stale_before,
+            revoked_at__isnull=True,
+            expires_at__gt=now,
+        ).update(last_seen_at=now)
+        if updated:
+            login_session.last_seen_at = now
+
+    return True
+
+
 class SessionJWTAuthentication(JWTAuthentication):
     """Reject access tokens whose server-side session is no longer active."""
 
@@ -157,17 +202,15 @@ class SessionJWTAuthentication(JWTAuthentication):
                 code='session_expired',
             )
 
-        update_seconds = int(
-            getattr(settings, 'BLOG_SESSION_LAST_SEEN_UPDATE_SECONDS', 900)
-        )
-        stale_before = now - timedelta(seconds=max(update_seconds, 60))
-        if login_session.last_seen_at <= stale_before:
-            BlogLoginSession.objects.filter(
-                pk=login_session.pk,
-                last_seen_at__lte=stale_before,
-                revoked_at__isnull=True,
-            ).update(last_seen_at=now)
-            login_session.last_seen_at = now
+        if not update_login_session_activity(
+            login_session,
+            request,
+            now=now,
+        ):
+            raise AuthenticationFailed(
+                'Сесията е прекратена или изтекла. Моля, влезте отново.',
+                code='session_inactive',
+            )
 
         request.blog_login_session = login_session
         return user, validated_token

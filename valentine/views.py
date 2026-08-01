@@ -93,7 +93,11 @@ def get_current_session(request):
         session = Register.objects.select_related("profile").get(uuid=token)
     except (Register.DoesNotExist, ValidationError, ValueError):
         return None
-    return session if session.is_valid else None
+    if not session.is_valid:
+        return None
+    if not _update_session_network_metadata(session, request):
+        return None
+    return session
 
 
 def valentine_login_required(view_func):
@@ -150,6 +154,31 @@ def _client_ip(request):
         if candidate not in trusted_proxies:
             return candidate
     return forwarded[0]
+
+
+def _update_session_network_metadata(session, request):
+    """Keep the active session's latest IP and ASN without needless lookups."""
+    client_ip = _client_ip(request)
+    if client_ip == "unknown" or client_ip == session.ip_address:
+        return True
+
+    network_operator, network_asn = lookup_network_operator(client_ip)
+    now = timezone.now()
+    updated = Register.objects.filter(
+        pk=session.pk,
+        revoked=False,
+        expires_at__gt=now,
+        profile__is_active=True,
+    ).update(
+        ip_address=client_ip,
+        network_operator=network_operator,
+        network_asn=network_asn,
+    )
+    if updated:
+        session.ip_address = client_ip
+        session.network_operator = network_operator
+        session.network_asn = network_asn
+    return bool(updated)
 
 
 def _client_key(request):

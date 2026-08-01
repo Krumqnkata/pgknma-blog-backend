@@ -44,9 +44,10 @@ class BlogLoginSessionTests(APITestCase):
                 auth_method,
             )
 
-    def authenticate(self, refresh):
+    def authenticate(self, refresh, ip='203.0.113.20'):
         self.client.credentials(
-            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}'
+            HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}',
+            HTTP_X_FORWARDED_FOR=ip,
         )
 
     def test_issued_tokens_are_bound_to_persisted_session(self):
@@ -72,6 +73,36 @@ class BlogLoginSessionTests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['id'], str(own_session.pk))
         self.assertTrue(response.data[0]['is_current'])
+
+    @patch(
+        'blog.session_auth.lookup_network_operator',
+        return_value=('Updated Network', 64542),
+    )
+    def test_authenticated_request_updates_changed_session_ip(self, lookup):
+        login_session, refresh = self.issue()
+        original_last_seen = login_session.last_seen_at
+        self.authenticate(refresh, ip='198.51.100.42')
+
+        response = self.client.get('/api/profile/sessions/')
+
+        self.assertEqual(response.status_code, 200)
+        login_session.refresh_from_db()
+        self.assertEqual(login_session.ip_address, '198.51.100.42')
+        self.assertEqual(login_session.network_operator, 'Updated Network')
+        self.assertEqual(login_session.network_asn, 64542)
+        self.assertGreaterEqual(login_session.last_seen_at, original_last_seen)
+        self.assertEqual(response.data[0]['ip_address'], '198.51.100.42')
+        lookup.assert_called_once_with('198.51.100.42')
+
+    @patch('blog.session_auth.lookup_network_operator')
+    def test_unchanged_session_ip_skips_operator_lookup(self, lookup):
+        _login_session, refresh = self.issue()
+        self.authenticate(refresh)
+
+        response = self.client.get('/api/profile/sessions/')
+
+        self.assertEqual(response.status_code, 200)
+        lookup.assert_not_called()
 
     def test_revoked_session_rejects_existing_access_token_immediately(self):
         login_session, refresh = self.issue()
