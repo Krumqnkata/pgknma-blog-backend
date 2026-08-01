@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -148,6 +148,77 @@ class BlogLoginSessionAdmin(ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PersonalDataCleanupRun)
+class PersonalDataCleanupRunAdmin(ModelAdmin):
+    list_display = (
+        'started_at',
+        'status',
+        'dry_run',
+        'retention_days',
+        'affected_records_display',
+        'finished_at',
+        'error_preview',
+    )
+    list_filter = ('status', 'dry_run', 'started_at')
+    ordering = ('-started_at',)
+    date_hierarchy = 'started_at'
+    readonly_fields = (
+        'id',
+        'started_at',
+        'finished_at',
+        'retention_days',
+        'cutoff_at',
+        'dry_run',
+        'status',
+        'affected_records_display',
+        'result_summary',
+        'result_counts',
+        'error_message',
+    )
+    fields = readonly_fields
+
+    RESULT_LABELS = {
+        'consent_records': 'Съгласия за бисквитки',
+        'blog_login_sessions': 'Сесии в блога',
+        'valentine_sessions': 'Сесии във валентинките',
+        'valentine_login_attempts': 'Опити за вход във валентинките',
+        'expired_django_sessions': 'Изтекли Django сесии',
+        'expired_jwt_tokens': 'Изтекли JWT токени',
+    }
+
+    @admin.display(description='Общо записи')
+    def affected_records_display(self, obj):
+        return obj.affected_records
+
+    @admin.display(description='Резултат')
+    def result_summary(self, obj):
+        if not obj.result_counts:
+            return '—'
+        return '\n'.join(
+            f'{self.RESULT_LABELS.get(key, key)}: {value}'
+            for key, value in sorted(obj.result_counts.items())
+        )
+
+    @admin.display(description='Грешка')
+    def error_preview(self, obj):
+        return Truncator(obj.error_message).chars(80) if obj.error_message else '—'
+
+    def has_module_permission(self, request):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_view_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
     def has_delete_permission(self, request, obj=None):
         return False

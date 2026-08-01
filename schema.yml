@@ -231,20 +231,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TokenObtainPair'
+              $ref: '#/components/schemas/BlogTokenObtainPair'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TokenObtainPair'
+              $ref: '#/components/schemas/BlogTokenObtainPair'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TokenObtainPair'
+              $ref: '#/components/schemas/BlogTokenObtainPair'
         required: true
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenObtainPair'
+                $ref: '#/components/schemas/BlogTokenObtainPair'
           description: ''
   /api/auth/token/refresh/:
     post:
@@ -258,20 +258,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TokenRefresh'
+              $ref: '#/components/schemas/SessionTokenRefresh'
           application/x-www-form-urlencoded:
             schema:
-              $ref: '#/components/schemas/TokenRefresh'
+              $ref: '#/components/schemas/SessionTokenRefresh'
           multipart/form-data:
             schema:
-              $ref: '#/components/schemas/TokenRefresh'
+              $ref: '#/components/schemas/SessionTokenRefresh'
         required: true
       responses:
         '200':
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TokenRefresh'
+                $ref: '#/components/schemas/SessionTokenRefresh'
           description: ''
   /api/auth/validate-password/:
     post:
@@ -742,6 +742,228 @@ paths:
               schema:
                 $ref: '#/components/schemas/PrivacyPolicy'
           description: ''
+  /api/profile/export/:
+    get:
+      operationId: profile_personal_data_export
+      description: 'Генерира UTF-8 JSON файл с профилните данни, създаденото съдържание,
+        отговорите, съгласията и историята на входовете, които са пряко свързани с
+        текущия Django потребител. Не включва парола, password hash, JWT/refresh token-и
+        или чужди записи. Отговорът е attachment и е маркиран с `Cache-Control: no-store`.'
+      summary: Изтегляне на личните данни на текущия потребител
+      tags:
+      - Профил – лични данни
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonalDataExportSchema'
+              examples:
+                СъкратенПример:
+                  value:
+                    format_version: '1.0'
+                    scope: pgknma-blog
+                    generated_at: '2026-08-01T10:30:00+03:00'
+                    account:
+                      id: 14
+                      username: example-user
+                      email: user@example.com
+                    created_content:
+                      comments: []
+                    activity:
+                      poll_answers: []
+                    privacy_and_security:
+                      login_sessions: []
+                    excluded_for_security:
+                    - password and password hash
+                    notes: []
+                  summary: Съкратен пример
+          description: JSON файл с личните данни на текущия потребител.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Липсващ, изтекъл или прекратен JWT token.
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Надвишен дневен лимит за експортиране.
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Сайтът е в режим на поддръжка.
+  /api/profile/sessions/:
+    get:
+      operationId: profile_session_history
+      description: Връща до 100 собствени сесии в рамките на настроения срок за съхранение.
+        Полето `status` е `active`, `expired` или `revoked`, а `is_current` показва
+        сесията, с която е изпратена заявката. Изисква валиден JWT Bearer access token.
+      summary: История на сесиите на текущия потребител
+      tags:
+      - Профил – сесии
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BlogLoginSession'
+              examples:
+                АктивнаСесия:
+                  value:
+                  - id: 22c7a26f-31de-48d7-b175-cdb37e49e264
+                    auth_method: google
+                    auth_method_display: Google
+                    ip_address: 203.0.113.10
+                    network_operator: Example Network
+                    network_asn: 64500
+                    device_label: Firefox · Windows
+                    created_at: '2026-08-01T10:00:00+03:00'
+                    last_seen_at: '2026-08-01T10:15:00+03:00'
+                    expires_at: '2026-08-08T10:00:00+03:00'
+                    revoked_at: null
+                    revoked_reason: ''
+                    revoked_reason_display: ''
+                    status: active
+                    is_current: true
+                  summary: Активна сесия
+          description: Списък със собствените сесии, подредени от най-новата.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Липсващ, изтекъл или прекратен JWT token.
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Надвишен лимит на заявките.
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Сайтът е в режим на поддръжка.
+  /api/profile/sessions/{session_id}/revoke/:
+    post:
+      operationId: profile_session_revoke
+      description: Прекратява собствена сесия по UUID. Текущата сесия не може да бъде
+        прекратена от този endpoint; за нея се използва изходът от профила. Операцията
+        е идемпотентна за вече прекратена сесия.
+      summary: Прекратяване на една друга сесия
+      parameters:
+      - in: path
+        name: session_id
+        schema:
+          type: string
+          format: uuid
+        description: UUID на собствената сесия за прекратяване.
+        required: true
+      tags:
+      - Профил – сесии
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+              examples:
+                УспешноПрекратяване:
+                  value:
+                    detail: Сесията е прекратена успешно.
+                  summary: Успешно прекратяване
+          description: Сесията е прекратена или вече е била прекратена.
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Направен е опит за прекратяване на текущата сесия.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Липсващ, изтекъл или прекратен JWT token.
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Сесията не съществува или принадлежи на друг потребител.
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Надвишен лимит за управление на сесии.
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Сайтът е в режим на поддръжка.
+  /api/profile/sessions/revoke-others/:
+    post:
+      operationId: profile_sessions_revoke_others
+      description: Прекратява всички активни сесии на текущия потребител без сесията,
+        с която е изпратена заявката.
+      summary: Прекратяване на всички други активни сесии
+      tags:
+      - Профил – сесии
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BlogSessionRevokeOthersResponse'
+              examples:
+                ПрекратениДвеСесии:
+                  value:
+                    detail: Всички други активни сесии са прекратени.
+                    revoked_count: 2
+                  summary: Прекратени две сесии
+          description: Операцията е изпълнена успешно.
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Текущата server-side сесия не може да бъде разпозната.
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Липсващ, изтекъл или прекратен JWT token.
+        '429':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Надвишен лимит за управление на сесии.
+        '503':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiDetailResponse'
+          description: Сайтът е в режим на поддръжка.
   /api/program/:
     get:
       operationId: program_retrieve
@@ -803,6 +1025,22 @@ paths:
           description: ''
 components:
   schemas:
+    ApiDetailResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Съобщение с резултата или причината за грешката.
+      required:
+      - detail
+    AuthMethodEnum:
+      enum:
+      - password
+      - google
+      type: string
+      description: |-
+        * `password` - Парола
+        * `google` - Google
     BellSongSuggestion:
       type: object
       properties:
@@ -873,6 +1111,118 @@ components:
       - title
       - user_username
       - votes
+    BlogLoginSession:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        auth_method:
+          allOf:
+          - $ref: '#/components/schemas/AuthMethodEnum'
+          readOnly: true
+          title: Метод за вход
+        auth_method_display:
+          type: string
+          readOnly: true
+        ip_address:
+          type: string
+          readOnly: true
+          nullable: true
+          title: IP адрес
+        network_operator:
+          type: string
+          readOnly: true
+          title: Мрежов оператор
+        network_asn:
+          type: integer
+          readOnly: true
+          nullable: true
+          title: ASN
+        device_label:
+          type: string
+          readOnly: true
+          title: Устройство
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Вход на
+        last_seen_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Последна активност
+        expires_at:
+          type: string
+          format: date-time
+          readOnly: true
+          title: Изтича на
+        revoked_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+          title: Прекратена на
+        revoked_reason:
+          allOf:
+          - $ref: '#/components/schemas/RevokedReasonEnum'
+          readOnly: true
+          title: Причина за прекратяване
+        revoked_reason_display:
+          type: string
+          readOnly: true
+          description: Човеко-четимо описание на причината за прекратяване.
+        status:
+          type: string
+          readOnly: true
+          description: 'Текущ статус: active, expired или revoked.'
+        is_current:
+          type: boolean
+          readOnly: true
+          description: Дали това е сесията на текущата API заявка.
+      required:
+      - auth_method
+      - auth_method_display
+      - created_at
+      - device_label
+      - expires_at
+      - id
+      - ip_address
+      - is_current
+      - last_seen_at
+      - network_asn
+      - network_operator
+      - revoked_at
+      - revoked_reason
+      - revoked_reason_display
+      - status
+    BlogSessionRevokeOthersResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Съобщение с резултата или причината за грешката.
+        revoked_count:
+          type: integer
+          minimum: 0
+          description: Брой прекратени активни сесии.
+      required:
+      - detail
+      - revoked_count
+    BlogTokenObtainPair:
+      type: object
+      properties:
+        username:
+          type: string
+          writeOnly: true
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - password
+      - username
     Changelog:
       type: object
       properties:
@@ -1058,11 +1408,17 @@ components:
           nullable: true
           title: Дата на качване
           description: 'Дата и час на качване на мемето. Формат: YYYY-MM-DD HH:MM:SS.'
-        is_approved:
-          type: boolean
+        status:
+          allOf:
+          - $ref: '#/components/schemas/StatusEnum'
           readOnly: true
-          title: Одобрено
-          description: Отбележете, ако мемето е одобрено за участие в 'Меме на седмицата'.
+          title: Статус
+          description: |-
+            Статус на мемето: изчакващо, одобрено или отхвърлено.
+
+            * `pending` - Чакащо одобрение
+            * `approved` - Одобрено
+            * `rejected` - Отхвърлено
         votes:
           type: integer
           readOnly: true
@@ -1077,7 +1433,7 @@ components:
       - id
       - image
       - image_url
-      - is_approved
+      - status
       - title
       - user_username
       - votes
@@ -1141,6 +1497,44 @@ components:
           type: string
           pattern: ^[\w.@+-]+$
           maxLength: 150
+    PersonalDataExportSchema:
+      type: object
+      properties:
+        format_version:
+          type: string
+        scope:
+          type: string
+        generated_at:
+          type: string
+          format: date-time
+        account:
+          description: Профилни данни, роли и информация за свързан Google профил.
+        created_content:
+          description: Публикации, коментари, предложения, мемета и контактни форми
+            на потребителя.
+        activity:
+          description: Отговори на анкети и направени гласове.
+        privacy_and_security:
+          description: Записи за съгласие и история на сесиите в рамките на срока
+            за съхранение.
+        excluded_for_security:
+          type: array
+          items:
+            type: string
+        notes:
+          type: array
+          items:
+            type: string
+      required:
+      - account
+      - activity
+      - created_content
+      - excluded_for_security
+      - format_version
+      - generated_at
+      - notes
+      - privacy_and_security
+      - scope
     PollAnswer:
       type: object
       properties:
@@ -1287,12 +1681,20 @@ components:
         created_at:
           type: string
           format: date-time
-          description: 'Дата и час на създаване на публикацията. Формат: YYYY-MM-DD
-            HH:MM:SS.'
+          readOnly: true
+          title: Създадена на
+          description: Записва се автоматично при първото създаване на публикацията.
+        published_at:
+          type: string
+          format: date-time
+          nullable: true
+          title: Публикувай на
+          description: Оставете празно за незабавно публикуване. Бъдеща дата пази
+            статията скрита до зададения момент.
         published:
           type: boolean
-          description: Отбележете, ако публикацията трябва да бъде видима за всички
-            потребители.
+          description: Включете, за да бъде публикацията публикувана веднага или на
+            зададената дата.
         allowed:
           type: boolean
           description: Отбележете, за да одобрите публикацията за показване (за публикации,
@@ -1309,11 +1711,11 @@ components:
       - category
       - category_name
       - content
+      - created_at
       - documents
       - hook
       - id
       - images
-      - published
       - title
     PrivacyPolicy:
       type: object
@@ -1362,6 +1764,32 @@ components:
       - password
       - password2
       - username
+    RevokedReasonEnum:
+      enum:
+      - logout
+      - user
+      - password_change
+      - account_deactivated
+      - admin
+      type: string
+      description: |-
+        * `logout` - Изход
+        * `user` - Прекратена от потребителя
+        * `password_change` - Смяна на парола
+        * `account_deactivated` - Деактивиран профил
+        * `admin` - Прекратена от администратор
+    SessionTokenRefresh:
+      type: object
+      description: Rotate tokens only while their persisted login session is active.
+      properties:
+        refresh:
+          type: string
+        access:
+          type: string
+          readOnly: true
+      required:
+      - access
+      - refresh
     SiteSettings:
       type: object
       properties:
@@ -1431,37 +1859,6 @@ components:
       required:
       - content
       - date
-    TokenObtainPair:
-      type: object
-      properties:
-        username:
-          type: string
-          writeOnly: true
-        password:
-          type: string
-          writeOnly: true
-        access:
-          type: string
-          readOnly: true
-        refresh:
-          type: string
-          readOnly: true
-      required:
-      - access
-      - password
-      - refresh
-      - username
-    TokenRefresh:
-      type: object
-      properties:
-        access:
-          type: string
-          readOnly: true
-        refresh:
-          type: string
-      required:
-      - access
-      - refresh
     UserPollStatus:
       type: object
       properties:
@@ -1503,3 +1900,5 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: 'JWT access token, издаден при вход. Формат на header-а: `Authorization:
+        Bearer <access-token>`.'

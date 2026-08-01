@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone as datetime_timezone
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from drf_spectacular.extensions import OpenApiAuthenticationExtension
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed, InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
@@ -226,3 +227,21 @@ class SessionTokenRefreshSerializer(TokenRefreshSerializer):
             if isinstance(exc, TokenError):
                 raise InvalidToken(exc.args[0]) from exc
             raise
+
+
+class SessionJWTAuthenticationScheme(OpenApiAuthenticationExtension):
+    """Describe the custom server-side JWT authentication in OpenAPI."""
+
+    target_class = 'blog.session_auth.SessionJWTAuthentication'
+    name = 'jwtAuth'
+
+    def get_security_definition(self, auto_schema):
+        return {
+            'type': 'http',
+            'scheme': 'bearer',
+            'bearerFormat': 'JWT',
+            'description': (
+                'JWT access token, издаден при вход. Формат на header-а: '
+                '`Authorization: Bearer <access-token>`.'
+            ),
+        }

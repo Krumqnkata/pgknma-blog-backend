@@ -1,11 +1,20 @@
 import mimetypes
+import json
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.serializers.json import DjangoJSONEncoder
 from django.contrib.auth import password_validation
 from django.db import IntegrityError, transaction
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from django.utils.cache import patch_vary_headers
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    OpenApiTypes,
+    extend_schema,
+)
 from rest_framework import viewsets, generics, status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
@@ -32,8 +41,10 @@ from .serializer import (
     PollStatisticsSerializer, ContactSubmissionSerializer, NotificationSerializer,
     EventSerializer, TermsOfServiceSerializer, BellSongSuggestionSerializer,
     PrivacyPolicySerializer, MemeOfWeekSerializer, ConsentRecordSerializer, SiteSettingsSerializer,
-    ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer, BlogLoginSessionSerializer
+    ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer, BlogLoginSessionSerializer,
+    ApiDetailResponseSerializer, BlogSessionRevokeOthersResponseSerializer, PersonalDataExportSchemaSerializer
 )
+from .personal_data_export import build_personal_data_export
 from .session_auth import (
     SESSION_ID_CLAIM,
     SessionJWTAuthentication,
@@ -372,6 +383,61 @@ class BlogSessionListView(generics.ListAPIView):
     serializer_class = BlogLoginSessionSerializer
     permission_classes = (SiteIsAvailable, IsAuthenticated)
 
+    @extend_schema(
+        operation_id='profile_session_history',
+        summary='История на сесиите на текущия потребител',
+        description=(
+            'Връща до 100 собствени сесии в рамките на настроения срок за '
+            'съхранение. Полето `status` е `active`, `expired` или `revoked`, '
+            'а `is_current` показва сесията, с която е изпратена заявката. '
+            'Изисква валиден JWT Bearer access token.'
+        ),
+        tags=['Профил – сесии'],
+        responses={
+            200: OpenApiResponse(
+                response=BlogLoginSessionSerializer(many=True),
+                description='Списък със собствените сесии, подредени от най-новата.',
+                examples=[
+                    OpenApiExample(
+                        'Активна сесия',
+                        value={
+                            'id': '22c7a26f-31de-48d7-b175-cdb37e49e264',
+                            'auth_method': 'google',
+                            'auth_method_display': 'Google',
+                            'ip_address': '203.0.113.10',
+                            'network_operator': 'Example Network',
+                            'network_asn': 64500,
+                            'device_label': 'Firefox · Windows',
+                            'created_at': '2026-08-01T10:00:00+03:00',
+                            'last_seen_at': '2026-08-01T10:15:00+03:00',
+                            'expires_at': '2026-08-08T10:00:00+03:00',
+                            'revoked_at': None,
+                            'revoked_reason': '',
+                            'revoked_reason_display': '',
+                            'status': 'active',
+                            'is_current': True,
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            401: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Липсващ, изтекъл или прекратен JWT token.',
+            ),
+            429: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Надвишен лимит на заявките.',
+            ),
+            503: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Сайтът е в режим на поддръжка.',
+            ),
+        },
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
     def get_queryset(self):
         history_cutoff = timezone.now() - timedelta(
             days=getattr(settings, 'BLOG_SESSION_RETENTION_DAYS', 90)
@@ -392,6 +458,58 @@ class BlogSessionRevokeView(APIView):
     permission_classes = (SiteIsAvailable, IsAuthenticated)
     throttle_scope = 'session_management'
 
+    @extend_schema(
+        operation_id='profile_session_revoke',
+        summary='Прекратяване на една друга сесия',
+        description=(
+            'Прекратява собствена сесия по UUID. Текущата сесия не може да '
+            'бъде прекратена от този endpoint; за нея се използва изходът от '
+            'профила. Операцията е идемпотентна за вече прекратена сесия.'
+        ),
+        tags=['Профил – сесии'],
+        request=None,
+        parameters=[
+            OpenApiParameter(
+                name='session_id',
+                type=OpenApiTypes.UUID,
+                location=OpenApiParameter.PATH,
+                description='UUID на собствената сесия за прекратяване.',
+            )
+        ],
+        responses={
+            200: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Сесията е прекратена или вече е била прекратена.',
+                examples=[
+                    OpenApiExample(
+                        'Успешно прекратяване',
+                        value={'detail': 'Сесията е прекратена успешно.'},
+                        response_only=True,
+                    )
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Направен е опит за прекратяване на текущата сесия.',
+            ),
+            401: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Липсващ, изтекъл или прекратен JWT token.',
+            ),
+            404: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Сесията не съществува или принадлежи на друг потребител.',
+            ),
+            429: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Надвишен лимит за управление на сесии.',
+            ),
+            503: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Сайтът е в режим на поддръжка.',
+            ),
+        },
+    )
     def post(self, request, session_id):
         current_session_id = get_current_session_id(request)
         if str(session_id) == str(current_session_id):
@@ -426,6 +544,48 @@ class BlogSessionRevokeOthersView(APIView):
     permission_classes = (SiteIsAvailable, IsAuthenticated)
     throttle_scope = 'session_management'
 
+    @extend_schema(
+        operation_id='profile_sessions_revoke_others',
+        summary='Прекратяване на всички други активни сесии',
+        description=(
+            'Прекратява всички активни сесии на текущия потребител без '
+            'сесията, с която е изпратена заявката.'
+        ),
+        tags=['Профил – сесии'],
+        request=None,
+        responses={
+            200: OpenApiResponse(
+                response=BlogSessionRevokeOthersResponseSerializer,
+                description='Операцията е изпълнена успешно.',
+                examples=[
+                    OpenApiExample(
+                        'Прекратени две сесии',
+                        value={
+                            'detail': 'Всички други активни сесии са прекратени.',
+                            'revoked_count': 2,
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            400: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Текущата server-side сесия не може да бъде разпозната.',
+            ),
+            401: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Липсващ, изтекъл или прекратен JWT token.',
+            ),
+            429: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Надвишен лимит за управление на сесии.',
+            ),
+            503: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Сайтът е в режим на поддръжка.',
+            ),
+        },
+    )
     def post(self, request):
         current_session_id = get_current_session_id(request)
         if not current_session_id:
@@ -455,6 +615,81 @@ class BlogSessionRevokeOthersView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class PersonalDataExportView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+    throttle_scope = 'personal_data_export'
+
+    @extend_schema(
+        operation_id='profile_personal_data_export',
+        summary='Изтегляне на личните данни на текущия потребител',
+        description=(
+            'Генерира UTF-8 JSON файл с профилните данни, създаденото '
+            'съдържание, отговорите, съгласията и историята на входовете, '
+            'които са пряко свързани с текущия Django потребител. Не включва '
+            'парола, password hash, JWT/refresh token-и или чужди записи. '
+            'Отговорът е attachment и е маркиран с `Cache-Control: no-store`.'
+        ),
+        tags=['Профил – лични данни'],
+        responses={
+            200: OpenApiResponse(
+                response=PersonalDataExportSchemaSerializer,
+                description='JSON файл с личните данни на текущия потребител.',
+                examples=[
+                    OpenApiExample(
+                        'Съкратен пример',
+                        value={
+                            'format_version': '1.0',
+                            'scope': 'pgknma-blog',
+                            'generated_at': '2026-08-01T10:30:00+03:00',
+                            'account': {
+                                'id': 14,
+                                'username': 'example-user',
+                                'email': 'user@example.com',
+                            },
+                            'created_content': {'comments': []},
+                            'activity': {'poll_answers': []},
+                            'privacy_and_security': {'login_sessions': []},
+                            'excluded_for_security': ['password and password hash'],
+                            'notes': [],
+                        },
+                        response_only=True,
+                    )
+                ],
+            ),
+            401: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Липсващ, изтекъл или прекратен JWT token.',
+            ),
+            429: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Надвишен дневен лимит за експортиране.',
+            ),
+            503: OpenApiResponse(
+                response=ApiDetailResponseSerializer,
+                description='Сайтът е в режим на поддръжка.',
+            ),
+        },
+    )
+    def get(self, request):
+        payload = build_personal_data_export(request.user)
+        content = json.dumps(
+            payload,
+            cls=DjangoJSONEncoder,
+            ensure_ascii=False,
+            indent=2,
+        ).encode('utf-8')
+        filename = f'pgknma-personal-data-{timezone.localdate():%Y-%m-%d}.json'
+        response = HttpResponse(
+            content,
+            content_type='application/json; charset=utf-8',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        response['Cache-Control'] = 'private, no-store, max-age=0'
+        response['Pragma'] = 'no-cache'
+        response['X-Content-Type-Options'] = 'nosniff'
+        return response
 
 
 class MySongSuggestionsView(generics.ListAPIView):

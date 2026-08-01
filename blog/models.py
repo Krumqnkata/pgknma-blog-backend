@@ -808,6 +808,81 @@ class BlogLoginSession(models.Model):
         return f'{self.user} · {self.get_auth_method_display()} · {self.created_at:%d.%m.%Y %H:%M}'
 
 
+class PersonalDataCleanupRun(models.Model):
+    """Audit record for one execution of the personal-data retention job."""
+
+    STATUS_RUNNING = 'running'
+    STATUS_SUCCEEDED = 'succeeded'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = (
+        (STATUS_RUNNING, 'Изпълнява се'),
+        (STATUS_SUCCEEDED, 'Успешно'),
+        (STATUS_FAILED, 'Грешка'),
+    )
+
+    started_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Стартирано на',
+    )
+    finished_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Завършено на',
+    )
+    retention_days = models.PositiveIntegerField(
+        verbose_name='Срок в дни',
+    )
+    cutoff_at = models.DateTimeField(
+        verbose_name='Изтриване на записи преди',
+    )
+    dry_run = models.BooleanField(
+        default=False,
+        verbose_name='Само проверка',
+    )
+    status = models.CharField(
+        max_length=12,
+        choices=STATUS_CHOICES,
+        default=STATUS_RUNNING,
+        verbose_name='Статус',
+    )
+    result_counts = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name='Резултати по категории',
+    )
+    error_message = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Грешка',
+    )
+
+    class Meta:
+        verbose_name = 'Изпълнение на почистването на лични данни'
+        verbose_name_plural = 'История на почистването на лични данни'
+        ordering = ('-started_at',)
+        indexes = [
+            models.Index(
+                fields=('started_at',),
+                name='cleanup_run_started_idx',
+            ),
+            models.Index(
+                fields=('status', 'started_at'),
+                name='cleanup_run_status_idx',
+            ),
+        ]
+
+    @property
+    def affected_records(self):
+        return sum(
+            value
+            for value in self.result_counts.values()
+            if isinstance(value, int) and not isinstance(value, bool)
+        )
+
+    def __str__(self):
+        return f'{self.get_status_display()} · {self.started_at:%d.%m.%Y %H:%M}'
+
+
 def _sync_song_votes(song_ids):
     through = BellSongSuggestion.voted_by.through
     for song_id in song_ids:

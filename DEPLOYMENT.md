@@ -386,6 +386,7 @@ sudo systemctl restart waitress.service
 
 ```dotenv
 THROTTLE_SESSION_MANAGEMENT=30/hour
+THROTTLE_PERSONAL_DATA_EXPORT=3/day
 BLOG_SESSION_LAST_SEEN_UPDATE_SECONDS=900
 BLOG_SESSION_RETENTION_DAYS=90
 PERSONAL_DATA_RETENTION_DAYS=90
@@ -428,6 +429,10 @@ sudo systemctl start pgknma-data-retention.service
 sudo journalctl -u pgknma-data-retention.service -n 50 --no-pager
 ```
 
+Всяко изпълнение, включително `--dry-run` и неуспешен опит, се записва в
+`Администрация → История на почистването`. Страницата е само за superuser и
+показва началото, края, срока, резултатите по категории и евентуалната грешка.
+
 Алтернативно, ако не използваш timer-а, добави следния cron запис. Не
 активирай едновременно и двата варианта:
 
@@ -441,6 +446,11 @@ Apache/Cloudflare/системните логове не са Django запис�
 След deploy провери: вход с парола, вход с Google, refresh, обикновен изход,
 списъка „Профил → Сесии“, прекратяване на друга сесия и незабавен `401` на
 прекратеното устройство.
+
+Потребителският JSON експорт е на `GET /api/profile/export/`, изисква валиден
+JWT и е ограничен по подразбиране до 3 изтегляния на ден. Бутонът се намира в
+`Профил → Настройки → Моите лични данни`. Swagger описанията са достъпни за
+superuser на `/api/docs/`, а ReDoc — на `/api/redoc/`.
 
 ## 10. Git история
 

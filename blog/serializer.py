@@ -573,9 +573,15 @@ class BlogLoginSessionSerializer(serializers.ModelSerializer):
         source='get_auth_method_display',
         read_only=True,
     )
-    revoked_reason_display = serializers.SerializerMethodField()
-    status = serializers.SerializerMethodField()
-    is_current = serializers.SerializerMethodField()
+    revoked_reason_display = serializers.SerializerMethodField(
+        help_text='Човеко-четимо описание на причината за прекратяване.',
+    )
+    status = serializers.SerializerMethodField(
+        help_text='Текущ статус: active, expired или revoked.',
+    )
+    is_current = serializers.SerializerMethodField(
+        help_text='Дали това е сесията на текущата API заявка.',
+    )
 
     class Meta:
         model = BlogLoginSession
@@ -598,18 +604,53 @@ class BlogLoginSessionSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
-    def get_revoked_reason_display(self, obj):
+    def get_revoked_reason_display(self, obj) -> str:
         return obj.get_revoked_reason_display() if obj.revoked_reason else ''
 
-    def get_status(self, obj):
+    def get_status(self, obj) -> str:
         if obj.revoked_at is not None:
             return 'revoked'
         if obj.expires_at <= timezone.now():
             return 'expired'
         return 'active'
 
-    def get_is_current(self, obj):
+    def get_is_current(self, obj) -> bool:
         return str(obj.pk) == str(self.context.get('current_session_id') or '')
+
+
+class ApiDetailResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField(
+        help_text='Съобщение с резултата или причината за грешката.',
+    )
+
+
+class BlogSessionRevokeOthersResponseSerializer(ApiDetailResponseSerializer):
+    revoked_count = serializers.IntegerField(
+        min_value=0,
+        help_text='Брой прекратени активни сесии.',
+    )
+
+
+class PersonalDataExportSchemaSerializer(serializers.Serializer):
+    format_version = serializers.CharField()
+    scope = serializers.CharField()
+    generated_at = serializers.DateTimeField()
+    account = serializers.JSONField(
+        help_text='Профилни данни, роли и информация за свързан Google профил.',
+    )
+    created_content = serializers.JSONField(
+        help_text='Публикации, коментари, предложения, мемета и контактни форми на потребителя.',
+    )
+    activity = serializers.JSONField(
+        help_text='Отговори на анкети и направени гласове.',
+    )
+    privacy_and_security = serializers.JSONField(
+        help_text='Записи за съгласие и история на сесиите в рамките на срока за съхранение.',
+    )
+    excluded_for_security = serializers.ListField(
+        child=serializers.CharField(),
+    )
+    notes = serializers.ListField(child=serializers.CharField())
 
 
 

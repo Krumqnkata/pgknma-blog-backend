@@ -1,9 +1,12 @@
 import json
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
 from blog.data_retention import cleanup_personal_data
+from blog.models import PersonalDataCleanupRun
 
 
 class Command(BaseCommand):
@@ -27,11 +30,47 @@ class Command(BaseCommand):
         if days < 1:
             raise CommandError('--days must be a positive integer.')
 
-        counts = cleanup_personal_data(
-            days=days,
+        now = timezone.now()
+        cleanup_run = PersonalDataCleanupRun.objects.create(
+            retention_days=days,
+            cutoff_at=now - timedelta(days=days),
             dry_run=options['dry_run'],
         )
+
+        try:
+            counts = cleanup_personal_data(
+                days=days,
+                now=now,
+                dry_run=options['dry_run'],
+            )
+        except Exception as exc:
+            cleanup_run.status = PersonalDataCleanupRun.STATUS_FAILED
+            cleanup_run.finished_at = timezone.now()
+            cleanup_run.error_message = (
+                str(exc).strip() or exc.__class__.__name__
+            )[:4000]
+            cleanup_run.save(
+                update_fields=(
+                    'status',
+                    'finished_at',
+                    'error_message',
+                )
+            )
+            raise
+
+        cleanup_run.status = PersonalDataCleanupRun.STATUS_SUCCEEDED
+        cleanup_run.finished_at = timezone.now()
+        cleanup_run.result_counts = counts
+        cleanup_run.save(
+            update_fields=(
+                'status',
+                'finished_at',
+                'result_counts',
+            )
+        )
         result = {
+            'cleanup_run_id': cleanup_run.pk,
+            'status': cleanup_run.status,
             'retention_days': days,
             'dry_run': options['dry_run'],
             **counts,

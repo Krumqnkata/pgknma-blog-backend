@@ -77,6 +77,11 @@ urlpatterns = [
         blog_views.BlogSessionRevokeOthersView.as_view(),
         name='profile-sessions-revoke-others',
     ),
+    path(
+        'profile/export/',
+        blog_views.PersonalDataExportView.as_view(),
+        name='profile-personal-data-export',
+    ),
 
 
     # Пътища за съдържание на потребителя

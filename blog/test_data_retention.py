@@ -1,6 +1,7 @@
 import io
 import json
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session as DjangoSession
@@ -20,7 +21,7 @@ from valentine.models import (
     ValentineModerationEvent,
 )
 
-from .models import BlogLoginSession, ConsentRecord
+from .models import BlogLoginSession, ConsentRecord, PersonalDataCleanupRun
 
 
 @override_settings(PERSONAL_DATA_RETENTION_DAYS=90)
@@ -157,6 +158,7 @@ class PersonalDataRetentionTests(TestCase):
         result = json.loads(output.getvalue())
 
         self.assertEqual(result['retention_days'], 90)
+        self.assertEqual(result['status'], PersonalDataCleanupRun.STATUS_SUCCEEDED)
         self.assertFalse(ConsentRecord.objects.filter(pk=old_consent.pk).exists())
         self.assertTrue(ConsentRecord.objects.filter(pk=fresh_consent.pk).exists())
         self.assertFalse(BlogLoginSession.objects.filter(pk=old_blog_session.pk).exists())
@@ -179,6 +181,19 @@ class PersonalDataRetentionTests(TestCase):
         self.assertTrue(Profile.objects.filter(pk=self.sender.pk).exists())
         self.assertTrue(ValentineCampaign.objects.filter(pk=campaign.pk).exists())
 
+        cleanup_run = PersonalDataCleanupRun.objects.get(
+            pk=result['cleanup_run_id']
+        )
+        self.assertEqual(
+            cleanup_run.status,
+            PersonalDataCleanupRun.STATUS_SUCCEEDED,
+        )
+        self.assertFalse(cleanup_run.dry_run)
+        self.assertEqual(cleanup_run.retention_days, 90)
+        self.assertEqual(cleanup_run.result_counts['consent_records'], 1)
+        self.assertIsNotNone(cleanup_run.finished_at)
+        self.assertEqual(cleanup_run.error_message, '')
+
     def test_dry_run_does_not_change_data(self):
         old_consent = self.make_consent(old=True)
         output = io.StringIO()
@@ -196,7 +211,34 @@ class PersonalDataRetentionTests(TestCase):
         self.assertTrue(
             ConsentRecord.objects.filter(pk=old_consent.pk).exists()
         )
+        cleanup_run = PersonalDataCleanupRun.objects.get(
+            pk=result['cleanup_run_id']
+        )
+        self.assertTrue(cleanup_run.dry_run)
+        self.assertEqual(
+            cleanup_run.status,
+            PersonalDataCleanupRun.STATUS_SUCCEEDED,
+        )
+        self.assertEqual(cleanup_run.affected_records, 1)
 
     def test_command_rejects_invalid_retention_period(self):
         with self.assertRaises(CommandError):
             call_command('cleanup_personal_data', days=0)
+        self.assertFalse(PersonalDataCleanupRun.objects.exists())
+
+    @mock.patch(
+        'blog.management.commands.cleanup_personal_data.cleanup_personal_data',
+        side_effect=RuntimeError('Test cleanup failure'),
+    )
+    def test_command_records_failure(self, _cleanup_mock):
+        with self.assertRaisesMessage(RuntimeError, 'Test cleanup failure'):
+            call_command('cleanup_personal_data', days=90)
+
+        cleanup_run = PersonalDataCleanupRun.objects.get()
+        self.assertEqual(
+            cleanup_run.status,
+            PersonalDataCleanupRun.STATUS_FAILED,
+        )
+        self.assertIsNotNone(cleanup_run.finished_at)
+        self.assertEqual(cleanup_run.result_counts, {})
+        self.assertEqual(cleanup_run.error_message, 'Test cleanup failure')

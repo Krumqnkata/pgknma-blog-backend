@@ -356,6 +356,10 @@ REST_FRAMEWORK = {
             "THROTTLE_SESSION_MANAGEMENT",
             "30/hour",
         ),
+        'personal_data_export': os.getenv(
+            "THROTTLE_PERSONAL_DATA_EXPORT",
+            "3/day",
+        ),
     },
 }
 
@@ -680,6 +684,11 @@ UNFOLD = {
                         "title": "Записи на съгласие за бисквитки",
                         "link": "/admin/blog/consentrecord/",
                         "icon": "cookie",
+                    },
+                    {
+                        "title": "История на почистването",
+                        "link": "/admin/blog/personaldatacleanuprun/",
+                        "icon": "cleaning_services",
                     },
                     {
                         "title": "Журнал на действията",
