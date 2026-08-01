@@ -9,7 +9,7 @@
     <p>Използвай нов 6-цифрен PIN, който не споделяш с никого.</p>
 </section>
 
-<section class="panel wrap" style="max-width: 620px; margin-bottom: 3rem;">
+<section class="panel pin-change-panel wrap">
     <form method="post" class="stack-form" novalidate>
         {% csrf_token %}
         {% if form.non_field_errors %}

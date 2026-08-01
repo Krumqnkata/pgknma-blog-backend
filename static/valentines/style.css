@@ -57,6 +57,14 @@ a {
     color: inherit;
 }
 
+main,
+.site-header,
+.site-header > *,
+.main-nav,
+.main-nav a {
+    min-width: 0;
+}
+
 .wrap {
     width: min(1180px, calc(100% - 40px));
     margin-inline: auto;
@@ -184,6 +192,7 @@ a {
 
 .button {
     min-height: 46px;
+    max-width: 100%;
     padding: 12px 20px;
     display: inline-flex;
     align-items: center;
@@ -193,6 +202,8 @@ a {
     border-radius: 13px;
     cursor: pointer;
     font-weight: 800;
+    overflow-wrap: anywhere;
+    text-align: center;
     text-decoration: none;
     transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
@@ -261,11 +272,13 @@ summary:focus-visible {
 }
 
 .eyebrow {
+    max-width: 100%;
     display: inline-block;
     color: var(--rose);
     font-size: 0.75rem;
     font-weight: 900;
     letter-spacing: 0.16em;
+    overflow-wrap: anywhere;
     text-transform: uppercase;
 }
 
@@ -425,6 +438,7 @@ summary:focus-visible {
 
 .stack-form {
     margin-top: 28px;
+    min-width: 0;
     display: grid;
     gap: 12px;
 }
@@ -438,6 +452,9 @@ summary:focus-visible {
 }
 
 .stack-form input {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     height: 62px;
     padding: 0 18px;
     color: var(--wine-dark);
@@ -805,6 +822,7 @@ summary:focus-visible {
 }
 
 .field {
+    min-width: 0;
     display: grid;
     gap: 7px;
 }
@@ -813,6 +831,8 @@ summary:focus-visible {
 .field textarea,
 .report-details select {
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     color: var(--ink);
     border: 1px solid var(--line);
     border-radius: 14px;
@@ -941,6 +961,11 @@ summary:focus-visible {
 .privacy-toggle strong,
 .privacy-toggle small {
     display: block;
+}
+
+.privacy-toggle > span:last-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .privacy-toggle strong {
@@ -1092,6 +1117,8 @@ summary:focus-visible {
     font-size: 2.7rem;
     font-weight: 500;
     line-height: 1;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .valentine-preview p {
@@ -1204,6 +1231,14 @@ summary:focus-visible {
     box-shadow: 0 8px 24px rgba(75, 21, 47, 0.05);
 }
 
+.session-card > div,
+.sessions-export-card > div,
+.data-export-layout > *,
+.composer-grid > *,
+.archive-heading > * {
+    min-width: 0;
+}
+
 .session-card-current {
     border-color: rgba(35, 102, 73, 0.34);
     background: linear-gradient(135deg, #f5fcf7, #fff);
@@ -1221,6 +1256,8 @@ summary:focus-visible {
     margin: 5px 0 0;
     display: block;
     color: var(--muted);
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .session-card p {
@@ -1351,6 +1388,12 @@ summary:focus-visible {
     width: 100%;
 }
 
+.pin-change-panel {
+    max-width: 620px;
+    margin-bottom: 3rem;
+    padding: clamp(24px, 5vw, 44px);
+}
+
 .locked-envelope {
     width: 105px;
     height: 72px;
@@ -1454,6 +1497,8 @@ summary:focus-visible {
     color: var(--card-accent);
     font-size: 0.78rem;
     font-weight: 850;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .card-download-row,
@@ -2106,9 +2151,8 @@ summary:focus-visible {
         width: 100%;
         margin: 10px 0 0;
         padding: 9px 0 0;
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: stretch;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 4px;
         overflow: visible;
         border-top: 1px solid var(--line);
@@ -2122,15 +2166,125 @@ summary:focus-visible {
     }
 
     .site-header > .main-nav a {
-        flex: 1 1 105px;
+        min-width: 0;
         padding: 9px 7px;
         color: #55404c;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
         text-align: center;
-        white-space: nowrap;
+        white-space: normal;
     }
 
     .site-footer {
         margin-bottom: 0;
+    }
+}
+
+@media (max-width: 720px) {
+    .page-hero {
+        padding: 48px 0 30px;
+    }
+
+    .page-hero h1 {
+        font-size: clamp(2.25rem, 11vw, 3.35rem);
+        overflow-wrap: anywhere;
+    }
+
+    .countdown-card {
+        padding: 22px;
+    }
+
+    .sessions-export-card,
+    .session-card {
+        padding: 18px;
+    }
+
+    .data-export-form-box {
+        padding: 21px 18px;
+    }
+
+    .empty-state {
+        min-height: 280px;
+        padding: 30px 20px;
+    }
+
+    .archive-heading {
+        align-items: flex-start;
+    }
+
+    .card-kicker {
+        max-width: 100%;
+        padding-right: 48px;
+        overflow-wrap: anywhere;
+    }
+
+    .center-action {
+        padding-inline: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .site-header {
+        width: calc(100% - 16px);
+        padding: 10px;
+        border-radius: 19px;
+    }
+
+    .site-header > .main-nav {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .site-header > .main-nav a {
+        padding: 8px 3px;
+        font-size: 0.7rem;
+    }
+
+    .hero h1,
+    .page-hero h1 {
+        font-size: clamp(2.1rem, 11vw, 2.65rem);
+    }
+
+    .stats-strip > div {
+        padding: 14px 12px;
+    }
+
+    .data-export-panel,
+    .composer-form,
+    .edit-panel,
+    .pin-change-panel {
+        padding: 20px 16px;
+    }
+
+    .data-export-summary h2,
+    .data-export-form-box h2 {
+        font-size: 1.65rem;
+        overflow-wrap: anywhere;
+    }
+
+    .archive-heading {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .session-card h2 {
+        font-size: 1.3rem;
+        overflow-wrap: anywhere;
+    }
+
+    .received-card .card-stamp {
+        top: 17px;
+        right: 17px;
+    }
+
+    .received-message {
+        margin-top: 38px;
+        font-size: 1.18rem;
+    }
+
+    .locked-inbox .button,
+    .empty-state .button,
+    .center-action .button {
+        width: 100%;
     }
 }
 
