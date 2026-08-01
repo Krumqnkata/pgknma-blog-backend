@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -30,6 +30,7 @@ from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from io import StringIO
 import csv
+from .session_auth import revoke_login_session
 
 try:
     admin.site.unregister(Group)
@@ -42,6 +43,114 @@ class DateSelectionForm(forms.Form):
         label="Изтрий записите преди:",
         widget=forms.DateInput(attrs={'type': 'date'})
     )
+
+
+class BlogSessionStatusFilter(admin.SimpleListFilter):
+    title = 'Статус'
+    parameter_name = 'session_status'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('active', 'Активна'),
+            ('revoked', 'Прекратена'),
+            ('expired', 'Изтекла'),
+        )
+
+    def queryset(self, request, queryset):
+        now = timezone.now()
+        if self.value() == 'active':
+            return queryset.filter(revoked_at__isnull=True, expires_at__gt=now)
+        if self.value() == 'revoked':
+            return queryset.filter(revoked_at__isnull=False)
+        if self.value() == 'expired':
+            return queryset.filter(revoked_at__isnull=True, expires_at__lte=now)
+        return queryset
+
+
+@admin.register(BlogLoginSession)
+class BlogLoginSessionAdmin(ModelAdmin):
+    list_display = (
+        'user',
+        'auth_method',
+        'session_status',
+        'ip_address',
+        'network_operator',
+        'device_label',
+        'created_at',
+        'last_seen_at',
+    )
+    list_filter = (
+        BlogSessionStatusFilter,
+        'auth_method',
+        'created_at',
+    )
+    search_fields = (
+        'user__username',
+        'user__email',
+        'ip_address',
+        'network_operator',
+    )
+    ordering = ('-created_at',)
+    readonly_fields = (
+        'id',
+        'user',
+        'auth_method',
+        'ip_address',
+        'network_operator',
+        'network_asn',
+        'device_label',
+        'created_at',
+        'last_seen_at',
+        'expires_at',
+        'revoked_at',
+        'revoked_reason',
+    )
+    exclude = ('refresh_jti',)
+    actions = ('revoke_selected_sessions',)
+
+    @admin.display(description='Статус')
+    def session_status(self, obj):
+        if obj.revoked_at is not None:
+            return 'Прекратена'
+        if obj.expires_at <= timezone.now():
+            return 'Изтекла'
+        return 'Активна'
+
+    @admin.action(description='Прекрати избраните сесии')
+    def revoke_selected_sessions(self, request, queryset):
+        if not request.user.is_superuser:
+            raise PermissionDenied
+        changed = 0
+        with transaction.atomic():
+            sessions = BlogLoginSession.objects.select_for_update().filter(
+                pk__in=queryset.values('pk')
+            )
+            for login_session in sessions:
+                if revoke_login_session(
+                    login_session,
+                    BlogLoginSession.REVOKED_ADMIN,
+                ):
+                    changed += 1
+        self.message_user(
+            request,
+            f'Прекратени сесии: {changed}.',
+            messages.SUCCESS,
+        )
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            actions.pop('revoke_selected_sessions', None)
+        return actions
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(ScheduleEntry)

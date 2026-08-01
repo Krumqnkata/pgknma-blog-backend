@@ -62,6 +62,21 @@ urlpatterns = [
     path('auth/profile/change-username/', blog_views.UsernameChangeView.as_view(), name='username-change'),
     path('auth/profile/deactivate/', blog_views.AccountDeactivateView.as_view(), name='account-deactivate'),
     path('auth/logout/', blog_views.LogoutView.as_view(), name='logout'),
+    path(
+        'profile/sessions/',
+        blog_views.BlogSessionListView.as_view(),
+        name='profile-sessions',
+    ),
+    path(
+        'profile/sessions/<uuid:session_id>/revoke/',
+        blog_views.BlogSessionRevokeView.as_view(),
+        name='profile-session-revoke',
+    ),
+    path(
+        'profile/sessions/revoke-others/',
+        blog_views.BlogSessionRevokeOthersView.as_view(),
+        name='profile-sessions-revoke-others',
+    ),
 
 
     # Пътища за съдържание на потребителя

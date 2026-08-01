@@ -12,10 +12,10 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import GoogleIdentity, SiteSettings, UserProfile
 from .permissions import SiteIsAvailable
+from .session_auth import issue_session_tokens
 
 
 logger = logging.getLogger(__name__)
@@ -214,7 +214,11 @@ class GoogleAuthView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        refresh = RefreshToken.for_user(user)
+        _, refresh = issue_session_tokens(
+            user,
+            request,
+            auth_method='google',
+        )
         return Response(
             {
                 'access': str(refresh.access_token),

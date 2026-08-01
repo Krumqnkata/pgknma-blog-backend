@@ -21,9 +21,8 @@ from django.db.models import BooleanField, Count, Exists, OuterRef, Q, Value
 from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry
+from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
@@ -33,7 +32,13 @@ from .serializer import (
     PollStatisticsSerializer, ContactSubmissionSerializer, NotificationSerializer,
     EventSerializer, TermsOfServiceSerializer, BellSongSuggestionSerializer,
     PrivacyPolicySerializer, MemeOfWeekSerializer, ConsentRecordSerializer, SiteSettingsSerializer,
-    ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer
+    ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer, BlogLoginSessionSerializer
+)
+from .session_auth import (
+    SESSION_ID_CLAIM,
+    SessionJWTAuthentication,
+    get_current_session_id,
+    revoke_login_session,
 )
 
 
@@ -80,7 +85,7 @@ class PostViewSet(viewsets.ModelViewSet):
 class ProtectedMemeImageView(APIView):
     """Serve meme files without exposing pending uploads through MEDIA_URL."""
 
-    authentication_classes = [JWTAuthentication, SessionAuthentication]
+    authentication_classes = [SessionJWTAuthentication, SessionAuthentication]
     permission_classes = [SiteIsAvailable, AllowAny]
     http_method_names = ['get', 'head', 'options']
 
@@ -220,6 +225,15 @@ class PasswordChangeView(generics.UpdateAPIView):
                     serializer.validated_data["new_password"]
                 )
                 self.object.save(update_fields=['password'])
+                active_sessions = BlogLoginSession.objects.select_for_update().filter(
+                    user=self.object,
+                    revoked_at__isnull=True,
+                )
+                for login_session in active_sessions:
+                    revoke_login_session(
+                        login_session,
+                        BlogLoginSession.REVOKED_PASSWORD_CHANGE,
+                    )
             return Response({"status": "Паролата е сменена успешно"}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -288,6 +302,15 @@ class AccountDeactivateView(APIView):
             )
             instance.is_active = False
             instance.save(update_fields=['is_active'])
+            active_sessions = BlogLoginSession.objects.select_for_update().filter(
+                user=instance,
+                revoked_at__isnull=True,
+            )
+            for login_session in active_sessions:
+                revoke_login_session(
+                    login_session,
+                    BlogLoginSession.REVOKED_ACCOUNT_DEACTIVATED,
+                )
         return Response({"status": "Профилът е деактивиран успешно"}, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
@@ -318,13 +341,120 @@ class LogoutView(APIView):
             )
             if str(token.get(user_id_claim)) != str(request.user.pk):
                 raise TokenError()
-            token.blacklist()
-        except TokenError:
+            token_session_id = token.get(SESSION_ID_CLAIM)
+            current_session_id = get_current_session_id(request)
+            if token_session_id:
+                if str(token_session_id) != str(current_session_id):
+                    raise TokenError()
+                with transaction.atomic():
+                    login_session = BlogLoginSession.objects.select_for_update().get(
+                        pk=token_session_id,
+                        user=request.user,
+                        refresh_jti=str(token['jti']),
+                    )
+                    revoke_login_session(
+                        login_session,
+                        BlogLoginSession.REVOKED_LOGOUT,
+                    )
+            else:
+                # Backwards-compatible cleanup for a token issued before
+                # server-side sessions were deployed.
+                token.blacklist()
+        except (TokenError, BlogLoginSession.DoesNotExist, ValueError, TypeError):
             return Response(
                 {"detail": "Невалиден refresh token."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response(status=status.HTTP_205_RESET_CONTENT)
+
+
+class BlogSessionListView(generics.ListAPIView):
+    serializer_class = BlogLoginSessionSerializer
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+
+    def get_queryset(self):
+        history_cutoff = timezone.now() - timedelta(
+            days=getattr(settings, 'BLOG_SESSION_RETENTION_DAYS', 90)
+        )
+        return BlogLoginSession.objects.filter(
+            Q(user=self.request.user),
+            Q(revoked_at__gte=history_cutoff)
+            | Q(revoked_at__isnull=True, expires_at__gte=history_cutoff),
+        ).order_by('-created_at')[:100]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['current_session_id'] = get_current_session_id(self.request)
+        return context
+
+
+class BlogSessionRevokeView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+    throttle_scope = 'session_management'
+
+    def post(self, request, session_id):
+        current_session_id = get_current_session_id(request)
+        if str(session_id) == str(current_session_id):
+            return Response(
+                {"detail": "Използвайте бутона „Изход“, за да прекратите текущата сесия."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            login_session = get_object_or_404(
+                BlogLoginSession.objects.select_for_update(),
+                pk=session_id,
+                user=request.user,
+            )
+            changed = revoke_login_session(
+                login_session,
+                BlogLoginSession.REVOKED_USER,
+            )
+        return Response(
+            {
+                "detail": (
+                    "Сесията е прекратена успешно."
+                    if changed
+                    else "Сесията вече е прекратена."
+                )
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class BlogSessionRevokeOthersView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+    throttle_scope = 'session_management'
+
+    def post(self, request):
+        current_session_id = get_current_session_id(request)
+        if not current_session_id:
+            return Response(
+                {"detail": "Текущата сесия не може да бъде разпозната."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        revoked_count = 0
+        with transaction.atomic():
+            sessions = BlogLoginSession.objects.select_for_update().filter(
+                user=request.user,
+                revoked_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            ).exclude(pk=current_session_id)
+            for login_session in sessions:
+                if revoke_login_session(
+                    login_session,
+                    BlogLoginSession.REVOKED_USER,
+                ):
+                    revoked_count += 1
+
+        return Response(
+            {
+                "detail": "Всички други активни сесии са прекратени.",
+                "revoked_count": revoked_count,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class MySongSuggestionsView(generics.ListAPIView):

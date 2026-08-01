@@ -705,6 +705,109 @@ class GoogleIdentity(models.Model):
         return f"{self.issuer}:{self.subject}"
 
 
+class BlogLoginSession(models.Model):
+    """Server-side state for one issued pair of blog JWT tokens."""
+
+    AUTH_PASSWORD = 'password'
+    AUTH_GOOGLE = 'google'
+    AUTH_METHOD_CHOICES = (
+        (AUTH_PASSWORD, 'Парола'),
+        (AUTH_GOOGLE, 'Google'),
+    )
+
+    REVOKED_LOGOUT = 'logout'
+    REVOKED_USER = 'user'
+    REVOKED_PASSWORD_CHANGE = 'password_change'
+    REVOKED_ACCOUNT_DEACTIVATED = 'account_deactivated'
+    REVOKED_ADMIN = 'admin'
+    REVOKED_REASON_CHOICES = (
+        (REVOKED_LOGOUT, 'Изход'),
+        (REVOKED_USER, 'Прекратена от потребителя'),
+        (REVOKED_PASSWORD_CHANGE, 'Смяна на парола'),
+        (REVOKED_ACCOUNT_DEACTIVATED, 'Деактивиран профил'),
+        (REVOKED_ADMIN, 'Прекратена от администратор'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='blog_login_sessions',
+        verbose_name='Потребител',
+    )
+    auth_method = models.CharField(
+        max_length=16,
+        choices=AUTH_METHOD_CHOICES,
+        verbose_name='Метод за вход',
+    )
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        verbose_name='IP адрес',
+    )
+    network_operator = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name='Мрежов оператор',
+    )
+    network_asn = models.BigIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='ASN',
+    )
+    device_label = models.CharField(
+        max_length=120,
+        blank=True,
+        default='',
+        verbose_name='Устройство',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Вход на')
+    last_seen_at = models.DateTimeField(verbose_name='Последна активност')
+    expires_at = models.DateTimeField(verbose_name='Изтича на')
+    revoked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Прекратена на',
+    )
+    revoked_reason = models.CharField(
+        max_length=32,
+        choices=REVOKED_REASON_CHOICES,
+        blank=True,
+        default='',
+        verbose_name='Причина за прекратяване',
+    )
+    refresh_jti = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        unique=True,
+        editable=False,
+    )
+
+    class Meta:
+        verbose_name = 'Сесия за вход в блога'
+        verbose_name_plural = 'Сесии за вход в блога'
+        ordering = ('-created_at',)
+        indexes = [
+            models.Index(
+                fields=('user', 'revoked_at', 'expires_at'),
+                name='blog_session_active_idx',
+            ),
+            models.Index(
+                fields=('user', 'created_at'),
+                name='blog_session_history_idx',
+            ),
+        ]
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None and self.expires_at > timezone.now()
+
+    def __str__(self):
+        return f'{self.user} · {self.get_auth_method_display()} · {self.created_at:%d.%m.%Y %H:%M}'
+
+
 def _sync_song_votes(song_ids):
     through = BellSongSuggestion.voted_by.through
     for song_id in song_ids:

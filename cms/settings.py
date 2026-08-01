@@ -319,7 +319,7 @@ STATICFILES_DIRS = [
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'blog.session_auth.SessionJWTAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -352,6 +352,10 @@ REST_FRAMEWORK = {
         'song_submit': os.getenv("THROTTLE_SONG_SUBMIT", "5/day"),
         'meme_submit': os.getenv("THROTTLE_MEME_SUBMIT", "5/day"),
         'vote': os.getenv("THROTTLE_VOTE", "60/hour"),
+        'session_management': os.getenv(
+            "THROTTLE_SESSION_MANAGEMENT",
+            "30/hour",
+        ),
     },
 }
 
@@ -385,6 +389,16 @@ SIMPLE_JWT = {
     "CHECK_REVOKE_TOKEN": True,
     "REVOKE_TOKEN_CLAIM": "hash_password",
 }
+
+BLOG_SESSION_LAST_SEEN_UPDATE_SECONDS = env_int(
+    "BLOG_SESSION_LAST_SEEN_UPDATE_SECONDS",
+    900,
+)
+PERSONAL_DATA_RETENTION_DAYS = env_int("PERSONAL_DATA_RETENTION_DAYS", 90)
+BLOG_SESSION_RETENTION_DAYS = env_int(
+    "BLOG_SESSION_RETENTION_DAYS",
+    PERSONAL_DATA_RETENTION_DAYS,
+)
 
 CACHE_BACKEND = os.getenv(
     "CACHE_BACKEND",

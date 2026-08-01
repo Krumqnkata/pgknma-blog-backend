@@ -1,0 +1,13 @@
+[Unit]
+Description=PGKNMA personal data retention cleanup
+After=network.target mysql.service
+
+[Service]
+Type=oneshot
+User=webmaster
+Group=users
+WorkingDirectory=/var/www/blog/cms/cms
+ExecStart=/var/www/blog/cms/venv/bin/python manage.py cleanup_personal_data
+NoNewPrivileges=true
+PrivateTmp=true
+

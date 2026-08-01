@@ -20,6 +20,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from django.views.generic.base import RedirectView
 from valentine import views
 from blog.serializer import MyTokenObtainPairView
+from blog.session_auth import SessionTokenRefreshSerializer
 from blog.views import blocked_meme_media, hqs
 from django.contrib.sitemaps.views import sitemap
 from blog.sitemaps import PostSitemap, StaticSitemap
@@ -37,7 +38,11 @@ urlpatterns = [
 
     # Пътища за автентикация с JWT
     path('api/auth/token/', MyTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path(
+        'api/auth/token/refresh/',
+        TokenRefreshView.as_view(serializer_class=SessionTokenRefreshSerializer),
+        name='token_refresh',
+    ),
 
     # Meme files are served only through the authorization-aware API endpoint.
     # These patterns must remain before the DEBUG static-media patterns below.

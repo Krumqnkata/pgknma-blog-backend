@@ -1,0 +1,12 @@
+[Unit]
+Description=Run PGKNMA personal data retention cleanup daily
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=pgknma-data-retention.service
+
+[Install]
+WantedBy=timers.target
+

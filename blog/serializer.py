@@ -1,21 +1,27 @@
 from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
-    validate_meme_image_size
+    validate_meme_image_size, BlogLoginSession
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, update_last_login
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.urls import reverse
+from django.utils import timezone
 import requests
 import re
 from django.utils.html import escape
+from rest_framework_simplejwt.serializers import (
+    TokenObtainPairSerializer,
+    TokenObtainSerializer,
+)
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.response import Response
 from rest_framework import status
 from .network import get_client_ip
+from .session_auth import issue_session_tokens
 
 class PostImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -562,8 +568,73 @@ class ScheduleEntrySerializer(serializers.ModelSerializer):
         fields = ['class_name', 'lesson_number', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday']
 
 
+class BlogLoginSessionSerializer(serializers.ModelSerializer):
+    auth_method_display = serializers.CharField(
+        source='get_auth_method_display',
+        read_only=True,
+    )
+    revoked_reason_display = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BlogLoginSession
+        fields = (
+            'id',
+            'auth_method',
+            'auth_method_display',
+            'ip_address',
+            'network_operator',
+            'network_asn',
+            'device_label',
+            'created_at',
+            'last_seen_at',
+            'expires_at',
+            'revoked_at',
+            'revoked_reason',
+            'revoked_reason_display',
+            'status',
+            'is_current',
+        )
+        read_only_fields = fields
+
+    def get_revoked_reason_display(self, obj):
+        return obj.get_revoked_reason_display() if obj.revoked_reason else ''
+
+    def get_status(self, obj):
+        if obj.revoked_at is not None:
+            return 'revoked'
+        if obj.expires_at <= timezone.now():
+            return 'expired'
+        return 'active'
+
+    def get_is_current(self, obj):
+        return str(obj.pk) == str(self.context.get('current_session_id') or '')
+
+
+
+class BlogTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = TokenObtainSerializer.validate(self, attrs)
+        _, refresh = issue_session_tokens(
+            self.user,
+            self.context['request'],
+            auth_method='password',
+        )
+        data['refresh'] = str(refresh)
+        data['access'] = str(refresh.access_token)
+        data['user'] = {
+            'id': self.user.pk,
+            'username': self.user.username,
+            'email': self.user.email,
+        }
+        if settings.SIMPLE_JWT.get('UPDATE_LAST_LOGIN', False):
+            update_last_login(None, self.user)
+        return data
+
 
 class MyTokenObtainPairView(TokenObtainPairView):
+    serializer_class = BlogTokenObtainPairSerializer
     throttle_scope = 'login'
 
     def post(self, request, *args, **kwargs):

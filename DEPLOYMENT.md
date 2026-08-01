@@ -366,7 +366,83 @@ curl -fsSI https://pgknma.space/news
 
 Провери логовете след smoke tests и едва тогава изключи maintenance mode.
 
-## 9. Git история
+## 9. Сесии и история на входовете в блога
+
+След качване на backend файловете изпълни миграцията и рестартирай Waitress:
+
+```bash
+cd /var/www/blog/cms/cms
+source ../venv/bin/activate
+python manage.py migrate
+sudo systemctl restart waitress.service
+```
+
+След това качи новия frontend build от `Frontend/dist/` в
+`/var/www/blog/dist/`. Първият вход след този deploy е задължителен отново,
+защото старите JWT токени нямат `session_id` и умишлено се отказват.
+
+Настройките имат безопасни стойности по подразбиране, но могат да се добавят
+и в production `.env`:
+
+```dotenv
+THROTTLE_SESSION_MANAGEMENT=30/hour
+BLOG_SESSION_LAST_SEEN_UPDATE_SECONDS=900
+BLOG_SESSION_RETENTION_DAYS=90
+PERSONAL_DATA_RETENTION_DAYS=90
+```
+
+Преди активиране провери какво ще бъде премахнато, без промяна в базата:
+
+```bash
+python manage.py cleanup_personal_data --days 90 --dry-run
+```
+
+Общата команда изтрива след изтичане на срока:
+
+- записите за cookie consent;
+- blog login сесиите и съдържащите се в тях IP/operator/device данни;
+- Valentine login сесиите и IP/operator/ASN данните им;
+- старите hashed Valentine login-attempt counters;
+- изтеклите Django сесии и SimpleJWT token записи.
+
+Самите валентинки, кампании, профили и модерационната история не се трият от
+тази команда. Те имат отделна цел и срок, които трябва да са описани в
+политиката за поверителност.
+
+Препоръчителният вариант за този сървър е готовият `systemd timer`:
+
+```bash
+cd /var/www/blog/cms/cms
+sudo cp deploy/systemd/pgknma-data-retention.service /etc/systemd/system/
+sudo cp deploy/systemd/pgknma-data-retention.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now pgknma-data-retention.timer
+sudo systemctl list-timers pgknma-data-retention.timer
+```
+
+Таймерът работи всеки ден около 03:15 и е `Persistent=true`, така че пропуснато
+изпълнение се наваксва след стартиране на сървъра. Тествай го ръчно с:
+
+```bash
+sudo systemctl start pgknma-data-retention.service
+sudo journalctl -u pgknma-data-retention.service -n 50 --no-pager
+```
+
+Алтернативно, ако не използваш timer-а, добави следния cron запис. Не
+активирай едновременно и двата варианта:
+
+```cron
+15 3 * * * cd /var/www/blog/cms/cms && /var/www/blog/cms/venv/bin/python manage.py cleanup_personal_data --days 90 >> /var/log/personal_data_cleanup.log 2>&1
+```
+
+Apache/Cloudflare/системните логове не са Django записи и трябва да имат
+отделна 90-дневна (или по-кратка) `logrotate`/provider retention настройка.
+
+След deploy провери: вход с парола, вход с Google, refresh, обикновен изход,
+списъка „Профил → Сесии“, прекратяване на друга сесия и незабавен `401` на
+прекратеното устройство.
+
+## 10. Git история
 
 Първо задължително се сменят credentials. След това Git историята може да
 бъде пренаписана, но това изисква координиран force-push и нов clone от всеки
