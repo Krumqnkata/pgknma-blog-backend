@@ -698,6 +698,11 @@ UNFOLD = {
                         "icon": "person",
                     },
                     {
+                        "title": "Активни сесии",
+                        "link": "/admin/blog/blogloginsession/?session_status=active",
+                        "icon": "devices",
+                    },
+                    {
                         "title": "Групи",
                         "link": "/admin/auth/group/",
                         "icon": "groups",
