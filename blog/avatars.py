@@ -292,23 +292,26 @@ def import_google_avatar_once(user, picture_url):
     from .models import UserProfile
 
     profile, _ = UserProfile.objects.get_or_create(user=user)
-    if (
-        profile.avatar_user_selected
-        or profile.avatar_source != UserProfile.AvatarSource.INITIALS
-        or profile.avatar
-        or profile.avatar_preset
-    ):
+    def can_import(current_profile):
+        # A system-assigned preset is only a temporary fallback.  It must not
+        # prevent a Google user from receiving their actual Google photo later.
+        return (
+            not current_profile.avatar_user_selected
+            and not current_profile.avatar
+            and current_profile.avatar_source
+            in {
+                UserProfile.AvatarSource.INITIALS,
+                UserProfile.AvatarSource.PRESET,
+            }
+        )
+
+    if not can_import(profile):
         return False
 
     normalized = download_google_avatar(picture_url)
     with transaction.atomic():
         profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
-        if (
-            profile.avatar_user_selected
-            or profile.avatar_source != UserProfile.AvatarSource.INITIALS
-            or profile.avatar
-            or profile.avatar_preset
-        ):
+        if not can_import(profile):
             return False
         profile.avatar = normalized
         profile.avatar_source = UserProfile.AvatarSource.GOOGLE

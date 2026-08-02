@@ -230,6 +230,25 @@ class GoogleAvatarImportTests(APITestCase):
         self.assertFalse(imported_after_reset)
         self.assertEqual(download.call_count, 1)
 
+    @patch('blog.avatars.download_google_avatar')
+    def test_google_import_replaces_system_assigned_preset(self, download):
+        download.return_value = normalized_webp()
+        profile = UserProfile.objects.get(user=self.user)
+        profile.avatar_source = UserProfile.AvatarSource.PRESET
+        profile.avatar_preset = 'robot'
+        profile.avatar_user_selected = False
+        profile.save()
+
+        imported = import_google_avatar_once(
+            self.user,
+            'https://lh3.googleusercontent.com/a/test-only-avatar',
+        )
+
+        self.assertTrue(imported)
+        profile.refresh_from_db()
+        self.assertEqual(profile.avatar_source, UserProfile.AvatarSource.GOOGLE)
+        self.assertTrue(profile.avatar)
+
     @override_settings(GOOGLE_CLIENT_ID='test-google-client')
     @patch(
         'blog.auth.import_google_avatar_once',
