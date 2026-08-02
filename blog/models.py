@@ -12,8 +12,11 @@ from django.core.validators import FileExtensionValidator
 
 def post_media_upload_path(instance, filename, field_type):
     """
-    Generates a robust upload path for post-related media.
-    Handles both new and existing post objects.
+    Build a predictable path for media that belongs to a saved post.
+
+    The admin saves a new post before committing its uploads, so every file is
+    stored below ``posts/<post id>/``.  Failing explicitly here prevents a
+    future code path from silently bringing back permanent UUID directories.
     """
     post_id = None
     if hasattr(instance, 'post') and instance.post.pk:
@@ -24,10 +27,9 @@ def post_media_upload_path(instance, filename, field_type):
         post_id = instance.pk
 
     if post_id is None:
-        # This handles a new, unsaved Post instance.
-        # We generate a temporary UUID to group files for this new post.
-        # This path will be permanent, but it prevents using 'None' or 'unknown'.
-        post_id = uuid.uuid4().hex
+        raise ValueError(
+            'The post must be saved before its media files are uploaded.'
+        )
 
     return f'posts/{post_id}/{field_type}/{filename}'
 

@@ -1,3 +1,5 @@
+import base64
+import tempfile
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -8,7 +10,7 @@ from django.contrib.auth.models import Permission, User
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.forms.models import inlineformset_factory
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -16,6 +18,7 @@ from .admin import (
     BellSongSuggestionAdmin,
     CommentsAdmin,
     PollQuestionAdmin,
+    PostsAdmin,
 )
 from .forms import (
     ADMIN_SELECTION_LIMIT,
@@ -26,12 +29,146 @@ from .forms import (
 )
 from .models import (
     BellSongSuggestion,
+    Category,
     Comments,
     MemeOfWeek,
+    PostDocument,
+    PostImage,
+    Posts,
     PollOption,
     PollQuestion,
     SiteSettings,
 )
+
+
+class AdminHelpGuideTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff_user = User.objects.create_user(
+            username="guide-staff",
+            password="test-password",
+            is_staff=True,
+        )
+        cls.superuser = User.objects.create_superuser(
+            username="guide-superuser",
+            email="guide-superuser@example.com",
+            password="test-password",
+        )
+
+    def test_admin_index_renders_full_guide_for_all_staff_users(self):
+        expected_urls = (
+            "admin:blog_posts_add",
+            "admin:blog_scheduleentry_import_csv",
+            "admin:blog_personaldatacleanuprun_changelist",
+            "admin:valentine_profile_changelist",
+            "admin:valentine_profile_import_csv",
+            "admin:valentine_valentinecampaign_changelist",
+            "admin:valentine_valenitines_changelist",
+        )
+
+        for user in (self.staff_user, self.superuser):
+            with self.subTest(username=user.username):
+                self.client.force_login(user)
+                response = self.client.get(reverse("admin:index"))
+
+                self.assertEqual(response.status_code, 200)
+                self.assertTemplateUsed(response, "admin/index.html")
+                self.assertTemplateUsed(response, "admin/_help_guide.html")
+                self.assertContains(response, "Администраторско ръководство")
+                self.assertContains(response, "Технически runbook")
+                self.assertContains(response, "Valentine сигнали, архив")
+                self.assertContains(response, "cleanup_personal_data --days 90 --dry-run")
+                for url_name in expected_urls:
+                    self.assertContains(response, reverse(url_name))
+
+    def test_admin_index_still_requires_staff_login(self):
+        response = self.client.get(reverse("admin:index"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("admin:login"), response.url)
+
+
+class PostMediaPathTests(TestCase):
+    PNG_BYTES = base64.b64decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwC'
+        'AAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    )
+
+    def setUp(self):
+        self.media_directory = tempfile.TemporaryDirectory()
+        self.media_override = override_settings(
+            MEDIA_ROOT=self.media_directory.name,
+        )
+        self.media_override.enable()
+        self.addCleanup(self._cleanup_media)
+
+    def _cleanup_media(self):
+        self.media_override.disable()
+        self.media_directory.cleanup()
+
+    def _image(self, filename):
+        return SimpleUploadedFile(
+            filename,
+            self.PNG_BYTES,
+            content_type='image/png',
+        )
+
+    def test_first_save_uses_post_id_for_all_media_directories(self):
+        author = User.objects.create_user(
+            username='post-author',
+            password='test-password',
+            is_staff=True,
+        )
+        category = Category.objects.create(
+            full_name='Новини',
+            short_name='news',
+        )
+        request = RequestFactory().post('/admin/blog/posts/add/')
+        request.user = author
+        post = Posts(
+            title='Публикация с файлове',
+            category=category,
+            banner=self._image('banner.png'),
+            hook='Кратко описание',
+            content='Съдържание',
+        )
+        form = SimpleNamespace(
+            cleaned_data={
+                'delete_images': [],
+                'delete_documents': [],
+                'gallery_images': [self._image('gallery.png')],
+                'gallery_documents': [
+                    SimpleUploadedFile(
+                        'document.txt',
+                        b'test document',
+                        content_type='text/plain',
+                    )
+                ],
+            }
+        )
+
+        PostsAdmin(Posts, AdminSite()).save_model(
+            request,
+            post,
+            form,
+            change=False,
+        )
+
+        post.refresh_from_db()
+        image = PostImage.objects.get(post=post)
+        document = PostDocument.objects.get(post=post)
+        self.assertEqual(
+            post.banner.name,
+            f'posts/{post.pk}/banner/banner.png',
+        )
+        self.assertEqual(
+            image.image.name,
+            f'posts/{post.pk}/gallery/gallery.png',
+        )
+        self.assertEqual(
+            document.file.name,
+            f'posts/{post.pk}/documents/document.txt',
+        )
 
 
 class CommentAdminIntegrityTests(TestCase):

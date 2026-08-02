@@ -1,0 +1,724 @@
+<section class="mt-10" aria-labelledby="admin-guide-title">
+    <div class="overflow-hidden rounded-lg border border-border-subtle bg-card-background shadow-sm">
+        <div class="flex flex-col gap-6 p-6 lg:flex-row lg:items-center lg:justify-between">
+            <div class="max-w-3xl">
+                <div class="mb-3 flex flex-wrap items-center gap-2 text-sm text-font-subtle">
+                    <span class="rounded-full bg-primary-500/10 px-3 py-1 font-semibold text-primary-600 dark:text-primary-400">Help Guide v1.0</span>
+                    <span>Актуализиран на 02.08.2026 г.</span>
+                    <span aria-hidden="true">•</span>
+                    <span>Натисни Ctrl + F за търсене</span>
+                </div>
+                <h2 id="admin-guide-title" class="text-2xl font-semibold text-font-important">
+                    Администраторско ръководство
+                </h2>
+                <p class="mt-3 text-base leading-7 text-font-default">
+                    Подробни инструкции за ежедневната работа с блога, учебната програма,
+                    потребителите, модерацията, платформата „Валентинки“ и техническата
+                    поддръжка на production средата.
+                </p>
+                <p class="mt-3 text-sm leading-6 text-font-subtle">
+                    Всички служебни профили виждат ръководството. Това не предоставя нови
+                    права — Django продължава да проверява разрешенията при отваряне на
+                    всяка административна секция или изпълнение на действие.
+                </p>
+            </div>
+
+            <svg class="mx-auto h-40 w-full max-w-xs text-primary-600 lg:mx-0"
+                 viewBox="0 0 360 220"
+                 role="img"
+                 aria-hidden="true"
+                 focusable="false">
+                <defs>
+                    <linearGradient id="guide-book-gradient" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0" stop-color="currentColor" stop-opacity=".95" />
+                        <stop offset="1" stop-color="currentColor" stop-opacity=".55" />
+                    </linearGradient>
+                </defs>
+                <circle cx="285" cy="48" r="34" fill="currentColor" opacity=".10" />
+                <circle cx="70" cy="177" r="48" fill="currentColor" opacity=".08" />
+                <path d="M58 52c42-15 82-6 112 20v116c-31-23-70-29-112-15z"
+                      fill="url(#guide-book-gradient)" />
+                <path d="M302 52c-42-15-82-6-112 20v116c31-23 70-29 112-15z"
+                      fill="currentColor" opacity=".72" />
+                <path d="M180 74v114" stroke="currentColor" stroke-width="8" stroke-linecap="round" />
+                <path d="M82 87h58M82 107h66M82 127h48M220 87h58M212 107h66M226 127h52"
+                      stroke="white" stroke-width="7" stroke-linecap="round" opacity=".78" />
+                <path d="M180 31l31 12v28c0 24-13 43-31 52-18-9-31-28-31-52V43z"
+                      fill="#f59e0b" stroke="white" stroke-width="5" />
+                <path d="M165 71l10 10 21-24" fill="none" stroke="white" stroke-width="7"
+                      stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+        </div>
+    </div>
+
+    <div class="mt-6 space-y-4">
+        <details id="guide-start" open class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                1. Започни оттук — основни правила и безопасна работа
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <div>
+                        <h3 class="font-semibold text-font-important">Как се работи със списъците</h3>
+                        <ol class="mt-2 list-decimal space-y-2 pl-5">
+                            <li>Използвай търсачката и филтрите, преди да маркираш записи.</li>
+                            <li>Провери дали филтърът показва само желаните записи и виж броя на избраните.</li>
+                            <li>Избери действие от падащото меню и натисни бутона за изпълнение.</li>
+                            <li>При междинна страница прочети прегледа и потвърди само ако резултатът е правилен.</li>
+                            <li>След промяната провери съобщението в горната част и публичната страница.</li>
+                        </ol>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Бутоните за записване</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li><strong>Запази</strong> — записва и връща към списъка.</li>
+                            <li><strong>Запази и продължи</strong> — записва и оставя същия запис отворен.</li>
+                            <li><strong>Запази и добави друг</strong> — записва и отваря празна форма.</li>
+                            <li>Часовете се показват в часовата зона на проекта — Europe/Sofia.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="mt-5 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
+                    <strong class="text-font-important">Преди масово или необратимо действие:</strong>
+                    провери избраните записи, текущия филтър и наличието на проверен backup.
+                    Не изпълнявай действие, ако не разбираш какво ще промени.
+                </div>
+                <div class="mt-4 rounded-lg border-l-4 border-red-500 bg-red-500/10 p-4">
+                    Никога не записвай в админ полета, коментари или това ръководство пароли,
+                    PIN кодове, Valentine кодове, session идентификатори, API ключове или
+                    реални стойности от <code>.env</code>.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-posts" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                2. Публикации, категории, изображения и документи
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:blog_posts_add' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Добави публикация</a>
+                    <a href="{% url 'admin:blog_posts_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Всички публикации</a>
+                    <a href="{% url 'admin:blog_category_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Категории</a>
+                </div>
+
+                <h3 class="mt-5 font-semibold text-font-important">Създаване на публикация</h3>
+                <ol class="mt-2 list-decimal space-y-2 pl-5">
+                    <li>Създай категория, ако подходяща още не съществува.</li>
+                    <li>Въведи заглавие до 100 символа и кратък текст „кукичка“ до 100 символа.</li>
+                    <li>Избери категория и при нужда добави банер.</li>
+                    <li>Напиши съдържанието с Markdown. Използвай ясни заглавия, кратки абзаци и описателни връзки.</li>
+                    <li>
+                        Добави галерийни изображения и документи направо във формата на публикацията.
+                        При първото записване системата автоматично създава ID и подрежда всички файлове
+                        в папката на публикацията, затова не е нужно първо да записваш празна публикация.
+                    </li>
+                    <li>Настрой публикуването и одобрението според статусната таблица по-долу.</li>
+                    <li>Запази и отвори публикацията в публичния сайт за финална проверка.</li>
+                </ol>
+
+                <div class="mt-5 overflow-x-auto">
+                    <table class="w-full border-collapse text-left">
+                        <thead>
+                            <tr class="border-b border-border-subtle">
+                                <th class="p-3">Публикувано</th>
+                                <th class="p-3">Одобрено</th>
+                                <th class="p-3">Дата</th>
+                                <th class="p-3">Резултат</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Не</td><td class="p-3">Без значение</td><td class="p-3">Без значение</td><td class="p-3">Чернова</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Да</td><td class="p-3">Не</td><td class="p-3">Без значение</td><td class="p-3">Чака одобрение</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Да</td><td class="p-3">Да</td><td class="p-3">Бъдеща</td><td class="p-3">Планирана</td></tr>
+                            <tr><td class="p-3">Да</td><td class="p-3">Да</td><td class="p-3">Празна или изминала</td><td class="p-3">Публикувана</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div class="rounded-lg border border-border-subtle p-4">
+                        <h3 class="font-semibold text-font-important">Файлови ограничения</h3>
+                        <ul class="mt-2 list-disc space-y-1 pl-5">
+                            <li>До 10 изображения за галерията, максимум 10 MB всяко.</li>
+                            <li>До 10 документа, максимум 25 MB всеки.</li>
+                            <li>Документи: PDF, Office формати, ZIP/RAR/7Z, CSV, TXT, JSON и RTF.</li>
+                            <li>Авторът и датата на създаване се попълват автоматично.</li>
+                        </ul>
+                    </div>
+                    <div class="rounded-lg border border-border-subtle p-4">
+                        <h3 class="font-semibold text-font-important">Безопасно редактиране</h3>
+                        <ul class="mt-2 list-disc space-y-1 pl-5">
+                            <li>Не изтривай използвана категория — публикациите я защитават.</li>
+                            <li>Провери отметките за премахване на снимки и документи преди запис.</li>
+                            <li>При планирана статия провери дата, час и часовата зона.</li>
+                            <li>Не включвай „Одобрено“, ако материалът още чака редакторски преглед.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-events" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                3. Събития, известия и дневник на промените
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:blog_event_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Събития</a>
+                    <a href="{% url 'admin:blog_notification_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Известия</a>
+                    <a href="{% url 'admin:blog_changelog_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Дневник на промените</a>
+                </div>
+                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+                    <div>
+                        <h3 class="font-semibold text-font-important">Събития</h3>
+                        <ol class="mt-2 list-decimal space-y-2 pl-5">
+                            <li>Въведи заглавие, начало, място, категория и участници.</li>
+                            <li>Ако зададеш край, той трябва да бъде след началото.</li>
+                            <li>Описанието поддържа Markdown.</li>
+                            <li>Изключи „Публикувано“, ако събитието още не е готово.</li>
+                        </ol>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Известия</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li>Напиши кратък текст с ясно действие или срок.</li>
+                            <li>Използвай Markdown само когато подобрява четимостта.</li>
+                            <li>Само записите с „Активирано“ се показват.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Дневник</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li>Опиши промените разбираемо за обикновен потребител.</li>
+                            <li>Записът поддържа Markdown.</li>
+                            <li>Неактивните записи не участват в публичния списък.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-polls" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                4. Анкети, отговори и класация
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:blog_pollquestion_add' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Добави анкета</a>
+                    <a href="{% url 'admin:blog_pollquestion_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Всички анкети</a>
+                    <a href="{% url 'admin:blog_pollanswer_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Отговори</a>
+                </div>
+                <ol class="mt-5 list-decimal space-y-2 pl-5">
+                    <li>Въведи заглавие, незадължително подзаглавие и описание на задачата.</li>
+                    <li>Задай начална и крайна дата; краят трябва да бъде след началото.</li>
+                    <li>Добави до четири опции. Буквите A–D се подреждат автоматично.</li>
+                    <li>Отбележи точно една опция като верен отговор.</li>
+                    <li>Ако маркираш няколко верни опции, системата запазва последната видима.</li>
+                    <li>След началото не променяй правилния отговор без основателна причина — това може да направи класацията подвеждаща.</li>
+                </ol>
+                <div class="mt-4 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
+                    Отговорите са отчетни записи: не могат да се добавят или редактират през администрацията.
+                    Изтриването на въпрос може да засегне свързаните опции и резултати.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-moderation" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                5. Коментари, контактни форми, песни и мемета
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:blog_comments_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Коментари</a>
+                    <a href="{% url 'admin:blog_contactsubmission_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Контактни форми</a>
+                    <a href="{% url 'admin:blog_bellsongsuggestion_changelist' %}?status__exact=pending" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Чакащи песни</a>
+                    <a href="{% url 'admin:blog_memeofweek_changelist' %}?status__exact=pending" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Чакащи мемета</a>
+                </div>
+                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <div>
+                        <h3 class="font-semibold text-font-important">Коментари и контакти</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li>Съдържанието, авторът и датата са само за преглед.</li>
+                            <li>Не променяй смисъла на потребителско съобщение.</li>
+                            <li>Премахвай коментар само при нарушение, спам или валидно искане.</li>
+                            <li>Контактните форми може да съдържат лични данни — не ги препращай без необходимост.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Песни и мемета</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li>Статусите са „Чакащо“, „Одобрено“ и „Отхвърлено“.</li>
+                            <li>При песен провери заглавието, слота и YouTube/Spotify връзката.</li>
+                            <li>Използвай масовите действия за одобряване и отхвърляне на песни.</li>
+                            <li>При меме провери изображението, заглавието и пригодността за училищна среда.</li>
+                            <li>Не коригирай ръчно броя на гласовете.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="mt-4 rounded-lg border-l-4 border-red-500 bg-red-500/10 p-4">
+                    „Изтрий избраните по дата“ премахва само маркираните предложения преди избраната дата.
+                    Все пак провери филтъра, избора и датата преди потвърждение.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-schedule" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                6. Учебна програма — CSV импорт и възстановяване
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:blog_scheduleentry_import_csv' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Импортирай CSV</a>
+                    <a href="{% url 'admin:blog_scheduleentry_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Текуща програма</a>
+                    <a href="{% url 'admin:blog_scheduleimport_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">История на импортите</a>
+                </div>
+                <div class="mt-5 rounded-lg border border-border-subtle p-4">
+                    <strong class="text-font-important">Задължителни колони:</strong>
+                    <code>Клас</code>, <code>Час</code>, <code>Понеделник</code>,
+                    <code>Вторник</code>, <code>Сряда</code>, <code>Четвъртък</code>, <code>Петък</code>.
+                </div>
+                <ol class="mt-5 list-decimal space-y-2 pl-5">
+                    <li>Подготви CSV с първи ред, съдържащ имената на колоните.</li>
+                    <li>Използвай точка и запетая; поддържат се също запетая и табулация.</li>
+                    <li>Запази файла като UTF-8 или Windows-1251.</li>
+                    <li>Качи файла и отстрани всички показани грешки.</li>
+                    <li>Потвърди само след като си сигурен, че файлът съдържа цялата програма.</li>
+                    <li>Провери няколко класа и часа в публичната страница.</li>
+                </ol>
+                <div class="mt-4 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
+                    Успешният импорт заменя всички текущи редове. Предишната версия се пази в
+                    „История на импортираните програми“ и може да бъде върната чрез
+                    „Върни тази версия“ след отделно потвърждение.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-users" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                7. Потребители, групи, права и блог сесии
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:auth_user_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Потребители</a>
+                    <a href="{% url 'admin:auth_group_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Групи</a>
+                    <a href="{% url 'admin:blog_blogloginsession_changelist' %}?session_status=active" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Активни сесии</a>
+                </div>
+                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <div>
+                        <h3 class="font-semibold text-font-important">Флагове на потребителя</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li><strong>Активен</strong> — профилът може да влиза.</li>
+                            <li><strong>Персонал</strong> — профилът може да отвори администрацията.</li>
+                            <li><strong>Суперпотребител</strong> — има всички права и трябва да се дава изключително рядко.</li>
+                            <li>Предпочитай група с минимални права пред ръчно даване на много разрешения.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Сесии и инциденти</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li>Списъкът показва метод на вход, IP, оператор, устройство и последна активност.</li>
+                            <li>Сесия може да бъде активна, изтекла или прекратена.</li>
+                            <li>Само суперпотребител може да прекратява сесии от администрацията.</li>
+                            <li>При съмнение за кражба: прекрати сесиите, смени паролата и провери журналите.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="mt-4 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
+                    Не изтривай потребител прибързано. Когато историята трябва да се запази,
+                    първо премахни служебните права и изключи „Активен“. Профилите, създадени
+                    първоначално с Google, може да нямат използваема локална парола.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-governance" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                8. Настройки, правни документи, съгласия и GDPR
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:blog_sitesettings_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Настройки на сайта</a>
+                    <a href="{% url 'admin:blog_privacypolicy_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Политики</a>
+                    <a href="{% url 'admin:blog_termsofservice_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Общи условия</a>
+                    <a href="{% url 'admin:blog_consentrecord_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Cookie съгласия</a>
+                    <a href="{% url 'admin:blog_personaldatacleanuprun_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">История на почистването</a>
+                    <a href="{% url 'admin:admin_logentry_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Журнал на действията</a>
+                </div>
+                <ul class="mt-5 list-disc space-y-2 pl-5">
+                    <li>Съществува само един запис с основните настройки на сайта.</li>
+                    <li>Режимът за поддръжка скрива публичния сайт за обикновените потребители.</li>
+                    <li>От настройките се управляват регистрациите, програмата, анкетите, меметата и песните.</li>
+                    <li>При съществена промяна на Политиката или Условията добави нов запис, за да запазиш предишната версия.</li>
+                    <li>Публичният API връща най-новия правен запис по дата.</li>
+                    <li>Cookie съгласията и изпълненията на cleanup задачата са отчетни и не се редактират.</li>
+                    <li>Историята на почистването е видима само за суперпотребител и показва резултатите по категории.</li>
+                    <li>Django журналът помага за проследяване на административни промени, но не замества backup.</li>
+                </ul>
+            </div>
+        </details>
+
+        <details id="guide-valentine-profiles" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                9. Valentine профили, CSV импорт, PDF кодове и PIN
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:valentine_profile_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Valentine профили</a>
+                    <a href="{% url 'admin:valentine_profile_import_csv' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Импорт от CSV</a>
+                    <a href="{% url 'admin:valentine_profile_active_codes_pdf' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Активни кодове в PDF</a>
+                </div>
+
+                <h3 class="mt-5 font-semibold text-font-important">Формат на профилите</h3>
+                <ul class="mt-2 list-disc space-y-2 pl-5">
+                    <li>Учениците използват клас от <code>1А</code> до <code>12Г</code>.</li>
+                    <li>Приемат се българските А/Б/В/Г и латинските A/B/V/G; системата ги нормализира.</li>
+                    <li><code>U</code> или <code>У</code> означава учител.</li>
+                    <li>Нов профил получава сигурен шестсимволен код, ако кодът в CSV е празен.</li>
+                    <li>Учебна година <code>2025</code> означава 2025/2026.</li>
+                </ul>
+
+                <h3 class="mt-5 font-semibold text-font-important">CSV импорт</h3>
+                <ol class="mt-2 list-decimal space-y-2 pl-5">
+                    <li>Изтегли официалния шаблон.</li>
+                    <li>Попълни колоните <code>first_name</code>, <code>last_name</code>, <code>class</code>, <code>email</code> и незадължителен <code>code</code>.</li>
+                    <li>Избери началната година на учебната година.</li>
+                    <li>Качи файла и прегледай дали всеки ред е „Нов профил“, „Обновяване“ или „Възстановяване“.</li>
+                    <li>Потвърди само ако няма неочаквани обновявания на съществуващи профили.</li>
+                </ol>
+
+                <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div class="rounded-lg border border-border-subtle p-4">
+                        <h3 class="font-semibold text-font-important">PDF кодове</h3>
+                        <p class="mt-2">PDF файлът разделя всеки клас и учителите на отделни страници. Кодове могат да се виждат и експортират само с разрешението <code>view_profile_codes</code>.</p>
+                    </div>
+                    <div class="rounded-lg border border-border-subtle p-4">
+                        <h3 class="font-semibold text-font-important">Код, PIN и сесии</h3>
+                        <ul class="mt-2 list-disc space-y-1 pl-5">
+                            <li>Нов код прекратява активните сесии, но не нулира автоматично PIN.</li>
+                            <li>„Нулирай PIN“ изчиства PIN и прекратява всички активни Valentine сесии.</li>
+                            <li>При следващ вход потребителят задава нов шестцифрен PIN.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="mt-4 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
+                    „Деактивирай без изтриване на историята“ забранява нов вход и получаване на
+                    валентинки, прекратява сесиите и запазва старите кампании и послания.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-valentine-year" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                10. Преминаване към следваща учебна година
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <ol class="list-decimal space-y-2 pl-5">
+                    <li>Отвори Valentine профилите и филтрирай по текущата учебна година.</li>
+                    <li>Маркирай желаните ученически профили.</li>
+                    <li>Избери „Мигрирай към следващата учебна година“.</li>
+                    <li>Въведи началната година на новата учебна година.</li>
+                    <li>Прегледай бъдещия клас и бележката за всеки профил.</li>
+                    <li>Потвърди и провери броя преместени и пропуснати профили.</li>
+                </ol>
+                <ul class="mt-5 list-disc space-y-2 pl-5">
+                    <li>Учениците от 1. до 11. клас преминават в следващия клас.</li>
+                    <li>Учителите не се променят.</li>
+                    <li>12. клас не се деактивира автоматично.</li>
+                    <li>Завършилите се маркират отделно и се деактивират чрез действието за запазване на историята.</li>
+                    <li>Неактивни, вече мигрирани, прекалено стари и невалидни профили се пропускат.</li>
+                </ul>
+            </div>
+        </details>
+
+        <details id="guide-valentine-campaigns" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                11. Valentine кампании, периоди и ограничения
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:valentine_valentinecampaign_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Годишни кампании</a>
+                    <a href="{% url 'admin:valentine_settings_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Valentine настройки</a>
+                </div>
+                <h3 class="mt-5 font-semibold text-font-important">Препоръчителен годишен процес</h3>
+                <ol class="mt-2 list-decimal space-y-2 pl-5">
+                    <li>Създай кампания с уникална година и ясно име.</li>
+                    <li>Маркирай точно нея и избери „Направи активна и архивирай предишната кампания“.</li>
+                    <li>Потвърди началото, края на изпращането и точния момент за разкриване.</li>
+                    <li>Отвори настройките и провери дневния лимит, груповия лимит и паузата.</li>
+                    <li>Включи изпращането само след кратък тест с ограничени профили.</li>
+                    <li>След края провери статистиката и архивирай чрез активиране на новата година или чрез разрешеното архивно действие.</li>
+                </ol>
+                <div class="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <div class="rounded-lg border border-border-subtle p-4">
+                        <h3 class="font-semibold text-font-important">Важни зависимости</h3>
+                        <ul class="mt-2 list-disc space-y-1 pl-5">
+                            <li>Краят на изпращането трябва да е след началото.</li>
+                            <li>Разкриването трябва да бъде след края на изпращането.</li>
+                            <li>Активната кампания не може да бъде архивирана директно.</li>
+                            <li>Възстановяването от архив не прави кампанията активна.</li>
+                        </ul>
+                    </div>
+                    <div class="rounded-lg border border-border-subtle p-4">
+                        <h3 class="font-semibold text-font-important">Статистика</h3>
+                        <p class="mt-2">При отваряне на кампанията се показват обобщени пратки, доставки, сигнали, типове получатели, класове и активност по дни. Таблото не зарежда лични текстове и може да се експортира като CSV.</p>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-system-valentines" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                12. Системни валентинки
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <a href="{% url 'admin:valentine_profile_send_system_valentine' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Отвори персонализираната страница</a>
+                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <div>
+                        <h3 class="font-semibold text-font-important">Бутон „Системна валентинка“</h3>
+                        <ol class="mt-2 list-decimal space-y-2 pl-5">
+                            <li>Избери получатели или група.</li>
+                            <li>Напиши собствен позитивен текст и избери дизайн.</li>
+                            <li>Провери активната кампания и броя получатели.</li>
+                            <li>Прегледай съобщението и потвърди отделно.</li>
+                        </ol>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Масово действие</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li>„Изпрати позитивна системна валентинка“ работи върху маркираните профили.</li>
+                            <li>Използва предварително зададени позитивни текстове.</li>
+                            <li>Изпраща само до активни профили и отчита пропуснатите.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="mt-4 rounded-lg border-l-4 border-red-500 bg-red-500/10 p-4">
+                    Системно послание не може да се изпрати в архивирана кампания. Проверявай
+                    аудиторията и броя получатели, защото потвърденото масово изпращане създава
+                    отделна доставка за всеки профил.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-valentine-moderation" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                13. Valentine сигнали, архив, модерация и сесии
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Текущи сигнали</a>
+                    <a href="{% url 'admin:valentine_archivedvalentine_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Архивирани сигнали</a>
+                    <a href="{% url 'admin:valentine_valentinemoderationevent_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">История на модерацията</a>
+                    <a href="{% url 'admin:valentine_register_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Valentine сесии</a>
+                </div>
+                <ul class="mt-5 list-disc space-y-2 pl-5">
+                    <li>Текущият списък съдържа само „Чака преглед“, „Скрито от модератор“ и „Възстановено“ от активната кампания.</li>
+                    <li>Послания без сигнал не се показват за обикновено административно четене.</li>
+                    <li>Провери причината, контекста и цялата пратка преди решение.</li>
+                    <li>„Скрий“ и „Възстанови“ засягат цялата пратка и всички доставки при изпращане до група.</li>
+                    <li>Историята на модерацията е отчетна и не се редактира.</li>
+                    <li>Архивираният списък показва докладвани пратки от неактивни кампании.</li>
+                    <li>Валентинките не могат да се изтриват през администрацията.</li>
+                    <li>Експортът на модерирани валентинки съдържа лични данни и текстове — пази го защитено и го изтрий след отпадане на целта.</li>
+                    <li>Valentine сесиите показват IP, оператор, ASN, срок и дали са прекратени.</li>
+                </ul>
+            </div>
+        </details>
+
+        <details id="guide-runbook" class="rounded-lg border border-red-500/40 bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-red-600 dark:text-red-400">
+                14. Технически runbook — deploy, backup и rollback
+            </summary>
+            <div class="border-t border-red-500/30 p-5 text-sm leading-6 text-font-default">
+                <div class="rounded-lg border-l-4 border-red-500 bg-red-500/10 p-4">
+                    <strong class="text-font-important">Само за технически администратор.</strong>
+                    Не изпълнявай команди на production без проверен backup, maintenance прозорец
+                    и увереност кой service и коя база данни ще бъдат засегнати. Никога не
+                    поставяй парола директно в команда или shell history.
+                </div>
+
+                <h3 class="mt-6 font-semibold text-font-important">Подготовка на backend shell</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>cd /var/www/blog/cms/cms
+source ../venv/bin/activate
+which python
+python --version
+git rev-parse HEAD</code></pre>
+
+                <h3 class="mt-6 font-semibold text-font-important">Backup преди миграции</h3>
+                <ol class="mt-2 list-decimal space-y-2 pl-5">
+                    <li>Включи maintenance mode и спри всички процеси, които могат да пишат в базата.</li>
+                    <li>Запиши текущия commit.</li>
+                    <li>Архивирай MySQL, директорията <code>files/</code> и защитено копие на <code>.env</code>.</li>
+                    <li>Провери, че архивите не са празни и могат да бъдат прочетени.</li>
+                </ol>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>DEPLOY_TAG="$(date -u +%Y%m%dT%H%M%SZ)"
+sudo systemctl stop pgknma-data-retention.timer
+sudo systemctl stop waitress.service
+sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 700 /var/backups/pgknma
+mysqldump -u django_prod -p --single-transaction --routines --triggers pgknma_blog | gzip &gt; "/var/backups/pgknma/database-${DEPLOY_TAG}.sql.gz"
+tar -C /var/www/blog/cms/cms -czf "/var/backups/pgknma/files-${DEPLOY_TAG}.tar.gz" files
+sudo install -m 600 .env "/var/backups/pgknma/env-${DEPLOY_TAG}"
+gzip -t "/var/backups/pgknma/database-${DEPLOY_TAG}.sql.gz"
+tar -tzf "/var/backups/pgknma/files-${DEPLOY_TAG}.tar.gz" &gt; /dev/null</code></pre>
+
+                <h3 class="mt-6 font-semibold text-font-important">Backend update</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>python -m pip install -r requirements.txt
+python -m pip check
+python manage.py check
+python manage.py migrate --plan
+python manage.py migrate
+python manage.py collectstatic --noinput
+python manage.py check --deploy
+sudo systemctl restart waitress.service
+sudo systemctl start pgknma-data-retention.timer
+sudo systemctl status waitress.service --no-pager -l</code></pre>
+                <p class="mt-2 text-font-subtle">
+                    Ако cache backend-ът е <code>django.core.cache.backends.db.DatabaseCache</code>,
+                    след миграциите изпълни <code>python manage.py createcachetable</code>.
+                    Не копирай <code>.env.production.example</code> върху съществуващия <code>.env</code>.
+                </p>
+
+                <h3 class="mt-6 font-semibold text-font-important">Frontend build</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>cd /path/to/PGKNMA-Blog/Frontend
+npm install
+npm run lint
+npm run build</code></pre>
+                <p class="mt-2">След успешен build качи съдържанието на <code>Frontend/dist/</code> в <code>/var/www/blog/dist/</code>.</p>
+
+                <h3 class="mt-6 font-semibold text-font-important">Apache при промяна на конфигурацията</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>sudo apachectl configtest
+sudo systemctl reload apache2
+sudo systemctl status apache2 --no-pager -l</code></pre>
+
+                <h3 class="mt-6 font-semibold text-font-important">Smoke проверки</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>curl -fsS https://pgknma.space/api/site-status/
+curl -fsSI https://pgknma.space/
+curl -fsSI https://pgknma.space/news
+curl -fsS https://pgknma.space/sitemap/ &gt; /dev/null
+curl -fsSI https://love.pgknma.space/</code></pre>
+                <p class="mt-2">След това провери ръчно вход с парола, Google вход, refresh/logout, публикации, програма, admin и Valentine вход с тестов профил.</p>
+
+                <h3 class="mt-6 font-semibold text-font-important">Rollback</h3>
+                <ol class="mt-2 list-decimal space-y-2 pl-5">
+                    <li>Остави maintenance mode включен и спри Waitress.</li>
+                    <li>Провери абсолютния път и датата на избрания backup.</li>
+                    <li>Върни предварително проверения код, зависимости и static файлове.</li>
+                    <li>Възстанови базата и media архива само ако rollback планът го изисква.</li>
+                    <li>Стартирай услугата и повтори всички smoke проверки.</li>
+                </ol>
+                <div class="mt-4 rounded-lg border-l-4 border-red-500 bg-red-500/10 p-4">
+                    Не използвай reverse migration в production, освен ако е изрично тествана
+                    върху копие на базата. При MySQL schema промени предпочитай възстановяване на
+                    проверения backup. Никога не изпълнявай restore върху непроверена целева база.
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-cleanup" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                15. Автоматично почистване и MaxMind ASN база
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <h3 class="font-semibold text-font-important">Безопасен dry-run</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>cd /var/www/blog/cms/cms
+source ../venv/bin/activate
+python manage.py cleanup_personal_data --days 90 --dry-run</code></pre>
+                <p class="mt-2">Dry-run не изтрива данни, но записва резултата в „История на почистването“.</p>
+
+                <h3 class="mt-6 font-semibold text-font-important">Timer и ръчно изпълнение</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>sudo systemctl list-timers pgknma-data-retention.timer
+sudo systemctl status pgknma-data-retention.timer --no-pager -l
+sudo systemctl start pgknma-data-retention.service
+sudo journalctl -u pgknma-data-retention.service -n 50 --no-pager</code></pre>
+                <ul class="mt-3 list-disc space-y-2 pl-5">
+                    <li>Timer-ът работи всеки ден около 03:15 и наваксва пропуснато изпълнение.</li>
+                    <li>Не активирай едновременно systemd timer и cron за същата задача.</li>
+                    <li>Cleanup премахва стари consent записи, сесии, IP/operator metadata, опити за Valentine вход и изтекли Django/JWT записи.</li>
+                    <li>Валентинки, профили, кампании и модерационна история не се трият от тази команда.</li>
+                </ul>
+
+                <h3 class="mt-6 font-semibold text-font-important">MaxMind</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>stat /var/www/blog/cms/data/GeoLite2-ASN.mmdb
+file /var/www/blog/cms/data/GeoLite2-ASN.mmdb</code></pre>
+                <ol class="mt-3 list-decimal space-y-2 pl-5">
+                    <li>Изтегли актуалната GeoLite2 ASN база от администраторския MaxMind профил.</li>
+                    <li>Провери файла преди подмяна; не записвай Account ID или License Key в ръководството.</li>
+                    <li>Постави файла на пътя от <code>MAXMIND_ASN_DATABASE</code> с права за четене от service user-а.</li>
+                    <li>Рестартирай <code>waitress.service</code>, за да се отвори новата база.</li>
+                    <li>Направи нов тестов вход и провери оператор и ASN в съответната сесия.</li>
+                </ol>
+            </div>
+        </details>
+
+        <details id="guide-diagnostics" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                16. Диагностика и често срещани проблеми
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <h3 class="font-semibold text-font-important">Основни проверки</h3>
+                <pre class="mt-2 overflow-x-auto rounded-lg bg-base-900 p-4 text-sm text-base-100"><code>sudo systemctl status waitress.service --no-pager -l
+sudo journalctl -u waitress.service -n 100 --no-pager
+sudo systemctl status apache2 --no-pager -l
+sudo tail -n 100 /var/log/django_app_error.log
+sudo tail -n 100 /var/log/apache2/error.log
+sudo ss -ltnp | grep ':8000'
+cd /var/www/blog/cms/cms
+source ../venv/bin/activate
+python manage.py check
+python manage.py showmigrations</code></pre>
+
+                <div class="mt-5 overflow-x-auto">
+                    <table class="w-full border-collapse text-left">
+                        <thead>
+                            <tr class="border-b border-border-subtle">
+                                <th class="p-3">Симптом</th>
+                                <th class="p-3">Провери първо</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Django вижда 127.0.0.1</td><td class="p-3">Apache forwarded headers, Cloudflare header и Waitress trusted proxy настройките.</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Операторът/ASN е празен</td><td class="p-3">Реален публичен IP, <code>MAXMIND_ASN_DATABASE</code>, наличен MMDB файл и рестарт на Waitress.</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Static файл връща 404</td><td class="p-3"><code>collectstatic</code>, Apache Alias, права за четене и точния URL.</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">TemplateDoesNotExist</td><td class="p-3">Точния път под <code>templates/admin/</code>, регистъра на буквите и качения файл.</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Липсва поле или таблица</td><td class="p-3"><code>showmigrations</code>, <code>migrate --plan</code>, изпълнена миграция и рестарт.</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">403 / CSRF / CORS</td><td class="p-3">Права на профила, trusted origins, allowed origins, Host и X-Forwarded-Proto.</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Waitress не стартира</td><td class="p-3">Journal, Python environment, <code>.env</code>, порт 8000 и <code>manage.py check</code>.</td></tr>
+                            <tr class="border-b border-border-subtle"><td class="p-3">Frontend показва стара версия</td><td class="p-3">Нов production build, съдържанието на <code>/var/www/blog/dist/</code> и Cloudflare/browser cache.</td></tr>
+                            <tr><td class="p-3">CSV импортът е отказан</td><td class="p-3">Колони, кодировка, разделител, дублирани клас/час записи и предварителния преглед.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </details>
+
+        <details id="guide-incident" class="rounded-lg border border-yellow-500/50 bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-yellow-700 dark:text-yellow-400">
+                17. Инцидент, компрометиран профил или загуба на данни
+            </summary>
+            <div class="border-t border-yellow-500/30 p-5 text-sm leading-6 text-font-default">
+                <ol class="list-decimal space-y-2 pl-5">
+                    <li>Не прави панически изтривания и не презаписвай логове или backups.</li>
+                    <li>При активна атака включи maintenance mode и ограничи засегнатия достъп.</li>
+                    <li>Прекрати подозрителните сесии и деактивирай компрометирания профил.</li>
+                    <li>Запиши часа, засегнатите акаунти, видимите симптоми и извършените действия.</li>
+                    <li>Запази релевантните логове и провери целостта на последния backup.</li>
+                    <li>Смени компрометирани ключове само в защитения <code>.env</code>; не ги изпращай в чат или имейл.</li>
+                    <li>Уведоми училищното ръководство при съмнение за нарушение на лични данни.</li>
+                    <li>Свържи се с техническата поддръжка преди restore, schema промяна или изтриване на доказателства.</li>
+                </ol>
+            </div>
+        </details>
+    </div>
+
+    <div class="mt-6 rounded-lg border border-border-subtle bg-card-background p-5 shadow-sm">
+        <h2 class="text-lg font-semibold text-font-important">Нужна е помощ?</h2>
+        <p class="mt-2 text-sm leading-6 text-font-default">
+            При технически проблем изпрати точния адрес на страницата, часа на грешката,
+            какво действие е извършено и текста на съобщението до
+            <a class="font-semibold text-primary-600 hover:underline dark:text-primary-400" href="mailto:support@pgknma.space">support@pgknma.space</a>.
+            Не изпращай пароли, PIN кодове, access/refresh tokens или съдържание на <code>.env</code>.
+        </p>
+    </div>
+</section>

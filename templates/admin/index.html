@@ -7,10 +7,10 @@
 <div class="p-6">
     <div class="mb-8">
         <h1 class="text-2xl font-semibold text-font-important">{% trans "Добре дошли, " %}{{ request.user.username }}!</h1>
-        
+
         <div class="my-6 flex flex-col md:flex-row items-center rounded-lg border border-border-subtle bg-card-background p-6 shadow-sm">
             <div class="flex-shrink-0 mb-4 md:mb-0">
-                <img src="/static/images/logo-sm.png" width="250" height="150" alt="Лого" class="dark:opacity-90 dark:brightness-110">
+                <img src="{% static 'images/logo-sm.png' %}" width="250" height="150" alt="Лого на ПГКНМА" class="dark:opacity-90 dark:brightness-110">
             </div>
             <div class="flex-1 md:ml-6 italic flex flex-col items-center text-center">
                 <p id="quote-text" class="text-lg text-font-default font-medium leading-relaxed"></p>
@@ -18,13 +18,17 @@
             </div>
         </div>
 
-        <div class="mb-8 p-4 rounded-lg border-l-4 border-primary-500 bg-primary-500/10">
-            <h2 class="text-xl font-bold text-primary-500 leading-tight">
-                ⚠️ {% trans "Моля, първо създайте съдържанието, запишете го и едва тогава качете снимки или файлове!" %}
+        <div class="mb-8 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
+            <h2 class="text-lg font-bold leading-tight text-font-important">
+                ⚠️ {% trans "Преди да направите промяна" %}
             </h2>
+            <p class="mt-2 text-sm leading-6 text-font-default">
+                {% trans "Проверете избраните записи, филтрите и датите преди масово действие. При изтриване, миграция или deploy първо осигурете проверен backup." %}
+            </p>
         </div>
     </div>
 
+    <h2 class="mb-4 text-xl font-semibold text-font-important">{% trans "Бързи действия" %}</h2>
     <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         <a href="{% url 'admin:blog_posts_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
@@ -97,7 +101,57 @@
                 </div>
             </div>
         </a>
+
+        <a href="{% url 'admin:blog_scheduleentry_import_csv' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-upload_file text-2xl text-cyan-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Импортирай програма" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Качи новия CSV файл." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:blog_memeofweek_changelist' %}?status__exact=pending" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-sentiment_very_satisfied text-2xl text-orange-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Прегледай мемета" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Модерирай чакащите предложения." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:valentine_profile_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-person text-2xl text-pink-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Valentine профили" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Кодове, PIN, CSV и класове." %}</p>
+                </div>
+            </div>
+        </a>
+
+        <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
+            <div class="flex items-center">
+                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
+                    <span class="icon-report text-2xl text-red-500"></span>
+                </div>
+                <div class="ml-4">
+                    <h3 class="text-lg font-semibold text-font-important">{% trans "Valentine сигнали" %}</h3>
+                    <p class="text-sm text-font-subtle">{% trans "Прегледай текущата модерация." %}</p>
+                </div>
+            </div>
+        </a>
     </div>
+
+    {% include "admin/_help_guide.html" %}
 </div>
 {% endblock %}
 

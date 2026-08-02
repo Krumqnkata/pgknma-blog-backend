@@ -453,9 +453,22 @@ class PostsAdmin(ModelAdmin):
         if documents_to_delete and not request.user.has_perm('blog.delete_postdocument'):
             raise PermissionDenied
 
-        if not obj.pk:
+        is_new_post = obj.pk is None
+        pending_banner = obj.banner if is_new_post and obj.banner else None
+
+        # ImageField calculates upload_to before an AutoField primary key is
+        # assigned.  Save a new post without the banner first, then commit the
+        # banner below so it always lands in posts/<post id>/banner/.
+        if pending_banner is not None:
+            obj.banner = None
+
+        if is_new_post:
             obj.author = request.user
         super().save_model(request, obj, form, change)
+
+        if pending_banner is not None:
+            obj.banner = pending_banner
+            obj.save(update_fields=('banner',))
 
         # Use the form's cleaned values so image/content and size validation
         # cannot be bypassed by reading request.FILES directly.
