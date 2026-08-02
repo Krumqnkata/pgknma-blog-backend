@@ -1,5 +1,6 @@
 # blog/forms.py
 from django import forms
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
 import csv
@@ -7,24 +8,54 @@ from io import StringIO
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import MemeOfWeek, BellSongSuggestion, PollQuestion, Posts, PostDocument, ScheduleEntry # Import PostDocument
+from .models import (
+    BellSongSuggestion,
+    MemeOfWeek,
+    PollQuestion,
+    PostDocument,
+    Posts,
+    ScheduleEntry,
+    calculate_file_sha256,
+)
 
 
 MAX_GALLERY_IMAGES = 10
 MAX_GALLERY_DOCUMENTS = 10
-MAX_IMAGE_SIZE = 10 * 1024 * 1024
-MAX_DOCUMENT_SIZE = 25 * 1024 * 1024
 ADMIN_SELECTION_LIMIT = 200
 
 
+def format_upload_limit(size_bytes):
+    size_mb = size_bytes / (1024 * 1024)
+    if size_mb >= 1:
+        return f'{size_mb:g} MB'
+    size_kb = size_bytes / 1024
+    if size_kb >= 1:
+        return f'{size_kb:g} KB'
+    return f'{size_bytes:g} B'
+
+
 def validate_image_size(uploaded_file):
-    if uploaded_file.size > MAX_IMAGE_SIZE:
-        raise ValidationError("Всяко изображение трябва да е до 10 MB.")
+    max_size = getattr(
+        settings,
+        'MAX_IMAGE_UPLOAD_SIZE',
+        10 * 1024 * 1024,
+    )
+    if uploaded_file.size > max_size:
+        raise ValidationError(
+            f"Всяко изображение трябва да е до {format_upload_limit(max_size)}."
+        )
 
 
 def validate_document_size(uploaded_file):
-    if uploaded_file.size > MAX_DOCUMENT_SIZE:
-        raise ValidationError("Всеки документ трябва да е до 25 MB.")
+    max_size = getattr(
+        settings,
+        'MAX_DOCUMENT_UPLOAD_SIZE',
+        25 * 1024 * 1024,
+    )
+    if uploaded_file.size > max_size:
+        raise ValidationError(
+            f"Всеки документ трябва да е до {format_upload_limit(max_size)}."
+        )
 
 
 class MultipleFileInput(forms.FileInput):
@@ -67,7 +98,12 @@ class MultipleImageField(forms.ImageField):
         self.max_files = kwargs.pop("max_files", None)
         kwargs.setdefault(
             "widget",
-            MultipleFileInput(attrs={"accept": "image/*"}),
+            MultipleFileInput(
+                attrs={
+                    "accept": "image/*",
+                    "data-gallery-upload": "true",
+                }
+            ),
         )
         super().__init__(*args, **kwargs)
 
@@ -177,19 +213,13 @@ allowed_document_extensions = ['pdf', 'docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt
 class PostAdminForm(forms.ModelForm):
     gallery_images = MultipleImageField(
         required=False,
-        label="Качи нови изображения за галерията (до 10 файла, по 10 MB)",
+        label="Качи нови изображения за галерията",
         max_files=MAX_GALLERY_IMAGES,
         validators=[validate_image_size],
     )
-    delete_images = forms.MultipleChoiceField(
-        required=False,
-        widget=forms.CheckboxSelectMultiple,
-        label="Съществуващи изображения"
-    )
-
     gallery_documents = MultipleFileField(
         required=False,
-        label="Качи нови документи (до 10 файла, по 25 MB; PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, ZIP, RAR, 7Z, CSV, TXT, JSON, RTF)",
+        label="Качи нови документи",
         max_files=MAX_GALLERY_DOCUMENTS,
         validators=[
             FileExtensionValidator(allowed_extensions=allowed_document_extensions),
@@ -206,20 +236,76 @@ class PostAdminForm(forms.ModelForm):
         model = Posts
         fields = '__all__'
 
+    class Media:
+        js = ('blog/admin/post_gallery_upload.js',)
+
+    def clean_gallery_images(self):
+        images = self.cleaned_data.get('gallery_images') or []
+        if not isinstance(images, (list, tuple)):
+            images = [images]
+
+        known_hashes = {}
+        if self.instance and self.instance.pk:
+            for existing in self.instance.images.only(
+                'pk',
+                'image',
+                'file_hash',
+            ):
+                digest = existing.file_hash
+                if not digest and existing.image:
+                    try:
+                        digest = calculate_file_sha256(existing.image)
+                    except (FileNotFoundError, OSError, ValueError):
+                        continue
+                if digest:
+                    known_hashes[digest] = existing.image.name.rsplit('/', 1)[-1]
+
+        for uploaded_file in images:
+            digest = calculate_file_sha256(uploaded_file)
+            duplicate_name = known_hashes.get(digest)
+            if duplicate_name:
+                raise ValidationError(
+                    'Снимката „%(uploaded)s“ дублира „%(existing)s“ '
+                    'в същата публикация.',
+                    params={
+                        'uploaded': uploaded_file.name,
+                        'existing': duplicate_name,
+                    },
+                )
+            uploaded_file._post_image_sha256 = digest
+            known_hashes[digest] = uploaded_file.name
+
+        return images
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        image_limit = getattr(
+            settings,
+            'MAX_IMAGE_UPLOAD_SIZE',
+            10 * 1024 * 1024,
+        )
+        document_limit = getattr(
+            settings,
+            'MAX_DOCUMENT_UPLOAD_SIZE',
+            25 * 1024 * 1024,
+        )
+        self.fields['gallery_images'].label = (
+            'Качи нови изображения за галерията '
+            f'(до {MAX_GALLERY_IMAGES} файла, по '
+            f'{format_upload_limit(image_limit)})'
+        )
+        self.fields['gallery_documents'].label = (
+            f'Качи нови документи (до {MAX_GALLERY_DOCUMENTS} файла, по '
+            f'{format_upload_limit(document_limit)}; PDF, DOCX, DOC, XLSX, '
+            'XLS, PPTX, PPT, ZIP, RAR, 7Z, CSV, TXT, JSON, RTF)'
+        )
+        self.fields['gallery_images'].widget.attrs['data-max-files'] = str(
+            MAX_GALLERY_IMAGES
+        )
+        self.fields['gallery_images'].widget.attrs['data-max-file-size'] = str(
+            image_limit
+        )
         if self.instance and self.instance.pk:
-            # Populate delete_images for existing images
-            existing_images = self.instance.images.all()
-            image_choices = []
-            for img in existing_images:
-                label = format_html(
-                    'Изтрий: <img src="{}" width="150" style="margin: 5px;" alt="" />',
-                    img.image.url,
-                )
-                image_choices.append((img.pk, label))
-            self.fields['delete_images'].choices = image_choices
-
             # Populate delete_documents for existing documents
             existing_documents = self.instance.documents.all()
             document_choices = []
@@ -241,8 +327,7 @@ class PostAdminForm(forms.ModelForm):
             self.fields['delete_documents'].choices = document_choices
 
         else:
-            # If it's a new post, hide the delete_images and delete_documents fields
-            self.fields['delete_images'].widget = forms.HiddenInput()
+            # Existing documents can only be selected after the post is saved.
             self.fields['delete_documents'].widget = forms.HiddenInput()
 
 

@@ -1,14 +1,50 @@
+import hashlib
 import uuid
 from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.db import models
+from django.db import models, transaction
 from django.db.models import BooleanField
 from django.db.models.signals import m2m_changed, post_delete, pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator
+from django.core.validators import (
+    FileExtensionValidator,
+    MaxValueValidator,
+    MinValueValidator,
+)
+
+
+def calculate_file_sha256(file_obj):
+    """Return a content hash without changing the caller's file position."""
+
+    digest = hashlib.sha256()
+    was_closed = bool(getattr(file_obj, 'closed', False))
+    try:
+        original_position = file_obj.tell()
+    except (AttributeError, OSError, ValueError):
+        original_position = None
+
+    try:
+        if hasattr(file_obj, 'seek'):
+            file_obj.seek(0)
+        if hasattr(file_obj, 'chunks'):
+            chunks = file_obj.chunks()
+        else:
+            chunks = iter(lambda: file_obj.read(1024 * 1024), b'')
+        for chunk in chunks:
+            digest.update(chunk)
+    finally:
+        if was_closed and hasattr(file_obj, 'close'):
+            file_obj.close()
+        elif original_position is not None and hasattr(file_obj, 'seek'):
+            try:
+                file_obj.seek(original_position)
+            except (OSError, ValueError):
+                pass
+
+    return digest.hexdigest()
 
 def post_media_upload_path(instance, filename, field_type):
     """
@@ -511,6 +547,47 @@ class PrivacyPolicy(models.Model):
 class PostImage(models.Model):
     post = models.ForeignKey(Posts, related_name='images', on_delete=models.CASCADE, help_text="Публикацията, към която е свързана тази снимка.")
     image = models.ImageField(upload_to=post_gallery_upload_path, validators=[validate_image_upload_size], help_text="Файлът с изображението.")
+    title = models.CharField(
+        max_length=150,
+        blank=True,
+        verbose_name="Заглавие",
+        help_text="Кратко видимо заглавие или описание под снимката.",
+    )
+    alt_text = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Алтернативен текст",
+        help_text="Опишете какво има на снимката за екранни четци и търсачки.",
+    )
+    position = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Позиция",
+        help_text="Редът на снимката в галерията.",
+    )
+    is_featured = models.BooleanField(
+        default=False,
+        verbose_name="Водеща снимка",
+        help_text="Водещата снимка се показва по-голяма и първа в галерията.",
+    )
+    focus_x = models.PositiveSmallIntegerField(
+        default=50,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name="Хоризонтален фокус (%)",
+        help_text="0 е левият край, 50 е центърът, а 100 е десният край.",
+    )
+    focus_y = models.PositiveSmallIntegerField(
+        default=50,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        verbose_name="Вертикален фокус (%)",
+        help_text="0 е горният край, 50 е центърът, а 100 е долният край.",
+    )
+    file_hash = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="SHA-256 отпечатък",
+    )
 
     def __str__(self):
         return f"Image for post: {self.post.title}"
@@ -518,6 +595,54 @@ class PostImage(models.Model):
     class Meta:
         verbose_name = "Снимка към публикация"
         verbose_name_plural = "Снимки към публикации"
+        ordering = ('position', 'pk')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('post', 'file_hash'),
+                name='unique_post_image_content',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(focus_x__gte=0, focus_x__lte=100),
+                name='post_image_focus_x_0_100',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(focus_y__gte=0, focus_y__lte=100),
+                name='post_image_focus_y_0_100',
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.image:
+            is_new_file = not getattr(self.image, '_committed', True)
+            if not self.file_hash or is_new_file:
+                uploaded_file = getattr(self.image, 'file', None)
+                self.file_hash = (
+                    getattr(uploaded_file, '_post_image_sha256', None)
+                    or calculate_file_sha256(self.image)
+                )
+
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and self.file_hash:
+            kwargs['update_fields'] = tuple(set(update_fields) | {'file_hash'})
+
+        with transaction.atomic():
+            if (
+                self.post_id
+                and self.file_hash
+                and type(self).objects.filter(
+                    post_id=self.post_id,
+                    file_hash=self.file_hash,
+                ).exclude(pk=self.pk).exists()
+            ):
+                raise ValidationError({
+                    'image': 'Тази снимка вече присъства в галерията.'
+                })
+            if self.is_featured and self.post_id:
+                type(self).objects.filter(
+                    post_id=self.post_id,
+                    is_featured=True,
+                ).exclude(pk=self.pk).update(is_featured=False)
+            return super().save(*args, **kwargs)
 
 class PostDocument(models.Model):
     post = models.ForeignKey(Posts, related_name='documents', on_delete=models.CASCADE, help_text="Публикацията, към която е свързан този документ.")

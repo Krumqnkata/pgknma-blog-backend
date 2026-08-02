@@ -1702,6 +1702,11 @@ components:
         images:
           type: string
           readOnly: true
+        gallery:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostImage'
+          readOnly: true
         documents:
           type: string
           readOnly: true
@@ -1713,10 +1718,57 @@ components:
       - content
       - created_at
       - documents
+      - gallery
       - hook
       - id
       - images
       - title
+    PostImage:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        image_url:
+          type: string
+          nullable: true
+          readOnly: true
+        title:
+          type: string
+          title: Заглавие
+          description: Кратко видимо заглавие или описание под снимката.
+          maxLength: 150
+        alt_text:
+          type: string
+          title: Алтернативен текст
+          description: Опишете какво има на снимката за екранни четци и търсачки.
+          maxLength: 255
+        position:
+          type: integer
+          maximum: 9223372036854775807
+          minimum: 0
+          format: int64
+          title: Позиция
+          description: Редът на снимката в галерията.
+        is_featured:
+          type: boolean
+          title: Водеща снимка
+          description: Водещата снимка се показва по-голяма и първа в галерията.
+        focus_x:
+          type: integer
+          maximum: 100
+          minimum: 0
+          title: Хоризонтален фокус (%)
+          description: 0 е левият край, 50 е центърът, а 100 е десният край.
+        focus_y:
+          type: integer
+          maximum: 100
+          minimum: 0
+          title: Вертикален фокус (%)
+          description: 0 е горният край, 50 е центърът, а 100 е долният край.
+      required:
+      - id
+      - image_url
     PrivacyPolicy:
       type: object
       properties:

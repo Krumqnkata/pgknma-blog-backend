@@ -24,9 +24,25 @@ from .network import get_client_ip
 from .session_auth import issue_session_tokens
 
 class PostImageSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = PostImage
-        fields = ['image']
+        fields = (
+            'id',
+            'image_url',
+            'title',
+            'alt_text',
+            'position',
+            'is_featured',
+            'focus_x',
+            'focus_y',
+        )
+
+    def get_image_url(self, obj) -> str | None:
+        if obj.image and hasattr(obj.image, 'url'):
+            return obj.image.url
+        return None
 
 class PostDocumentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
@@ -50,6 +66,7 @@ class PostSerializer(serializers.ModelSerializer):
     author_username = serializers.SerializerMethodField()
     category_name = serializers.StringRelatedField(source='category')
     images = serializers.SerializerMethodField()
+    gallery = PostImageSerializer(source='images', many=True, read_only=True)
     documents = serializers.SerializerMethodField()
     banner = serializers.SerializerMethodField()
 
@@ -70,6 +87,7 @@ class PostSerializer(serializers.ModelSerializer):
             'published',
             'allowed',
             'images',
+            'gallery',
             'documents' # Add documents here
         )
 

@@ -1,8 +1,9 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
 from django import forms
+from django.forms.models import BaseInlineFormSet
 from django.http import Http404, HttpResponseNotAllowed
 from django.urls import path, reverse
 from django.utils.html import format_html
@@ -18,7 +19,7 @@ from .forms import (
     SongSuggestionSelectionForm,
     ScheduleCsvImportForm,
 )
-from unfold.admin import ModelAdmin, TabularInline
+from unfold.admin import ModelAdmin, StackedInline, TabularInline
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
@@ -412,9 +413,109 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
     ordering = ('-last_login',)  # По подразбиране — последно логвалите се първи
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'last_login')
 
+
+class PostImageInlineFormSet(BaseInlineFormSet):
+    """Validate gallery-wide rules before any inline image is saved."""
+
+    def clean(self):
+        super().clean()
+        if any(self.errors):
+            return
+
+        featured_count = 0
+        known_hashes = {}
+        for form in self.forms:
+            cleaned_data = getattr(form, 'cleaned_data', {})
+            if not cleaned_data or cleaned_data.get('DELETE'):
+                continue
+
+            if cleaned_data.get('is_featured'):
+                featured_count += 1
+
+            image = cleaned_data.get('image')
+            if not image:
+                continue
+            digest = form.instance.file_hash
+            if not digest or 'image' in form.changed_data:
+                try:
+                    digest = calculate_file_sha256(image)
+                except (FileNotFoundError, OSError, ValueError):
+                    continue
+                image._post_image_sha256 = digest
+                uploaded_file = getattr(image, 'file', None)
+                if uploaded_file is not None:
+                    uploaded_file._post_image_sha256 = digest
+                form.instance.file_hash = digest
+                if form.instance.pk and not form.changed_data:
+                    form.instance._gallery_hash_needs_backfill = True
+
+            duplicate_name = known_hashes.get(digest)
+            if duplicate_name:
+                raise ValidationError(
+                    'Галерията съдържа дублирани снимки: '
+                    f'„{duplicate_name}“ и „{image.name.rsplit("/", 1)[-1]}“.'
+                )
+            known_hashes[digest] = image.name.rsplit('/', 1)[-1]
+
+        if featured_count > 1:
+            raise ValidationError(
+                'Изберете само една водеща снимка за галерията.'
+            )
+
+    def save(self, commit=True):
+        instances = super().save(commit=commit)
+        if commit:
+            for form in self.initial_forms:
+                instance = form.instance
+                if getattr(instance, '_gallery_hash_needs_backfill', False):
+                    PostImage.objects.filter(
+                        pk=instance.pk,
+                        file_hash__isnull=True,
+                    ).update(file_hash=instance.file_hash)
+        return instances
+
+
+class PostImageInline(StackedInline):
+    model = PostImage
+    formset = PostImageInlineFormSet
+    extra = 0
+    fields = (
+        'image_preview',
+        'image',
+        'title',
+        'alt_text',
+        'is_featured',
+        'focus_x',
+        'focus_y',
+        'position',
+    )
+    readonly_fields = ('image_preview',)
+    ordering_field = 'position'
+    hide_ordering_field = True
+    show_change_link = True
+    verbose_name = 'Снимка в галерията'
+    verbose_name_plural = (
+        'Галерия — влачете картите, за да промените реда им'
+    )
+
+    @admin.display(description='Преглед на кадрирането')
+    def image_preview(self, obj):
+        if not obj or not obj.image:
+            return 'Ще се появи след записване.'
+        return format_html(
+            '<img src="{}" alt="{}" '
+            'style="width:220px;height:150px;object-fit:cover;'
+            'object-position:{}% {}%;border-radius:10px;" />',
+            obj.image.url,
+            obj.alt_text or obj.title or '',
+            obj.focus_x,
+            obj.focus_y,
+        )
+
 @admin.register(Posts)
 class PostsAdmin(ModelAdmin):
     form = PostAdminForm
+    inlines = (PostImageInline,)
     readonly_fields_base = ('author', 'created_at')
     list_display = ('title', 'author', 'publication_status', 'published_at', 'created_at')
     list_filter = ('published', 'allowed', 'category', 'published_at', 'created_at')
@@ -446,10 +547,7 @@ class PostsAdmin(ModelAdmin):
         return tuple(base_fields)
 
     def save_model(self, request, obj, form, change):
-        images_to_delete = form.cleaned_data.get('delete_images') or []
         documents_to_delete = form.cleaned_data.get('delete_documents') or []
-        if images_to_delete and not request.user.has_perm('blog.delete_postimage'):
-            raise PermissionDenied
         if documents_to_delete and not request.user.has_perm('blog.delete_postdocument'):
             raise PermissionDenied
 
@@ -475,12 +573,19 @@ class PostsAdmin(ModelAdmin):
         images = form.cleaned_data.get('gallery_images') or []
         if not isinstance(images, (list, tuple)):
             images = [images]
-        for image in images:
-            PostImage.objects.create(post=obj, image=image)
-
-        # Handle image deletion
-        if images_to_delete:
-            PostImage.objects.filter(pk__in=images_to_delete, post=obj).delete()
+        last_position = obj.images.aggregate(
+            max_position=models.Max('position')
+        )['max_position']
+        next_position = 0 if last_position is None else last_position + 1
+        has_featured_image = obj.images.filter(is_featured=True).exists()
+        for offset, image in enumerate(images):
+            PostImage.objects.create(
+                post=obj,
+                image=image,
+                position=next_position + offset,
+                is_featured=not has_featured_image and offset == 0,
+                file_hash=getattr(image, '_post_image_sha256', None),
+            )
 
         # Handle multiple document uploads
         documents = form.cleaned_data.get('gallery_documents') or []
@@ -849,20 +954,46 @@ class ChangelogAdmin(ModelAdmin):
 
 @admin.register(PostImage)
 class PostImageAdmin(ModelAdmin):
-    list_display = ('post', 'image_preview') # Add image_preview to list_display
-    list_filter = ('post',)
-    readonly_fields = ('image_preview',) # Make image_preview readonly on the change form
+    list_display = (
+        'image_preview',
+        'title',
+        'post',
+        'position',
+        'is_featured',
+    )
+    list_filter = ('is_featured', 'post')
+    search_fields = ('title', 'alt_text', 'post__title')
+    ordering = ('post', 'position', 'pk')
+    readonly_fields = ('post', 'image_preview', 'file_hash')
+    fields = (
+        'post',
+        'image_preview',
+        'image',
+        'title',
+        'alt_text',
+        'is_featured',
+        'focus_x',
+        'focus_y',
+        'position',
+        'file_hash',
+    )
 
+    @admin.display(description='Преглед')
     def image_preview(self, obj):
         if obj.image:
             return format_html(
-                '<img src="{}" style="max-width: 150px; max-height: 150px;" alt="" />',
+                '<img src="{}" alt="{}" '
+                'style="width:150px;height:110px;object-fit:cover;'
+                'object-position:{}% {}%;border-radius:8px;" />',
                 obj.image.url,
+                obj.alt_text or obj.title or '',
+                obj.focus_x,
+                obj.focus_y,
             )
         return "Няма изображение"
-    image_preview.short_description = "Преглед на изображението"
+
     def has_add_permission(self, request):
-        return False  # Това ще забрани добавянето на нови мемета през админ панела
+        return False  # Images are created from the parent post form.
 
 @admin.register(PostDocument)
 class PostDocumentAdmin(ModelAdmin):
