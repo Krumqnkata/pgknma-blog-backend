@@ -256,3 +256,28 @@ class GoogleAvatarImportTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('access', response.data)
         self.assertEqual(response.data['user']['avatar_source'], 'initials')
+
+    @override_settings(GOOGLE_CLIENT_ID='test-google-client')
+    @patch('blog.auth.import_google_avatar_once')
+    @patch('blog.auth.id_token.verify_oauth2_token')
+    def test_google_link_imports_avatar_immediately(self, verify_token, avatar_import):
+        verify_token.return_value = {
+            'iss': 'https://accounts.google.com',
+            'sub': 'google-link-avatar-test',
+            'email': self.user.email,
+            'email_verified': True,
+            'picture': 'https://lh3.googleusercontent.com/a/test-only-link-avatar',
+        }
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            '/api/auth/google/link/',
+            {'credential': 'verified-by-mock'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        avatar_import.assert_called_once_with(
+            self.user,
+            'https://lh3.googleusercontent.com/a/test-only-link-avatar',
+        )

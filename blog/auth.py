@@ -368,6 +368,20 @@ class GoogleLinkView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
+        try:
+            import_google_avatar_once(user, id_info.get('picture'))
+        except AvatarImportError as exc:
+            logger.warning(
+                'Google avatar import skipped after linking for user %s: %s',
+                user.pk,
+                exc,
+            )
+        except Exception:
+            logger.exception(
+                'Unexpected Google avatar import failure after linking for user %s',
+                user.pk,
+            )
+
         return Response(
             {'detail': 'Google акаунтът е свързан успешно.'},
             status=status.HTTP_200_OK,
