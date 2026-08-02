@@ -360,6 +360,10 @@ REST_FRAMEWORK = {
             "THROTTLE_PERSONAL_DATA_EXPORT",
             "3/day",
         ),
+        'profile_avatar': os.getenv(
+            "THROTTLE_PROFILE_AVATAR",
+            "10/hour",
+        ),
     },
 }
 
@@ -484,6 +488,10 @@ MAX_MEME_UPLOAD_SIZE = env_int(
 MAX_IMAGE_UPLOAD_SIZE = env_int(
     "MAX_IMAGE_UPLOAD_SIZE",
     10 * 1024 * 1024,
+)
+MAX_AVATAR_UPLOAD_SIZE = env_int(
+    "MAX_AVATAR_UPLOAD_SIZE",
+    5 * 1024 * 1024,
 )
 MAX_DOCUMENT_UPLOAD_SIZE = env_int(
     "MAX_DOCUMENT_UPLOAD_SIZE",
@@ -710,6 +718,11 @@ UNFOLD = {
                         "title": "Активни сесии",
                         "link": "/admin/blog/blogloginsession/?session_status=active",
                         "icon": "devices",
+                    },
+                    {
+                        "title": "Профилни снимки",
+                        "link": "/admin/blog/userprofile/",
+                        "icon": "account_circle",
                     },
                     {
                         "title": "Групи",

@@ -5,7 +5,7 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import models, transaction
 from django.db.models import BooleanField
-from django.db.models.signals import m2m_changed, post_delete, pre_delete
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete
 from django.dispatch import receiver
 from django.utils import timezone
 from django.core.exceptions import ValidationError
@@ -13,6 +13,12 @@ from django.core.validators import (
     FileExtensionValidator,
     MaxValueValidator,
     MinValueValidator,
+)
+from .avatars import (
+    AVATAR_PRESETS,
+    avatar_preset_url,
+    profile_avatar_upload_path,
+    validate_avatar_upload_size,
 )
 
 
@@ -340,11 +346,77 @@ class MemeOfWeek(models.Model):
         return f"Meme by {username}"
 
 class UserProfile(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, help_text="Свързаният потребителски акаунт.")
+    class AvatarSource(models.TextChoices):
+        INITIALS = 'initials', 'Инициали'
+        UPLOAD = 'upload', 'Качена снимка'
+        PRESET = 'preset', 'Готов аватар'
+        GOOGLE = 'google', 'Google снимка'
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        help_text="Свързаният потребителски акаунт.",
+    )
+    avatar = models.ImageField(
+        upload_to=profile_avatar_upload_path,
+        blank=True,
+        null=True,
+        validators=[validate_avatar_upload_size],
+        verbose_name='Профилна снимка',
+        help_text='Локално съхранена и оптимизирана WebP профилна снимка.',
+    )
+    avatar_source = models.CharField(
+        max_length=10,
+        choices=AvatarSource.choices,
+        default=AvatarSource.INITIALS,
+        verbose_name='Източник на аватара',
+    )
+    avatar_preset = models.CharField(
+        max_length=24,
+        choices=AVATAR_PRESETS,
+        blank=True,
+        default='',
+        verbose_name='Готов аватар',
+    )
+    avatar_user_selected = models.BooleanField(
+        default=False,
+        verbose_name='Направен изричен избор',
+        help_text=(
+            'Предотвратява автоматичен Google импорт след избор от потребителя '
+            'или нулиране от администратор.'
+        ),
+    )
+    avatar_updated_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Аватарът е променен на',
+    )
+
+    class Meta:
+        verbose_name = 'Профилна снимка'
+        verbose_name_plural = 'Профилни снимки'
+
+    @property
+    def avatar_url(self):
+        if self.avatar_source == self.AvatarSource.PRESET:
+            return avatar_preset_url(self.avatar_preset)
+        if (
+            self.avatar_source in {self.AvatarSource.UPLOAD, self.AvatarSource.GOOGLE}
+            and self.avatar
+        ):
+            return self.avatar.url
+        return None
 
     def __str__(self):
-        # ...
         return f"Профил на {self.user.username}"
+
+
+@receiver(post_save, sender=User)
+def ensure_blog_user_profile(sender, instance, created, raw=False, **kwargs):
+    if created and not raw:
+        UserProfile.objects.get_or_create(user=instance)
+
+
 # Create your models here.
 
 class ConsentRecord(models.Model):

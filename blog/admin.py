@@ -32,6 +32,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from io import StringIO
 import csv
 from .session_auth import revoke_login_session
+from .avatars import reset_profile_avatar
 
 try:
     admin.site.unregister(Group)
@@ -403,6 +404,77 @@ class GroupAdmin(BaseGroupAdmin, ModelAdmin):
 
 
 admin.site.unregister(User)
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(ModelAdmin):
+    list_display = (
+        'user',
+        'avatar_preview',
+        'avatar_source',
+        'avatar_preset',
+        'avatar_updated_at',
+    )
+    list_filter = ('avatar_source', 'avatar_updated_at')
+    search_fields = ('user__username', 'user__email')
+    ordering = ('-avatar_updated_at', 'user__username')
+    readonly_fields = (
+        'user',
+        'avatar_preview',
+        'avatar_source',
+        'avatar_preset',
+        'avatar_user_selected',
+        'avatar_updated_at',
+    )
+    exclude = ('avatar',)
+    actions = ('reset_selected_avatars',)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user')
+
+    @admin.display(description='Преглед')
+    def avatar_preview(self, obj):
+        if obj.avatar_url:
+            return format_html(
+                '<img src="{}" alt="" width="56" height="56" '
+                'style="border-radius:50%;object-fit:cover;" />',
+                obj.avatar_url,
+            )
+        initial = (obj.user.username or '?')[:1].upper()
+        return format_html(
+            '<span style="display:inline-flex;width:56px;height:56px;'
+            'align-items:center;justify-content:center;border-radius:50%;'
+            'background:#e2e8f0;color:#334155;font-weight:700;">{}</span>',
+            initial,
+        )
+
+    @admin.action(description='Върни избраните профили към инициали')
+    def reset_selected_avatars(self, request, queryset):
+        changed = 0
+        with transaction.atomic():
+            profiles = UserProfile.objects.select_for_update().filter(
+                pk__in=queryset.values('pk')
+            )
+            for profile in profiles:
+                reset_profile_avatar(profile, user_selected=True)
+                self.log_change(
+                    request,
+                    profile,
+                    'Профилната снимка е върната към инициали.',
+                )
+                changed += 1
+        self.message_user(
+            request,
+            f'Нулирани профилни снимки: {changed}.',
+            messages.SUCCESS,
+        )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin, ModelAdmin):

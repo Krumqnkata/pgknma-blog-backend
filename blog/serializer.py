@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
     validate_meme_image_size, BlogLoginSession
+from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
 from django.conf import settings
 from django.contrib.auth.models import User, update_last_login
 from django.contrib.auth.validators import UnicodeUsernameValidator
@@ -22,6 +23,101 @@ from rest_framework.response import Response
 from rest_framework import status
 from .network import get_client_ip
 from .session_auth import issue_session_tokens
+
+
+def _user_profile(user):
+    if not user:
+        return None
+    try:
+        return user.userprofile
+    except UserProfile.DoesNotExist:
+        return None
+
+
+def _user_avatar_url(user):
+    profile = _user_profile(user)
+    return profile.avatar_url if profile else None
+
+
+class CurrentUserSerializer(serializers.ModelSerializer):
+    has_password = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+    avatar_source = serializers.SerializerMethodField()
+    avatar_preset = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            'id',
+            'username',
+            'email',
+            'has_password',
+            'avatar_url',
+            'avatar_source',
+            'avatar_preset',
+        )
+        read_only_fields = fields
+
+    def get_has_password(self, obj) -> bool:
+        return obj.has_usable_password()
+
+    def get_avatar_url(self, obj) -> str | None:
+        return _user_avatar_url(obj)
+
+    def get_avatar_source(self, obj) -> str:
+        profile = _user_profile(obj)
+        return (
+            profile.avatar_source
+            if profile
+            else UserProfile.AvatarSource.INITIALS
+        )
+
+    def get_avatar_preset(self, obj) -> str:
+        profile = _user_profile(obj)
+        return profile.avatar_preset if profile else ''
+
+
+class ProfileAvatarUpdateSerializer(serializers.Serializer):
+    avatar = serializers.ImageField(
+        required=False,
+        validators=[validate_avatar_upload_size],
+    )
+    preset_id = serializers.ChoiceField(
+        required=False,
+        choices=sorted(AVATAR_PRESET_IDS),
+    )
+
+    def validate(self, attrs):
+        supplied = [key for key in ('avatar', 'preset_id') if key in attrs]
+        if len(supplied) != 1:
+            raise serializers.ValidationError(
+                'Изпратете точно една снимка или един готов аватар.'
+            )
+        return attrs
+
+
+class AvatarPresetSerializer(serializers.Serializer):
+    id = serializers.CharField()
+    label = serializers.CharField()
+    url = serializers.CharField()
+
+
+class AvatarOptionsSerializer(serializers.Serializer):
+    max_upload_bytes = serializers.IntegerField()
+    output_size = serializers.IntegerField()
+    allowed_mime_types = serializers.ListField(
+        child=serializers.CharField(),
+    )
+    presets = AvatarPresetSerializer(many=True)
+
+
+class CurrentProfileResponseSerializer(serializers.Serializer):
+    user = CurrentUserSerializer()
+    avatar_options = AvatarOptionsSerializer()
+
+
+class AvatarUpdateResponseSerializer(serializers.Serializer):
+    user = CurrentUserSerializer()
 
 class PostImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
@@ -64,6 +160,7 @@ class PostDocumentSerializer(serializers.ModelSerializer):
 
 class PostSerializer(serializers.ModelSerializer):
     author_username = serializers.SerializerMethodField()
+    author_avatar_url = serializers.SerializerMethodField()
     category_name = serializers.StringRelatedField(source='category')
     images = serializers.SerializerMethodField()
     gallery = PostImageSerializer(source='images', many=True, read_only=True)
@@ -78,6 +175,7 @@ class PostSerializer(serializers.ModelSerializer):
             'category_name',  # ⬅️ Добавено: Име на категория
             'author',         # Запазваме ID на автора
             'author_username',# ⬅️ Добавено: Потребителско име
+            'author_avatar_url',
             'title',
             'banner',
             'hook',
@@ -98,6 +196,9 @@ class PostSerializer(serializers.ModelSerializer):
 
     def get_author_username(self, obj):
         return obj.author.username if obj.author else None
+
+    def get_author_avatar_url(self, obj) -> str | None:
+        return _user_avatar_url(obj.author)
 
     def get_images(self, obj):
         images = obj.images.all()
@@ -316,6 +417,7 @@ class CommentSerializer(serializers.ModelSerializer):
         trim_whitespace=True,
     )
     username = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
     post_id = serializers.IntegerField(source='post.id', read_only=True)
     parent_id = serializers.PrimaryKeyRelatedField(source='parent', read_only=True)
     parent_username = serializers.SerializerMethodField()
@@ -323,11 +425,11 @@ class CommentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Comments
-        fields = ['id', 'post_id', 'username', 'content', 'created_at', 'parent', 'parent_id', 'parent_username', 'reply_count']
+        fields = ['id', 'post_id', 'username', 'avatar_url', 'content', 'created_at', 'parent', 'parent_id', 'parent_username', 'reply_count']
         extra_kwargs = {
             'parent': {'write_only': True, 'required': False, 'allow_null': True, 'queryset': Comments.objects.all()},
         }
-        read_only_fields = ['id', 'created_at', 'username', 'post_id', 'parent_id', 'parent_username', 'reply_count']
+        read_only_fields = ['id', 'created_at', 'username', 'avatar_url', 'post_id', 'parent_id', 'parent_username', 'reply_count']
 
     def get_parent_username(self, obj):
         if obj.parent:
@@ -336,6 +438,9 @@ class CommentSerializer(serializers.ModelSerializer):
 
     def get_username(self, obj):
         return obj.user.username if obj.user else None
+
+    def get_avatar_url(self, obj) -> str | None:
+        return _user_avatar_url(obj.user)
 
     def get_reply_count(self, obj):
         if obj.parent is None:
@@ -682,11 +787,10 @@ class BlogTokenObtainPairSerializer(TokenObtainPairSerializer):
         )
         data['refresh'] = str(refresh)
         data['access'] = str(refresh.access_token)
-        data['user'] = {
-            'id': self.user.pk,
-            'username': self.user.username,
-            'email': self.user.email,
-        }
+        data['user'] = CurrentUserSerializer(
+            self.user,
+            context=self.context,
+        ).data
         if settings.SIMPLE_JWT.get('UPDATE_LAST_LOGIN', False):
             update_last_login(None, self.user)
         return data

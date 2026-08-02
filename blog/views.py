@@ -18,10 +18,14 @@ from drf_spectacular.utils import (
 from rest_framework import viewsets, generics, status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import (
+    PermissionDenied,
+    ValidationError as RestValidationError,
+)
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
@@ -31,7 +35,7 @@ from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession
+from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
@@ -42,7 +46,15 @@ from .serializer import (
     EventSerializer, TermsOfServiceSerializer, BellSongSuggestionSerializer,
     PrivacyPolicySerializer, MemeOfWeekSerializer, ConsentRecordSerializer, SiteSettingsSerializer,
     ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer, BlogLoginSessionSerializer,
-    ApiDetailResponseSerializer, BlogSessionRevokeOthersResponseSerializer, PersonalDataExportSchemaSerializer
+    ApiDetailResponseSerializer, BlogSessionRevokeOthersResponseSerializer, PersonalDataExportSchemaSerializer,
+    CurrentUserSerializer, ProfileAvatarUpdateSerializer,
+    CurrentProfileResponseSerializer, AvatarUpdateResponseSerializer,
+)
+from .avatars import (
+    avatar_options_payload,
+    reset_profile_avatar,
+    set_profile_avatar,
+    set_profile_preset,
 )
 from .personal_data_export import build_personal_data_export
 from .session_auth import (
@@ -86,7 +98,7 @@ class PostViewSet(viewsets.ModelViewSet):
         return (
             Posts.objects.filter(published=True, allowed=True)
             .filter(Q(published_at__isnull=True) | Q(published_at__lte=now))
-            .select_related('author', 'category')
+            .select_related('author', 'author__userprofile', 'category')
             .prefetch_related('images', 'documents')
             .annotate(visible_at=Coalesce('published_at', 'created_at'))
             .order_by('-visible_at')
@@ -209,6 +221,102 @@ class RegisterView(generics.CreateAPIView):
         return super().post(request, *args, **kwargs)
 
 
+class CurrentProfileView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+
+    @extend_schema(
+        operation_id='profile_current',
+        summary='Текущ профил и настройки за аватара',
+        request=None,
+        tags=['Профил'],
+        responses={200: CurrentProfileResponseSerializer},
+    )
+    def get(self, request):
+        UserProfile.objects.get_or_create(user=request.user)
+        user = User.objects.select_related('userprofile').get(pk=request.user.pk)
+        return Response(
+            {
+                'user': CurrentUserSerializer(
+                    user,
+                    context={'request': request},
+                ).data,
+                'avatar_options': avatar_options_payload(),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ProfileAvatarView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+    throttle_scope = 'profile_avatar'
+
+    def _profile(self, request):
+        UserProfile.objects.get_or_create(user=request.user)
+        return UserProfile.objects.select_for_update().get(user=request.user)
+
+    def _response(self, request):
+        user = User.objects.select_related('userprofile').get(pk=request.user.pk)
+        return Response(
+            {
+                'user': CurrentUserSerializer(
+                    user,
+                    context={'request': request},
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @staticmethod
+    def _raise_validation_error(exc):
+        detail = getattr(exc, 'message_dict', None) or {
+            'avatar': getattr(exc, 'messages', [str(exc)])
+        }
+        raise RestValidationError(detail)
+
+    @extend_schema(
+        operation_id='profile_avatar_update',
+        summary='Качване на снимка или избор на готов аватар',
+        request=ProfileAvatarUpdateSerializer,
+        tags=['Профил'],
+        responses={200: AvatarUpdateResponseSerializer},
+    )
+    def put(self, request):
+        serializer = ProfileAvatarUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                profile = self._profile(request)
+                if 'avatar' in serializer.validated_data:
+                    set_profile_avatar(
+                        profile,
+                        serializer.validated_data['avatar'],
+                        source=UserProfile.AvatarSource.UPLOAD,
+                        user_selected=True,
+                    )
+                else:
+                    set_profile_preset(
+                        profile,
+                        serializer.validated_data['preset_id'],
+                    )
+        except ValidationError as exc:
+            self._raise_validation_error(exc)
+        return self._response(request)
+
+    @extend_schema(
+        operation_id='profile_avatar_reset',
+        summary='Връщане към инициали',
+        request=None,
+        tags=['Профил'],
+        responses={200: AvatarUpdateResponseSerializer},
+    )
+    def delete(self, request):
+        with transaction.atomic():
+            profile = self._profile(request)
+            reset_profile_avatar(profile, user_selected=True)
+        return self._response(request)
+
+
 class PasswordChangeView(generics.UpdateAPIView):
     serializer_class = PasswordChangeSerializer
     model = User
@@ -311,6 +419,9 @@ class AccountDeactivateView(APIView):
             instance = User.objects.select_for_update().get(
                 pk=request.user.pk
             )
+            profile, _ = UserProfile.objects.get_or_create(user=instance)
+            profile = UserProfile.objects.select_for_update().get(pk=profile.pk)
+            reset_profile_avatar(profile, user_selected=True)
             instance.is_active = False
             instance.save(update_fields=['is_active'])
             active_sessions = BlogLoginSession.objects.select_for_update().filter(
@@ -878,7 +989,12 @@ class CommentList(generics.ListAPIView):
         # The frontend will be responsible for grouping replies.
         return (
             Comments.objects.filter(post=post)
-            .select_related('user', 'parent__user')
+            .select_related(
+                'user',
+                'user__userprofile',
+                'parent__user',
+                'parent__user__userprofile',
+            )
             .annotate(reply_count_value=Count('replies'))
             .order_by('created_at')
         )

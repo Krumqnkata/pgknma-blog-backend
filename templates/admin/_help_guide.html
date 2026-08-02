@@ -309,8 +309,9 @@
                     <a href="{% url 'admin:auth_user_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Потребители</a>
                     <a href="{% url 'admin:auth_group_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Групи</a>
                     <a href="{% url 'admin:blog_blogloginsession_changelist' %}?session_status=active" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Активни сесии</a>
+                    <a href="{% url 'admin:blog_userprofile_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Профилни снимки</a>
                 </div>
-                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
                     <div>
                         <h3 class="font-semibold text-font-important">Флагове на потребителя</h3>
                         <ul class="mt-2 list-disc space-y-2 pl-5">
@@ -327,6 +328,15 @@
                             <li>Сесия може да бъде активна, изтекла или прекратена.</li>
                             <li>Само суперпотребител може да прекратява сесии от администрацията.</li>
                             <li>При съмнение за кражба: прекрати сесиите, смени паролата и провери журналите.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Профилни снимки</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li>Прегледай качените, Google и готовите аватари от отделния списък.</li>
+                            <li>При неподходящо изображение маркирай профила и избери „Върни към инициали“.</li>
+                            <li>Нулирането се записва в административния журнал и спира повторен автоматичен Google импорт.</li>
+                            <li>Не сваляй и не разпространявай потребителски снимки без служебна необходимост.</li>
                         </ul>
                     </div>
                 </div>

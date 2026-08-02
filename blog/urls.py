@@ -63,6 +63,16 @@ urlpatterns = [
     path('auth/profile/deactivate/', blog_views.AccountDeactivateView.as_view(), name='account-deactivate'),
     path('auth/logout/', blog_views.LogoutView.as_view(), name='logout'),
     path(
+        'profile/',
+        blog_views.CurrentProfileView.as_view(),
+        name='profile-current',
+    ),
+    path(
+        'profile/avatar/',
+        blog_views.ProfileAvatarView.as_view(),
+        name='profile-avatar',
+    ),
+    path(
         'profile/sessions/',
         blog_views.BlogSessionListView.as_view(),
         name='profile-sessions',

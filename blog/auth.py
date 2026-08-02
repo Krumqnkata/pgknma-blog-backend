@@ -14,7 +14,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import GoogleIdentity, SiteSettings, UserProfile
+from .avatars import AvatarImportError, import_google_avatar_once
 from .permissions import SiteIsAvailable
+from .serializer import CurrentUserSerializer
 from .session_auth import issue_session_tokens
 
 
@@ -214,20 +216,34 @@ class GoogleAuthView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
+        try:
+            import_google_avatar_once(user, id_info.get('picture'))
+        except AvatarImportError as exc:
+            logger.warning(
+                'Google avatar import skipped for user %s: %s',
+                user.pk,
+                exc,
+            )
+        except Exception:
+            logger.exception(
+                'Unexpected Google avatar import failure for user %s',
+                user.pk,
+            )
+
         _, refresh = issue_session_tokens(
             user,
             request,
             auth_method='google',
         )
+        user = User.objects.select_related('userprofile').get(pk=user.pk)
         return Response(
             {
                 'access': str(refresh.access_token),
                 'refresh': str(refresh),
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                },
+                'user': CurrentUserSerializer(
+                    user,
+                    context={'request': request},
+                ).data,
             },
             status=status.HTTP_200_OK,
         )

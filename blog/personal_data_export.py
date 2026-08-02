@@ -25,6 +25,18 @@ def _file_name(file_field):
 def build_personal_data_export(user):
     """Return only data that is directly linked to the authenticated user."""
     generated_at = timezone.now()
+    profile = UserProfile.objects.filter(user=user).first()
+    avatar = {
+        'source': (
+            profile.avatar_source
+            if profile
+            else UserProfile.AvatarSource.INITIALS
+        ),
+        'preset': profile.avatar_preset if profile else '',
+        'url': profile.avatar_url if profile else None,
+        'file_name': _file_name(profile.avatar) if profile else None,
+        'updated_at': _iso(profile.avatar_updated_at) if profile else None,
+    }
 
     google_identity = (
         GoogleIdentity.objects.filter(user=user)
@@ -228,7 +240,8 @@ def build_personal_data_export(user):
             'groups': list(
                 user.groups.order_by('name').values_list('name', flat=True)
             ),
-            'blog_profile_exists': UserProfile.objects.filter(user=user).exists(),
+            'blog_profile_exists': profile is not None,
+            'avatar': avatar,
             'google_identity': google_identity,
         },
         'created_content': {
