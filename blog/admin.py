@@ -564,10 +564,13 @@ class PostImageInline(StackedInline):
     readonly_fields = ('image_preview',)
     ordering_field = 'position'
     hide_ordering_field = True
+    # Unfold keeps the drag handle in the header while the detailed fields stay
+    # collapsed.  An inline with validation errors opens automatically.
+    collapsible = True
     show_change_link = True
     verbose_name = 'Снимка в галерията'
     verbose_name_plural = (
-        'Галерия — влачете картите, за да промените реда им'
+        'Галерия — влачете дръжката, за да промените реда; натиснете заглавието за детайли'
     )
 
     @admin.display(description='Преглед на кадрирането')
