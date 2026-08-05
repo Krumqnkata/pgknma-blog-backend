@@ -764,6 +764,17 @@ class RegistrationResponseSerializer(ApiDetailResponseSerializer):
     verification_required = serializers.BooleanField()
     email_sent = serializers.BooleanField()
     auto_verified = serializers.BooleanField()
+    email_failure_reason = serializers.ChoiceField(
+        choices=(
+            'daily_quota_exceeded',
+            'monthly_quota_exceeded',
+            'rate_limit_exceeded',
+            'service_unavailable',
+            'delivery_failed',
+        ),
+        allow_null=True,
+        required=False,
+    )
 
 
 class EmailVerificationResendRequestSerializer(serializers.Serializer):

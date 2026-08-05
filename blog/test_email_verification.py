@@ -70,6 +70,37 @@ class EmailVerificationTests(TestCase):
         self.assertNotEqual(token.token_hash, raw_token)
         self.assertEqual(len(token.token_hash), 64)
 
+    @patch('blog.serializer.requests.post')
+    def test_registration_reports_daily_resend_quota(self, post):
+        post.return_value = self._turnstile_success()
+        resend_response = Mock()
+        resend_response.json.return_value = {
+            'name': 'daily_quota_exceeded',
+            'message': 'You have reached your daily email quota.',
+        }
+        resend_response.text = 'daily_quota_exceeded'
+        error = RuntimeError('Resend returned HTTP 429')
+        error.status_code = 429
+        error.response = resend_response
+
+        with patch(
+            'blog.email_verification.EmailMultiAlternatives.send',
+            side_effect=error,
+        ):
+            response = self.client.post(
+                '/api/auth/register/',
+                self.registration_payload,
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.json()['email_sent'])
+        self.assertEqual(
+            response.json()['email_failure_reason'],
+            'daily_quota_exceeded',
+        )
+        self.assertIn('дневният лимит', response.json()['detail'])
+
     def test_valid_token_verifies_and_redirects_without_jwt(self):
         user = User.objects.create_user(
             username='pending',

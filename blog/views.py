@@ -59,6 +59,9 @@ from .avatars import (
 )
 from .personal_data_export import build_personal_data_export
 from .email_verification import (
+    DAILY_QUOTA_EXCEEDED,
+    MONTHLY_QUOTA_EXCEEDED,
+    RATE_LIMIT_EXCEEDED,
     resend_is_on_cooldown,
     send_verification_email,
     verify_email_token,
@@ -250,6 +253,21 @@ class RegisterView(generics.CreateAPIView):
                 'Изпратихме линк за потвърждение. Проверете и папка „Спам“. '
                 'Точният срок на валидност е посочен в писмото.'
             )
+        elif delivery.failure_reason == DAILY_QUOTA_EXCEEDED:
+            detail = (
+                'Профилът е създаден, но дневният лимит за изпращане на '
+                'имейли е изчерпан. Опитайте „Изпрати отново“ по-късно.'
+            )
+        elif delivery.failure_reason == MONTHLY_QUOTA_EXCEEDED:
+            detail = (
+                'Профилът е създаден, но месечният лимит за изпращане на '
+                'имейли е изчерпан. Свържете се с администратор.'
+            )
+        elif delivery.failure_reason == RATE_LIMIT_EXCEEDED:
+            detail = (
+                'Профилът е създаден, но в момента се изпращат твърде много '
+                'писма. Използвайте „Изпрати отново“ след малко.'
+            )
         else:
             detail = (
                 'Профилът е създаден, но писмото не можа да бъде изпратено. '
@@ -264,6 +282,7 @@ class RegisterView(generics.CreateAPIView):
                 'verification_required': not profile.email_verified,
                 'email_sent': delivery.sent,
                 'auto_verified': delivery.auto_verified,
+                'email_failure_reason': delivery.failure_reason,
                 'detail': detail,
             },
             status=status.HTTP_201_CREATED,

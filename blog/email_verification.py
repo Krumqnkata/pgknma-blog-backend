@@ -22,11 +22,65 @@ from .models import EmailVerificationToken, SiteSettings, UserProfile
 
 logger = logging.getLogger(__name__)
 
+DAILY_QUOTA_EXCEEDED = 'daily_quota_exceeded'
+MONTHLY_QUOTA_EXCEEDED = 'monthly_quota_exceeded'
+RATE_LIMIT_EXCEEDED = 'rate_limit_exceeded'
+SERVICE_UNAVAILABLE = 'service_unavailable'
+DELIVERY_FAILED = 'delivery_failed'
+
 
 @dataclass(frozen=True)
 class VerificationDeliveryResult:
     sent: bool
     auto_verified: bool
+    failure_reason: str | None = None
+
+
+def _delivery_failure_reason(exc):
+    """Return a stable, frontend-safe reason for an email delivery failure."""
+
+    status_code = getattr(exc, 'status_code', None)
+    response = getattr(exc, 'response', None)
+    payload = {}
+    if response is not None:
+        try:
+            candidate = response.json()
+            if isinstance(candidate, dict):
+                payload = candidate
+        except (AttributeError, TypeError, ValueError):
+            pass
+
+    error_type = next(
+        (
+            payload.get(key)
+            for key in ('name', 'type', 'code')
+            if isinstance(payload.get(key), str)
+        ),
+        '',
+    ).strip().lower()
+    searchable_text = ' '.join(
+        str(value)
+        for value in (
+            error_type,
+            payload.get('message', ''),
+            getattr(response, 'text', ''),
+        )
+        if value
+    ).lower()
+
+    for known_reason in (
+        DAILY_QUOTA_EXCEEDED,
+        MONTHLY_QUOTA_EXCEEDED,
+        RATE_LIMIT_EXCEEDED,
+    ):
+        if known_reason in searchable_text:
+            return known_reason
+
+    if status_code == 429:
+        return RATE_LIMIT_EXCEEDED
+    if status_code is not None and status_code >= 500:
+        return SERVICE_UNAVAILABLE
+    return DELIVERY_FAILED
 
 
 def _token_hash(raw_token):
@@ -131,10 +185,12 @@ def send_verification_email(user):
     try:
         message.send(fail_silently=False)
         return VerificationDeliveryResult(sent=True, auto_verified=False)
-    except Exception:
+    except Exception as exc:
+        failure_reason = _delivery_failure_reason(exc)
         logger.exception(
-            'Email verification delivery failed for user %s',
+            'Email verification delivery failed for user %s (reason=%s)',
             user.pk,
+            failure_reason,
         )
         now = timezone.now()
         EmailVerificationToken.objects.filter(
@@ -146,8 +202,16 @@ def send_verification_email(user):
             with transaction.atomic():
                 locked_user = User.objects.select_for_update().get(pk=user.pk)
                 _mark_verified(locked_user, verified_at=now)
-            return VerificationDeliveryResult(sent=False, auto_verified=True)
-        return VerificationDeliveryResult(sent=False, auto_verified=False)
+            return VerificationDeliveryResult(
+                sent=False,
+                auto_verified=True,
+                failure_reason=failure_reason,
+            )
+        return VerificationDeliveryResult(
+            sent=False,
+            auto_verified=False,
+            failure_reason=failure_reason,
+        )
 
 
 def verify_email_token(raw_token):
