@@ -2,12 +2,13 @@ from datetime import timedelta
 
 from django.contrib.sessions.models import Session as DjangoSession
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 from valentine.models import Register, ValentineLoginAttempt
 
-from .models import BlogLoginSession, ConsentRecord
+from .models import BlogLoginSession, ConsentRecord, EmailVerificationToken
 
 
 def cleanup_personal_data(*, days, now=None, dry_run=False):
@@ -26,6 +27,9 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
     )
     expired_django_sessions = DjangoSession.objects.filter(expire_date__lt=now)
     expired_jwt_tokens = OutstandingToken.objects.filter(expires_at__lt=now)
+    old_email_verification_tokens = EmailVerificationToken.objects.filter(
+        Q(expires_at__lt=cutoff) | Q(used_at__lt=cutoff)
+    )
 
     counts = {
         'consent_records': old_consents.count(),
@@ -34,6 +38,7 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         'valentine_login_attempts': old_valentine_attempts.count(),
         'expired_django_sessions': expired_django_sessions.count(),
         'expired_jwt_tokens': expired_jwt_tokens.count(),
+        'email_verification_tokens': old_email_verification_tokens.count(),
     }
     if dry_run:
         return counts
@@ -47,5 +52,6 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         old_valentine_attempts.delete()
         expired_django_sessions.delete()
         expired_jwt_tokens.delete()
+        old_email_verification_tokens.delete()
 
     return counts

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="bg">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Потвърдете имейл адреса си</title>
+  </head>
+  <body style="margin:0; padding:0; background-color:#e8f5e6; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <!-- Preheader (скрит текст, показван в inbox preview) -->
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0;">
+      Потвърдете имейл адреса си, за да активирате профила си в ПГКНМА Блог.
+    </div>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#e8f5e6; padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; background-color:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 4px 24px rgba(20,40,80,0.08);">
+
+            <!-- Header с градиент и SVG лого -->
+            <tr>
+              <td style="background:linear-gradient(135deg,#629460 0%,#4f7a4d 55%,#243119 100%); padding:40px 32px 32px 32px;" align="center">
+                <svg width="72" height="72" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg" style="display:block; margin:0 auto 16px auto;">
+                  <circle cx="36" cy="36" r="34" fill="#ffffff" fill-opacity="0.12" stroke="#ffffff" stroke-opacity="0.35" stroke-width="1.5"/>
+                  <path d="M20 46V26L36 18L52 26V46" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M26 32L36 27L46 32" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+                  <rect x="30" y="36" width="12" height="10" rx="1.5" stroke="#ffffff" stroke-width="2"/>
+                  <circle cx="36" cy="41" r="1.6" fill="#ffffff"/>
+                  <path d="M18 50c4-3 8-4 18-4s14 1 18 4" stroke="#ffffff" stroke-width="2" stroke-linecap="round" opacity="0.55"/>
+                </svg>
+                <div style="color:#ffffff; font-size:13px; letter-spacing:2px; text-transform:uppercase; opacity:0.85; font-weight:600;">
+                  ПГКНМА Блог
+                </div>
+                <div style="color:#ffffff; font-size:20px; font-weight:700; margin-top:6px;">
+                  Потвърждение на имейл
+                </div>
+              </td>
+            </tr>
+
+            <!-- Тяло на писмото -->
+            <tr>
+              <td style="padding:36px 32px 12px 32px;">
+                <p style="margin:0 0 4px 0; font-size:18px; color:#243119; font-weight:600;">
+                  Здравей, {{ username }}! 👋
+                </p>
+                <p style="margin:14px 0 0 0; font-size:15px; line-height:1.6; color:#4b5563;">
+                  Благодарим ти за регистрацията в <strong>ПГКНМА Блог</strong>. За да активираш профила си, натисни бутона по-долу:
+                </p>
+                <p style="margin:14px 0 0 0; font-size:13.5px; line-height:1.5; color:#629460; font-weight:600;">
+                  ⏱ Линкът за активация е валиден до {{ expiry_time }}.
+                </p>
+                <p style="margin:18px 0 0 0; font-size:13.5px; line-height:1.6; color:#6b7280;">
+                  Ако срещнеш проблем с регистрацията, просто отговори на този имейл — ще се свържем с теб.
+                </p>
+              </td>
+            </tr>
+
+            <!-- CTA бутон -->
+            <tr>
+              <td align="center" style="padding:24px 32px;">
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center" style="border-radius:10px; background:linear-gradient(135deg,#629460,#4f7a4d); box-shadow:0 4px 12px rgba(98,148,96,0.4);">
+                      <a href="{{ verification_url }}"
+                         style="display:inline-block; padding:14px 32px; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:10px;">
+                        Активирай профила си →
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Алтернативен линк -->
+            <tr>
+              <td style="padding:4px 32px 28px 32px;">
+                <p style="margin:0 0 8px 0; font-size:13px; color:#6b7280;">
+                  Ако бутонът не работи, копирай следния линк в браузъра си:
+                </p>
+                <p style="margin:0; font-size:12.5px; word-break:break-all; background-color:#eef5ec; border-radius:8px; padding:12px 14px; font-family:monospace;">
+                  <a href="{{ verification_url }}" style="color:#629460; text-decoration:underline;">{{ verification_url }}</a>
+                </p>
+              </td>
+            </tr>
+
+            <!-- Разделител -->
+            <tr>
+              <td style="padding:0 32px;">
+                <div style="height:1px; background-color:#dcebd9;"></div>
+              </td>
+            </tr>
+
+            <!-- Футър -->
+            <tr>
+              <td style="padding:24px 32px 32px 32px;" align="center">
+                <p style="margin:0 0 6px 0; font-size:12.5px; color:#9ca3af; line-height:1.6;">
+                  Ако не си правил/а тази регистрация, просто игнорирай този имейл.
+                </p>
+                <p style="margin:12px 0 0 0; font-size:12px; color:#b0b6c0;">
+                  © Професионална гимназия по компютърни науки и математически анализи "Проф. Минко Балкански" · ПГКНМА Блог
+                </p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

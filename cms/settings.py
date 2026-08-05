@@ -131,6 +131,35 @@ TURNSTILE_VERIFY_URL = (
     "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 )
 
+# Transactional email is sent through Resend's HTTPS API via django-anymail.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+ANYMAIL = {"RESEND_API_KEY": RESEND_API_KEY}
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL",
+    "PGKNMA Blog <noreply@pgknma.space>",
+).strip()
+EMAIL_VERIFICATION_REPLY_TO = os.getenv(
+    "EMAIL_VERIFICATION_REPLY_TO",
+    "support@pgknma.space",
+).strip()
+PUBLIC_SITE_URL = os.getenv(
+    "PUBLIC_SITE_URL",
+    "http://127.0.0.1:8000" if DEBUG else "https://pgknma.space",
+).strip().rstrip("/")
+FRONTEND_URL = os.getenv(
+    "FRONTEND_URL",
+    "http://127.0.0.1:5173" if DEBUG else "https://pgknma.space",
+).strip().rstrip("/")
+EMAIL_VERIFICATION_TOKEN_TTL_SECONDS = env_int(
+    "EMAIL_VERIFICATION_TOKEN_TTL_SECONDS",
+    86400,
+)
+EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS = env_int(
+    "EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS",
+    60,
+)
+
 INSTALLED_APPS = [
     'unfold',
     "unfold.contrib.filters",  # За по-добри филтри вдясно
@@ -147,6 +176,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'anymail',
     'blog',
     'valentine',
     'django_cleanup.apps.CleanupConfig',
@@ -363,6 +393,10 @@ REST_FRAMEWORK = {
         'profile_avatar': os.getenv(
             "THROTTLE_PROFILE_AVATAR",
             "10/hour",
+        ),
+        'email_verification_resend': os.getenv(
+            "THROTTLE_EMAIL_VERIFICATION_RESEND",
+            "3/hour",
         ),
     },
 }

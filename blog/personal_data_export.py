@@ -241,6 +241,12 @@ def build_personal_data_export(user):
                 user.groups.order_by('name').values_list('name', flat=True)
             ),
             'blog_profile_exists': profile is not None,
+            'email_verification': {
+                'verified': profile.email_verified if profile else True,
+                'verified_at': (
+                    _iso(profile.email_verified_at) if profile else None
+                ),
+            },
             'avatar': avatar,
             'google_identity': google_identity,
         },

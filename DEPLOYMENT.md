@@ -70,7 +70,18 @@ python -c "import secrets; print(secrets.token_urlsafe(64))"
 - `ENABLE_GOOGLE_AUTH=True` и Google client ID, ако Google входът ще се
   използва; иначе остави флага `False` и client ID празен;
 - точните публични hosts и origins;
-- trusted-proxy настройките само след изпълнение на изискванията от секция 7.
+- trusted-proxy настройките само след изпълнение на изискванията от секция 7;
+- `RESEND_API_KEY` от Resend и потвърден домейн за адреса в
+  `DEFAULT_FROM_EMAIL`;
+- `PUBLIC_SITE_URL=https://pgknma.space` за backend линка и
+  `FRONTEND_URL=https://pgknma.space` за връщането след потвърждение.
+
+Имейлите се изпращат директно през Resend HTTPS API посредством
+`django-anymail`; SMTP не се използва. В Resend потвърди домейна
+`pgknma.space`, създай API key само с права за изпращане и го пази единствено
+в `.env`. Аварийната настройка „Автоматично потвърждение при проблем с имейл
+услугата“ е изключена по подразбиране и се включва временно само от
+суперпотребител в „Настройки на сайта“.
 
 Булевите стойности приемат само `true/false`, `1/0`, `yes/no` или `on/off`.
 Грешно изписана стойност спира приложението вместо тихо да изключи защита.

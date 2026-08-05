@@ -410,12 +410,13 @@ admin.site.unregister(User)
 class UserProfileAdmin(ModelAdmin):
     list_display = (
         'user',
+        'email_verified',
         'avatar_preview',
         'avatar_source',
         'avatar_preset',
         'avatar_updated_at',
     )
-    list_filter = ('avatar_source', 'avatar_updated_at')
+    list_filter = ('email_verified', 'avatar_source', 'avatar_updated_at')
     search_fields = ('user__username', 'user__email')
     ordering = ('-avatar_updated_at', 'user__username')
     readonly_fields = (
@@ -425,6 +426,8 @@ class UserProfileAdmin(ModelAdmin):
         'avatar_preset',
         'avatar_user_selected',
         'avatar_updated_at',
+        'email_verified',
+        'email_verified_at',
     )
     exclude = ('avatar',)
     actions = ('reset_selected_avatars',)
@@ -1131,7 +1134,7 @@ class ConsentRecordAdmin(ModelAdmin):
 @admin.register(SiteSettings)
 class SiteSettingsAdmin(ModelAdmin):
     change_form_template = 'admin/site_settings_change_form.html'
-    list_display = ('__str__', 'maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'enable_program_page')
+    list_display = ('__str__', 'maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'auto_verify_on_email_failure', 'enable_program_page')
 
     class Media:
         css = {

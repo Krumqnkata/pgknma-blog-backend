@@ -44,6 +44,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
     avatar_source = serializers.SerializerMethodField()
     avatar_preset = serializers.SerializerMethodField()
+    email_verified = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -55,6 +56,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             'avatar_url',
             'avatar_source',
             'avatar_preset',
+            'email_verified',
         )
         read_only_fields = fields
 
@@ -75,6 +77,10 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     def get_avatar_preset(self, obj) -> str:
         profile = _user_profile(obj)
         return profile.avatar_preset if profile else ''
+
+    def get_email_verified(self, obj) -> bool:
+        profile = _user_profile(obj)
+        return profile.email_verified if profile else True
 
 
 class ProfileAvatarUpdateSerializer(serializers.Serializer):
@@ -359,7 +365,12 @@ class RegisterSerializer(serializers.ModelSerializer):
                 user.save()
 
                 # Създаваме свързания UserProfile
-                UserProfile.objects.get_or_create(user=user)
+                profile, _ = UserProfile.objects.get_or_create(user=user)
+                profile.email_verified = False
+                profile.email_verified_at = None
+                profile.save(
+                    update_fields=('email_verified', 'email_verified_at')
+                )
         except IntegrityError:
             raise serializers.ValidationError({
                 'detail': (
@@ -747,6 +758,18 @@ class ApiDetailResponseSerializer(serializers.Serializer):
     )
 
 
+class RegistrationResponseSerializer(ApiDetailResponseSerializer):
+    username = serializers.CharField()
+    email = serializers.EmailField()
+    verification_required = serializers.BooleanField()
+    email_sent = serializers.BooleanField()
+    auto_verified = serializers.BooleanField()
+
+
+class EmailVerificationResendRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
 class BlogSessionRevokeOthersResponseSerializer(ApiDetailResponseSerializer):
     revoked_count = serializers.IntegerField(
         min_value=0,
@@ -780,6 +803,14 @@ class PersonalDataExportSchemaSerializer(serializers.Serializer):
 class BlogTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         data = TokenObtainSerializer.validate(self, attrs)
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        if not profile.email_verified:
+            raise serializers.ValidationError({
+                'detail': (
+                    'Потвърдете имейл адреса си, преди да влезете.'
+                ),
+                'code': 'email_not_verified',
+            })
         _, refresh = issue_session_tokens(
             self.user,
             self.context['request'],

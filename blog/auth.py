@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from .models import GoogleIdentity, SiteSettings, UserProfile
 from .avatars import AvatarImportError, import_google_avatar_once
+from .email_verification import mark_google_email_verified
 from .permissions import SiteIsAvailable
 from .serializer import CurrentUserSerializer
 from .session_auth import issue_session_tokens
@@ -216,6 +217,8 @@ class GoogleAuthView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
+        mark_google_email_verified(user)
+
         try:
             import_google_avatar_once(user, id_info.get('picture'))
         except AvatarImportError as exc:
@@ -367,6 +370,8 @@ class GoogleLinkView(APIView):
                 {'error': 'Свързването с Google временно не е достъпно.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+
+        mark_google_email_verified(user)
 
         try:
             import_google_avatar_once(user, id_info.get('picture'))

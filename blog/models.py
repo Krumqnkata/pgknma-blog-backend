@@ -391,6 +391,19 @@ class UserProfile(models.Model):
         null=True,
         verbose_name='Аватарът е променен на',
     )
+    email_verified = models.BooleanField(
+        default=True,
+        verbose_name='Потвърден имейл',
+        help_text=(
+            'Само публичните регистрации с имейл и парола започват като '
+            'непотвърдени. Google и администраторските акаунти са потвърдени.'
+        ),
+    )
+    email_verified_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Имейлът е потвърден на',
+    )
 
     class Meta:
         verbose_name = 'Профилна снимка'
@@ -409,6 +422,49 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"Профил на {self.user.username}"
+
+
+class EmailVerificationToken(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='email_verification_tokens',
+        verbose_name='Потребител',
+    )
+    token_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        editable=False,
+        verbose_name='Хеш на токена',
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Създаден на',
+    )
+    expires_at = models.DateTimeField(verbose_name='Изтича на')
+    used_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Използван на',
+    )
+
+    class Meta:
+        verbose_name = 'Токен за потвърждение на имейл'
+        verbose_name_plural = 'Токени за потвърждение на имейли'
+        ordering = ('-created_at',)
+        indexes = [
+            models.Index(
+                fields=('user', 'used_at', 'created_at'),
+                name='blog_email_verify_user_idx',
+            ),
+            models.Index(
+                fields=('expires_at',),
+                name='blog_email_verify_exp_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f'Потвърждение за {self.user.username}'
 
 
 @receiver(post_save, sender=User)
@@ -853,6 +909,15 @@ class SiteSettings(models.Model):
     enable_weekly_poll = models.BooleanField(default=True, verbose_name="Активирана 'Седмична анкета'", help_text="Активира/деактивира показването на седмичната анкета на сайта.")
     enable_meme_of_the_week = models.BooleanField(default=True, verbose_name="Активирано 'Меме на седмицата'", help_text="Позволява на потребителите да качват и гласуват за мемета.")
     enable_user_registration = models.BooleanField(default=True, verbose_name="Активирани 'Регистрации на потребители'", help_text="Позволява на нови потребители да се регистрират в системата.")
+    auto_verify_on_email_failure = models.BooleanField(
+        default=False,
+        verbose_name='Автоматично потвърждение при проблем с имейл услугата',
+        help_text=(
+            'Аварийна настройка: ако Resend не успее да изпрати писмото, '
+            'новият акаунт се потвърждава автоматично. Оставете изключено '
+            'при нормална работа.'
+        ),
+    )
     enable_program_page = models.BooleanField(default=True, verbose_name="Активирана страница 'Програма'", help_text="Показва или скрива страницата с учебната програма.")
 
     class Meta:

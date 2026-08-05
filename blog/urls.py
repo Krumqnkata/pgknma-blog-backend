@@ -56,6 +56,16 @@ urlpatterns = [
 
     # Път за регистрация
     path('auth/register/', blog_views.RegisterView.as_view(), name='register'),
+    path(
+        'auth/verify-email/',
+        blog_views.EmailVerificationConfirmView.as_view(),
+        name='email-verification-confirm',
+    ),
+    path(
+        'auth/verify-email/resend/',
+        blog_views.EmailVerificationResendView.as_view(),
+        name='email-verification-resend',
+    ),
     path('auth/check-username/', blog_views.CheckUsernameView.as_view(), name='check-username'),
     path('auth/validate-password/', blog_views.ValidatePasswordView.as_view(), name='validate-password'),
     path('auth/profile/change-password/', blog_views.PasswordChangeView.as_view(), name='password-change'),

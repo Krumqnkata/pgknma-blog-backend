@@ -6,7 +6,7 @@ from django.core.exceptions import ValidationError
 from django.core.serializers.json import DjangoJSONEncoder
 from django.contrib.auth import password_validation
 from django.db import IntegrityError, transaction
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseRedirect
 from django.utils.cache import patch_vary_headers
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -49,6 +49,7 @@ from .serializer import (
     ApiDetailResponseSerializer, BlogSessionRevokeOthersResponseSerializer, PersonalDataExportSchemaSerializer,
     CurrentUserSerializer, ProfileAvatarUpdateSerializer,
     CurrentProfileResponseSerializer, AvatarUpdateResponseSerializer,
+    RegistrationResponseSerializer, EmailVerificationResendRequestSerializer,
 )
 from .avatars import (
     avatar_options_payload,
@@ -57,6 +58,11 @@ from .avatars import (
     set_profile_preset,
 )
 from .personal_data_export import build_personal_data_export
+from .email_verification import (
+    resend_is_on_cooldown,
+    send_verification_email,
+    verify_email_token,
+)
 from .session_auth import (
     SESSION_ID_CLAIM,
     SessionJWTAuthentication,
@@ -219,6 +225,101 @@ class RegisterView(generics.CreateAPIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         return super().post(request, *args, **kwargs)
+
+    @extend_schema(
+        operation_id='auth_register',
+        summary='Регистрация с имейл, парола и последващо потвърждение',
+        request=RegisterSerializer,
+        responses={201: RegistrationResponseSerializer},
+        tags=['Автентикация'],
+    )
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        delivery = send_verification_email(user)
+        profile = UserProfile.objects.get(user=user)
+
+        if delivery.auto_verified:
+            detail = (
+                'Профилът е създаден и потвърден автоматично, защото '
+                'имейл услугата временно не е достъпна.'
+            )
+        elif delivery.sent:
+            detail = (
+                'Изпратихме линк за потвърждение. Проверете и папка „Спам“. '
+                'Точният срок на валидност е посочен в писмото.'
+            )
+        else:
+            detail = (
+                'Профилът е създаден, но писмото не можа да бъде изпратено. '
+                'Използвайте „Изпрати отново“ след малко.'
+            )
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(
+            {
+                'username': user.username,
+                'email': user.email,
+                'verification_required': not profile.email_verified,
+                'email_sent': delivery.sent,
+                'auto_verified': delivery.auto_verified,
+                'detail': detail,
+            },
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
+
+
+class EmailVerificationConfirmView(APIView):
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+
+    @extend_schema(exclude=True)
+    def get(self, request):
+        result = verify_email_token(request.query_params.get('token', ''))
+        target = f'{settings.FRONTEND_URL}/verify-email?status={result}'
+        return HttpResponseRedirect(target)
+
+
+class EmailVerificationResendView(APIView):
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+    throttle_scope = 'email_verification_resend'
+
+    @extend_schema(
+        operation_id='email_verification_resend',
+        summary='Повторно изпращане на имейл за потвърждение',
+        request=EmailVerificationResendRequestSerializer,
+        responses={202: ApiDetailResponseSerializer},
+        tags=['Автентикация'],
+    )
+    def post(self, request):
+        payload = EmailVerificationResendRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        email = User.objects.normalize_email(
+            payload.validated_data['email']
+        ).strip().lower()
+        if email:
+            user = User.objects.filter(email__iexact=email).first()
+            if user:
+                profile, _ = UserProfile.objects.get_or_create(user=user)
+                if (
+                    user.is_active
+                    and not profile.email_verified
+                    and not resend_is_on_cooldown(user)
+                ):
+                    send_verification_email(user)
+
+        return Response(
+            {
+                'detail': (
+                    'Ако има непотвърден профил с този имейл, изпратихме '
+                    'нов линк или приложихме аварийната настройка.'
+                )
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class CurrentProfileView(APIView):
