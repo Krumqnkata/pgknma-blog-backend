@@ -5,13 +5,14 @@ from datetime import timedelta
 import hashlib
 import logging
 import secrets
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.template.loader import render_to_string
+from django.templatetags.static import static
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import strip_tags
@@ -108,6 +109,10 @@ def send_verification_email(user):
             'username': user.username,
             'verification_url': _verification_url(raw_token),
             'expiry_time': expiry_time,
+            'logo_url': urljoin(
+                f'{settings.PUBLIC_SITE_URL}/',
+                static('images/logo-sm.png').lstrip('/'),
+            ),
         },
     )
     message = EmailMultiAlternatives(

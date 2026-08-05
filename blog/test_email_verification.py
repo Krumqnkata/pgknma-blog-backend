@@ -55,6 +55,11 @@ class EmailVerificationTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Потвърдете имейла си', mail.outbox[0].subject)
         self.assertIn('/api/auth/verify-email/?token=', mail.outbox[0].body)
+        html_body = mail.outbox[0].alternatives[0].content
+        self.assertIn(
+            'src="https://pgknma.space/static/images/logo-sm.png"',
+            html_body,
+        )
 
         token = EmailVerificationToken.objects.get(user=user)
         verification_url = next(
