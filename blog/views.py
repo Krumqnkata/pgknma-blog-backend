@@ -28,8 +28,10 @@ from rest_framework.exceptions import (
 )
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.html import escape
 from datetime import timedelta
 import re
+from urllib.parse import urljoin
 from django.db.models import BooleanField, Count, Exists, OuterRef, Q, Value
 from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
@@ -112,6 +114,58 @@ class PostViewSet(viewsets.ModelViewSet):
             .annotate(visible_at=Coalesce('published_at', 'created_at'))
             .order_by('-visible_at')
         )
+
+    @action(
+        detail=True,
+        methods=['get'],
+        url_path='share-preview',
+        permission_classes=[AllowAny],
+    )
+    def share_preview(self, request, pk=None):
+        """Return crawler-friendly metadata, then send readers to the SPA post."""
+        post = self.get_object()
+        canonical_url = f'{settings.PUBLIC_SITE_URL}/post/{post.pk}'
+        image_url = (
+            urljoin(f'{settings.PUBLIC_SITE_URL}/', post.banner.url.lstrip('/'))
+            if post.banner and hasattr(post.banner, 'url')
+            else f'{settings.PUBLIC_SITE_URL}/social-preview.jpg'
+        )
+        title = f'{post.title} | ПГКНМА Блог'
+        description = post.hook or 'Новини и събития от ПГКНМА.'
+
+        html = f'''<!doctype html>
+<html lang="bg">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escape(title)}</title>
+  <meta name="description" content="{escape(description)}">
+  <meta name="robots" content="noindex, follow">
+  <link rel="canonical" href="{escape(canonical_url)}">
+  <meta property="og:title" content="{escape(title)}">
+  <meta property="og:description" content="{escape(description)}">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="{escape(canonical_url)}">
+  <meta property="og:site_name" content="ПГКНМА Блог">
+  <meta property="og:locale" content="bg_BG">
+  <meta property="og:image" content="{escape(image_url)}">
+  <meta property="og:image:secure_url" content="{escape(image_url)}">
+  <meta property="og:image:alt" content="{escape(post.title)}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{escape(title)}">
+  <meta name="twitter:description" content="{escape(description)}">
+  <meta name="twitter:image" content="{escape(image_url)}">
+  <meta http-equiv="refresh" content="0;url={escape(canonical_url)}">
+</head>
+<body>
+  <p>Отваряне на <a href="{escape(canonical_url)}">{escape(post.title)}</a>…</p>
+  <script>window.location.replace({json.dumps(canonical_url)});</script>
+</body>
+</html>'''
+        response = HttpResponse(html, content_type='text/html; charset=utf-8')
+        response['Cache-Control'] = 'public, max-age=300, stale-while-revalidate=86400'
+        response['X-Robots-Tag'] = 'noindex, follow'
+        return response
 
 
 class ProtectedMemeImageView(APIView):

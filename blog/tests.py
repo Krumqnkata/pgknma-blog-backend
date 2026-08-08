@@ -86,6 +86,42 @@ def public_post(author, suffix='one', **overrides):
     return Posts.objects.create(**values)
 
 
+@override_settings(PUBLIC_SITE_URL='https://pgknma.space')
+class PostSharePreviewTests(TestCase):
+    def setUp(self):
+        self.user = make_user('preview-author')
+        self.post = public_post(
+            self.user,
+            'preview',
+            title='Новина <тест>',
+            hook='Описание & още',
+        )
+
+    def test_preview_contains_safe_social_metadata_and_redirect(self):
+        response = self.client.get(reverse('posts-share-preview', args=[self.post.pk]))
+        content = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/html; charset=utf-8')
+        self.assertContains(response, 'property="og:type" content="article"')
+        self.assertContains(response, 'name="twitter:card" content="summary_large_image"')
+        self.assertContains(response, 'Новина &lt;тест&gt;')
+        self.assertContains(response, 'Описание &amp; още')
+        self.assertIn(f'https://pgknma.space/post/{self.post.pk}', content)
+
+    def test_preview_does_not_expose_draft_posts(self):
+        draft = public_post(
+            self.user,
+            'preview-draft',
+            published=False,
+            allowed=False,
+        )
+
+        response = self.client.get(reverse('posts-share-preview', args=[draft.pk]))
+
+        self.assertEqual(response.status_code, 404)
+
+
 class ContentVisibilityTests(TestCase):
     def setUp(self):
         self.client = APIClient()
