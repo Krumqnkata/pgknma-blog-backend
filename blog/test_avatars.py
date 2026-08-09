@@ -83,6 +83,7 @@ class AvatarApiTests(APITestCase):
     def test_profile_role_follows_django_admin_access(self):
         regular_response = self.client.get('/api/profile/')
         self.assertIsNone(regular_response.data['user']['site_role'])
+        self.assertFalse(regular_response.data['user']['can_access_admin'])
 
         self.user.is_staff = True
         self.user.save(update_fields=('is_staff',))
@@ -91,6 +92,7 @@ class AvatarApiTests(APITestCase):
             contributor_response.data['user']['site_role'],
             'contributor',
         )
+        self.assertTrue(contributor_response.data['user']['can_access_admin'])
 
         self.user.is_superuser = True
         self.user.save(update_fields=('is_superuser',))
@@ -99,6 +101,7 @@ class AvatarApiTests(APITestCase):
             administrator_response.data['user']['site_role'],
             'administrator',
         )
+        self.assertTrue(administrator_response.data['user']['can_access_admin'])
 
     def test_preset_and_reset_to_initials(self):
         preset_response = self.client.put(

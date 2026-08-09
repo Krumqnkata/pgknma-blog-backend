@@ -71,6 +71,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     avatar_preset = serializers.SerializerMethodField()
     email_verified = serializers.SerializerMethodField()
     site_role = serializers.SerializerMethodField()
+    can_access_admin = serializers.SerializerMethodField()
     equipped_rewards = serializers.SerializerMethodField()
 
     class Meta:
@@ -85,6 +86,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             'avatar_preset',
             'email_verified',
             'site_role',
+            'can_access_admin',
             'equipped_rewards',
         )
         read_only_fields = fields
@@ -113,6 +115,9 @@ class CurrentUserSerializer(serializers.ModelSerializer):
 
     def get_site_role(self, obj) -> str | None:
         return get_site_role(obj)
+
+    def get_can_access_admin(self, obj) -> bool:
+        return bool(obj.is_active and obj.is_staff)
 
     def get_equipped_rewards(self, obj) -> list[dict]:
         return _user_equipped_rewards(obj)
