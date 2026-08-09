@@ -21,7 +21,7 @@ from django.views.generic.base import RedirectView
 from valentine import views
 from blog.serializer import MyTokenObtainPairView
 from blog.session_auth import SessionTokenRefreshSerializer
-from blog.views import blocked_meme_media, hqs
+from blog.views import blocked_meme_media, hqs, post_page
 from django.contrib.sitemaps.views import sitemap
 from blog.sitemaps import PostSitemap, StaticSitemap
 
@@ -31,6 +31,7 @@ sitemaps = {
 }
 
 urlpatterns = [
+    path('post/<int:pk>', post_page, name='post-page'),
     path('admin/', admin.site.urls),
     
     # Включване на всички пътища от приложението 'blog' под префикс 'api/'

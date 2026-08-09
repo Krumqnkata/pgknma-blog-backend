@@ -151,6 +151,12 @@ FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "http://127.0.0.1:5173" if DEBUG else "https://pgknma.space",
 ).strip().rstrip("/")
+_production_frontend_index = BASE_DIR.parent.parent / "dist" / "index.html"
+_local_frontend_index = BASE_DIR.parent.parent / "Frontend" / "dist" / "index.html"
+FRONTEND_INDEX_PATH = Path(os.getenv(
+    "FRONTEND_INDEX_PATH",
+    str(_local_frontend_index if DEBUG and _local_frontend_index.exists() else _production_frontend_index),
+))
 EMAIL_VERIFICATION_TOKEN_TTL_SECONDS = env_int(
     "EMAIL_VERIFICATION_TOKEN_TTL_SECONDS",
     86400,

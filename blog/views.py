@@ -76,6 +76,100 @@ from .session_auth import (
 )
 
 
+def _public_posts_queryset():
+    now = timezone.now()
+    return (
+        Posts.objects.filter(published=True, allowed=True)
+        .filter(Q(published_at__isnull=True) | Q(published_at__lte=now))
+        .annotate(visible_at=Coalesce('published_at', 'created_at'))
+        .order_by('-visible_at')
+    )
+
+
+def _post_social_metadata(post):
+    canonical_url = f'{settings.PUBLIC_SITE_URL}/post/{post.pk}'
+    image_url = (
+        urljoin(f'{settings.PUBLIC_SITE_URL}/', post.banner.url.lstrip('/'))
+        if post.banner and hasattr(post.banner, 'url')
+        else f'{settings.PUBLIC_SITE_URL}/social-preview.jpg'
+    )
+    return {
+        'canonical_url': canonical_url,
+        'image_url': image_url,
+        'title': f'{post.title} | ПГКНМА Блог',
+        'description': post.hook or 'Новини и събития от ПГКНМА.',
+    }
+
+
+def _post_social_head(post):
+    metadata = _post_social_metadata(post)
+    published_at = post.published_at or post.created_at
+    image_type = mimetypes.guess_type(metadata['image_url'])[0] or 'image/jpeg'
+    return f'''  <title>{escape(metadata['title'])}</title>
+  <meta name="description" content="{escape(metadata['description'])}">
+  <link rel="canonical" href="{escape(metadata['canonical_url'])}">
+  <meta property="og:title" content="{escape(metadata['title'])}">
+  <meta property="og:description" content="{escape(metadata['description'])}">
+  <meta property="og:type" content="article">
+  <meta property="og:url" content="{escape(metadata['canonical_url'])}">
+  <meta property="og:site_name" content="ПГКНМА Блог">
+  <meta property="og:locale" content="bg_BG">
+  <meta property="og:image" content="{escape(metadata['image_url'])}">
+  <meta property="og:image:secure_url" content="{escape(metadata['image_url'])}">
+  <meta property="og:image:type" content="{escape(image_type)}">
+  <meta property="og:image:alt" content="{escape(post.title)}">
+  <meta property="article:published_time" content="{published_at.isoformat()}">
+  <meta property="article:section" content="{escape(str(post.category))}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="{escape(metadata['title'])}">
+  <meta name="twitter:description" content="{escape(metadata['description'])}">
+  <meta name="twitter:image" content="{escape(metadata['image_url'])}">
+  <meta name="twitter:image:alt" content="{escape(post.title)}">'''
+
+
+_SOCIAL_HEAD_PATTERNS = (
+    re.compile(r'<title\b[^>]*>.*?</title>\s*', re.IGNORECASE | re.DOTALL),
+    re.compile(r'<meta\s+name=["\']description["\'][^>]*>\s*', re.IGNORECASE),
+    re.compile(r'<link\s+rel=["\']canonical["\'][^>]*>\s*', re.IGNORECASE),
+    re.compile(r'<meta\s+property=["\'](?:og:|article:)[^"\']+["\'][^>]*>\s*', re.IGNORECASE),
+    re.compile(r'<meta\s+name=["\']twitter:[^"\']+["\'][^>]*>\s*', re.IGNORECASE),
+)
+
+
+def post_page(request, pk):
+    """Serve the React app with crawler-visible metadata for one public post."""
+    post = get_object_or_404(_public_posts_queryset().select_related('category'), pk=pk)
+    try:
+        html = settings.FRONTEND_INDEX_PATH.read_text(encoding='utf-8')
+    except (OSError, UnicodeError):
+        return HttpResponse(
+            'Frontend build is not available.',
+            status=503,
+            content_type='text/plain; charset=utf-8',
+        )
+
+    for pattern in _SOCIAL_HEAD_PATTERNS:
+        html = pattern.sub('', html)
+    social_head = _post_social_head(post)
+    html, replacements = re.subn(
+        r'</head>',
+        f'{social_head}\n</head>',
+        html,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if replacements != 1:
+        return HttpResponse(
+            'Frontend build is invalid.',
+            status=503,
+            content_type='text/plain; charset=utf-8',
+        )
+
+    response = HttpResponse(html, content_type='text/html; charset=utf-8')
+    response['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=300'
+    return response
+
+
 def _with_vote_status(queryset, request, relation):
     if not request.user.is_authenticated:
         return queryset.annotate(
@@ -105,14 +199,10 @@ class PostViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'head', 'options']
 
     def get_queryset(self):
-        now = timezone.now()
         return (
-            Posts.objects.filter(published=True, allowed=True)
-            .filter(Q(published_at__isnull=True) | Q(published_at__lte=now))
+            _public_posts_queryset()
             .select_related('author', 'author__userprofile', 'category')
             .prefetch_related('images', 'documents')
-            .annotate(visible_at=Coalesce('published_at', 'created_at'))
-            .order_by('-visible_at')
         )
 
     @action(
@@ -124,14 +214,11 @@ class PostViewSet(viewsets.ModelViewSet):
     def share_preview(self, request, pk=None):
         """Return crawler-friendly metadata, then send readers to the SPA post."""
         post = self.get_object()
-        canonical_url = f'{settings.PUBLIC_SITE_URL}/post/{post.pk}'
-        image_url = (
-            urljoin(f'{settings.PUBLIC_SITE_URL}/', post.banner.url.lstrip('/'))
-            if post.banner and hasattr(post.banner, 'url')
-            else f'{settings.PUBLIC_SITE_URL}/social-preview.jpg'
-        )
-        title = f'{post.title} | ПГКНМА Блог'
-        description = post.hook or 'Новини и събития от ПГКНМА.'
+        metadata = _post_social_metadata(post)
+        canonical_url = metadata['canonical_url']
+        image_url = metadata['image_url']
+        title = metadata['title']
+        description = metadata['description']
 
         html = f'''<!doctype html>
 <html lang="bg">

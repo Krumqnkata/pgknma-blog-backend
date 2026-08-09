@@ -278,6 +278,30 @@ Reverse proxy конфигурацията трябва:
 - да забранява MIME sniffing и изпълнение на скриптове от качена медия;
 - да задава location-specific request body limits, описани по-долу.
 
+За да получават споделените публикации собствено заглавие, описание и
+банер, чистите `/post/<id>` адреси трябва да минат през Django преди общия
+SPA fallback. При Apache и application server на `127.0.0.1:8000` добави
+следните правила във HTTPS `VirtualHost` секцията, преди общия SPA rewrite:
+
+```apache
+ProxyPreserveHost On
+ProxyPassMatch "^/post/([0-9]+)/?$" "http://127.0.0.1:8000/post/$1"
+ProxyPassReverse "/post/" "http://127.0.0.1:8000/post/"
+```
+
+Съществуващите forwarded header правила за `/api/` трябва да важат и за
+този route. Модулите `proxy` и `proxy_http` обичайно вече са включени, щом
+Apache препраща `/api/` към Waitress. След промяната провери и презареди:
+
+```bash
+sudo apachectl configtest
+sudo systemctl reload apache2
+```
+
+Django връща същия `/var/www/blog/dist/index.html`, но инжектира Open Graph
+и Twitter metadata от конкретната публикация. Ако frontend build-ът е на
+друго място, задай абсолютния му път чрез `FRONTEND_INDEX_PATH`.
+
 Меметата са изключение от общото публично `/files/` правило. Те се
 визуализират само през `/api/memes/<id>/image/`, където Django проверява
 статуса, feature flag-а, собственика и maintenance режима. Постави следния

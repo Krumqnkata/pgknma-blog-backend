@@ -1,6 +1,7 @@
 import base64
 import tempfile
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
@@ -90,12 +91,67 @@ def public_post(author, suffix='one', **overrides):
 class PostSharePreviewTests(TestCase):
     def setUp(self):
         self.user = make_user('preview-author')
+        self.frontend_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.frontend_directory.cleanup)
+        self.frontend_index = Path(self.frontend_directory.name) / 'index.html'
+        self.frontend_index.write_text(
+            '''<!doctype html><html lang="bg"><head>
+<title>Default title</title>
+<meta name="description" content="Default description">
+<link rel="canonical" href="https://pgknma.space/">
+<meta property="og:title" content="Default title">
+<meta property="og:image" content="https://pgknma.space/default.jpg">
+<meta name="twitter:card" content="summary_large_image">
+</head><body><div id="root"></div><script src="/assets/app.js"></script></body></html>''',
+            encoding='utf-8',
+        )
         self.post = public_post(
             self.user,
             'preview',
             title='Новина <тест>',
             hook='Описание & още',
+            banner='posts/preview/banner.jpg',
         )
+
+    def test_clean_post_url_serves_spa_with_post_banner_metadata(self):
+        with override_settings(FRONTEND_INDEX_PATH=self.frontend_index):
+            response = self.client.get(reverse('post-page', args=[self.post.pk]))
+        content = response.content.decode()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<div id="root"></div>')
+        self.assertContains(response, '<script src="/assets/app.js"></script>')
+        self.assertContains(response, 'property="og:type" content="article"')
+        self.assertContains(
+            response,
+            'property="og:image" content="https://pgknma.space/files/posts/preview/banner.jpg"',
+        )
+        self.assertContains(response, 'Новина &lt;тест&gt;')
+        self.assertContains(response, 'Описание &amp; още')
+        self.assertNotIn('Default title', content)
+        self.assertNotIn('default.jpg', content)
+        self.assertNotIn('http-equiv="refresh"', content)
+
+    def test_clean_post_url_does_not_expose_draft_posts(self):
+        draft = public_post(
+            self.user,
+            'page-draft',
+            published=False,
+            allowed=False,
+        )
+
+        with override_settings(FRONTEND_INDEX_PATH=self.frontend_index):
+            response = self.client.get(reverse('post-page', args=[draft.pk]))
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_clean_post_url_fails_gracefully_without_frontend_build(self):
+        missing_index = Path(self.frontend_directory.name) / 'missing.html'
+
+        with override_settings(FRONTEND_INDEX_PATH=missing_index):
+            response = self.client.get(reverse('post-page', args=[self.post.pk]))
+
+        self.assertEqual(response.status_code, 503)
 
     def test_preview_contains_safe_social_metadata_and_redirect(self):
         response = self.client.get(reverse('posts-share-preview', args=[self.post.pk]))
