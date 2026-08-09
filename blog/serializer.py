@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
-    validate_meme_image_size, BlogLoginSession
+    validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge
 from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
 from django.conf import settings
 from django.contrib.auth.models import User, update_last_login
@@ -117,9 +117,24 @@ class AvatarOptionsSerializer(serializers.Serializer):
     presets = AvatarPresetSerializer(many=True)
 
 
+class PublicProfileSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = (
+            'bio',
+            'public_profile_enabled',
+            'show_email_on_profile',
+            'show_comments_on_profile',
+        )
+
+    def validate_bio(self, value):
+        return value.strip()
+
+
 class CurrentProfileResponseSerializer(serializers.Serializer):
     user = CurrentUserSerializer()
     avatar_options = AvatarOptionsSerializer()
+    public_profile = PublicProfileSettingsSerializer()
 
 
 class AvatarUpdateResponseSerializer(serializers.Serializer):
@@ -560,13 +575,140 @@ class NotificationSerializer(serializers.ModelSerializer):
     html_text = serializers.SerializerMethodField()
     class Meta:
         model = Notification
-        fields = ['id', 'text', 'enabled', 'created_at', 'html_text']
+        fields = [
+            'id', 'text', 'enabled', 'created_at', 'html_text',
+            'category', 'action_url',
+        ]
         read_only_fields = ['html_text']
 
     def get_html_text(self, obj):
         # Notifications are rendered as escaped plaintext. Only line breaks are
         # converted, so Markdown cannot synthesize javascript: links.
         return '<br>'.join(escape(obj.text).splitlines())
+
+
+class GamificationLevelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GamificationLevel
+        fields = ('number', 'title', 'icon', 'minimum_points')
+
+
+class GamificationBadgeSerializer(serializers.ModelSerializer):
+    earned = serializers.BooleanField(read_only=True)
+    awarded_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = Badge
+        fields = (
+            'slug', 'title', 'description', 'icon', 'rarity', 'hidden',
+            'points_reward', 'earned', 'awarded_at',
+        )
+
+
+class PointTransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PointTransaction
+        fields = (
+            'id', 'action', 'points', 'balance_after', 'description',
+            'source', 'created_at',
+        )
+
+
+class GamificationProfileResponseSerializer(serializers.Serializer):
+    points = serializers.IntegerField()
+    level = GamificationLevelSerializer(allow_null=True)
+    next_level = GamificationLevelSerializer(allow_null=True)
+    progress_percent = serializers.IntegerField()
+    points_to_next = serializers.IntegerField()
+    leaderboard_opt_in = serializers.BooleanField()
+    badges = GamificationBadgeSerializer(many=True)
+    recent_transactions = PointTransactionSerializer(many=True)
+    missions = serializers.ListField(child=serializers.DictField())
+
+
+class GamificationActivitySerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=('post_read', 'calendar_visit'))
+    object_id = serializers.IntegerField(required=False, min_value=1)
+    engagement_seconds = serializers.IntegerField(
+        required=False,
+        min_value=0,
+        max_value=86400,
+    )
+
+    def validate(self, attrs):
+        if attrs['action'] == 'post_read':
+            if 'object_id' not in attrs:
+                raise serializers.ValidationError({
+                    'object_id': 'Липсва публикацията, която е прочетена.',
+                })
+            if attrs.get('engagement_seconds', 0) < 15:
+                raise serializers.ValidationError({
+                    'engagement_seconds': 'Нужни са поне 15 секунди четене.',
+                })
+        return attrs
+
+
+class LeaderboardPreferenceSerializer(serializers.Serializer):
+    leaderboard_opt_in = serializers.BooleanField()
+
+
+class PublicUserSummarySerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    username = serializers.CharField()
+    avatar_url = serializers.CharField(allow_null=True)
+    email = serializers.EmailField(allow_null=True)
+    member_since = serializers.DateTimeField()
+
+
+class PublicEarnedBadgeSerializer(serializers.Serializer):
+    slug = serializers.CharField()
+    title = serializers.CharField()
+    description = serializers.CharField()
+    icon = serializers.CharField()
+    rarity = serializers.CharField()
+    awarded_at = serializers.DateTimeField()
+
+
+class PublicDigitalRewardSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    title = serializers.CharField()
+    kind = serializers.CharField()
+    config = serializers.DictField()
+    unlocked_at = serializers.DateTimeField()
+    selected = serializers.BooleanField()
+
+
+class PublicProfileCommentSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    post_id = serializers.IntegerField()
+    post_title = serializers.CharField()
+    content = serializers.CharField()
+    created_at = serializers.DateTimeField()
+
+
+class PublicProfileStatsSerializer(serializers.Serializer):
+    comments = serializers.IntegerField()
+    approved_memes = serializers.IntegerField()
+    approved_songs = serializers.IntegerField()
+    poll_answers = serializers.IntegerField()
+    badges = serializers.IntegerField()
+    rewards = serializers.IntegerField()
+
+
+class PublicProfileResponseSerializer(serializers.Serializer):
+    user = PublicUserSummarySerializer()
+    is_owner = serializers.BooleanField()
+    profile_is_public = serializers.BooleanField()
+    email_is_public = serializers.BooleanField()
+    comments_are_public = serializers.BooleanField()
+    bio = serializers.CharField(allow_blank=True)
+    level = GamificationLevelSerializer(allow_null=True)
+    points = serializers.IntegerField()
+    badges = PublicEarnedBadgeSerializer(many=True)
+    rewards = PublicDigitalRewardSerializer(many=True)
+    stats = PublicProfileStatsSerializer()
+    recent_comments = PublicProfileCommentSerializer(many=True)
+    comments_visible = serializers.BooleanField()
 
 
 class EventSerializer(serializers.ModelSerializer):

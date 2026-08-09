@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, calculate_file_sha256
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -33,6 +33,7 @@ from io import StringIO
 import csv
 from .session_auth import revoke_login_session
 from .avatars import reset_profile_avatar
+from .gamification.services import award_badge, change_points
 
 try:
     admin.site.unregister(Group)
@@ -44,6 +45,32 @@ class DateSelectionForm(forms.Form):
     delete_before_date = forms.DateField(
         label="Изтрий записите преди:",
         widget=forms.DateInput(attrs={'type': 'date'})
+    )
+
+
+class PointAdjustmentForm(forms.Form):
+    points = forms.IntegerField(
+        label='Промяна в точки',
+        min_value=-10000,
+        max_value=10000,
+        help_text='Използвайте отрицателна стойност за отнемане.',
+    )
+    reason = forms.CharField(
+        label='Причина',
+        max_length=255,
+        widget=forms.Textarea(attrs={'rows': 3}),
+    )
+
+
+class BadgeAwardForm(forms.Form):
+    badge = forms.ModelChoiceField(
+        label='Значка',
+        queryset=Badge.objects.filter(active=True).order_by('title'),
+    )
+    reason = forms.CharField(
+        label='Причина',
+        max_length=255,
+        required=False,
     )
 
 
@@ -410,15 +437,21 @@ admin.site.unregister(User)
 class UserProfileAdmin(ModelAdmin):
     list_display = (
         'user',
+        'gamification_points',
+        'public_profile_enabled',
         'email_verified',
         'avatar_preview',
         'avatar_source',
         'avatar_preset',
         'avatar_updated_at',
     )
-    list_filter = ('email_verified', 'avatar_source', 'avatar_updated_at')
+    list_filter = (
+        'public_profile_enabled', 'show_email_on_profile',
+        'show_comments_on_profile', 'leaderboard_opt_in', 'email_verified', 'avatar_source',
+        'avatar_updated_at',
+    )
     search_fields = ('user__username', 'user__email')
-    ordering = ('-avatar_updated_at', 'user__username')
+    ordering = ('-gamification_points', 'user__username')
     readonly_fields = (
         'user',
         'avatar_preview',
@@ -428,12 +461,84 @@ class UserProfileAdmin(ModelAdmin):
         'avatar_updated_at',
         'email_verified',
         'email_verified_at',
+        'gamification_points',
+        'leaderboard_opt_in',
     )
     exclude = ('avatar',)
-    actions = ('reset_selected_avatars',)
+    actions = ('reset_selected_avatars', 'adjust_points', 'award_selected_badge')
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
+
+    def _gamification_action_response(self, request, queryset, form, title, action):
+        return TemplateResponse(
+            request,
+            'admin/gamification_action.html',
+            {
+                'form': form,
+                'title': title,
+                'queryset': queryset,
+                'action': action,
+                'opts': self.model._meta,
+                'selected_count': queryset.count(),
+            },
+        )
+
+    @admin.action(description='Дай или отнеми точки с причина')
+    def adjust_points(self, request, queryset):
+        if 'apply' in request.POST:
+            form = PointAdjustmentForm(request.POST)
+            if form.is_valid():
+                changed = 0
+                with transaction.atomic():
+                    for profile in queryset.select_for_update().select_related('user'):
+                        point_transaction, created = change_points(
+                            user=profile.user,
+                            points=form.cleaned_data['points'],
+                            action='admin_adjustment',
+                            description=form.cleaned_data['reason'],
+                            source=PointTransaction.Source.ADMIN,
+                            created_by=request.user,
+                            evaluate_badges=False,
+                        )
+                        changed += int(created)
+                self.message_user(
+                    request,
+                    f'Коригирани профили: {changed}.',
+                    messages.SUCCESS,
+                )
+                return redirect(request.get_full_path())
+        else:
+            form = PointAdjustmentForm()
+        return self._gamification_action_response(
+            request, queryset, form, 'Корекция на точки', 'adjust_points'
+        )
+
+    @admin.action(description='Дай значка на избраните потребители')
+    def award_selected_badge(self, request, queryset):
+        if 'apply' in request.POST:
+            form = BadgeAwardForm(request.POST)
+            if form.is_valid():
+                awarded = 0
+                for profile in queryset.select_related('user'):
+                    _, created = award_badge(
+                        profile.user,
+                        form.cleaned_data['badge'],
+                        awarded_by=request.user,
+                        reason=form.cleaned_data['reason'],
+                    )
+                    awarded += int(created)
+                self.message_user(
+                    request,
+                    f'Дадени нови значки: {awarded}.',
+                    messages.SUCCESS,
+                )
+                return redirect(request.get_full_path())
+        else:
+            form = BadgeAwardForm()
+        return self._gamification_action_response(
+            request, queryset, form, 'Даване на значка', 'award_selected_badge'
+        )
 
     @admin.display(description='Преглед')
     def avatar_preview(self, obj):
@@ -876,7 +981,13 @@ class BellSongSuggestionAdmin(ModelAdmin):
     def approve_selected(self, request, queryset):
         if not self.has_change_permission(request):
             raise PermissionDenied
-        updated = queryset.update(status='approved')
+        updated = 0
+        with transaction.atomic():
+            for suggestion in queryset.select_for_update():
+                if suggestion.status != 'approved':
+                    suggestion.status = 'approved'
+                    suggestion.save(update_fields=('status',))
+                    updated += 1
         self.message_user(request, f'Успешно одобрихте {updated} предложения за песни.')
 
     # 3. Функция за масово отхвърляне
@@ -887,7 +998,13 @@ class BellSongSuggestionAdmin(ModelAdmin):
     def reject_selected(self, request, queryset):
         if not self.has_change_permission(request):
             raise PermissionDenied
-        updated = queryset.update(status='rejected')
+        updated = 0
+        with transaction.atomic():
+            for suggestion in queryset.select_for_update():
+                if suggestion.status != 'rejected':
+                    suggestion.status = 'rejected'
+                    suggestion.save(update_fields=('status',))
+                    updated += 1
         self.message_user(request, f'Успешно отхвърлихте {updated} предложения за песни.')
 
     fieldsets = (
@@ -940,9 +1057,9 @@ class BellSongSuggestionAdmin(ModelAdmin):
 
 @admin.register(Notification)
 class NotificationAdmin(ModelAdmin):
-    list_display = ('text', 'enabled', 'created_at')
-    list_filter = ('enabled', 'created_at')
-    search_fields = ('text',)
+    list_display = ('text', 'user', 'category', 'enabled', 'created_at')
+    list_filter = ('category', 'enabled', 'created_at')
+    search_fields = ('text', 'user__username')
     readonly_fields = ('created_at',)
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
@@ -1109,6 +1226,126 @@ class MemeOfWeekAdmin(ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # Това ще забрани добавянето на нов мемета през админ панела
+
+
+@admin.register(GamificationLevel)
+class GamificationLevelAdmin(ModelAdmin):
+    list_display = ('number', 'title', 'minimum_points', 'icon')
+    ordering = ('minimum_points',)
+    search_fields = ('title',)
+
+
+@admin.register(Badge)
+class BadgeAdmin(ModelAdmin):
+    list_display = (
+        'title', 'rarity', 'active', 'hidden', 'repeatable', 'points_reward',
+    )
+    list_filter = ('active', 'hidden', 'repeatable', 'rarity')
+    search_fields = ('title', 'slug', 'description')
+
+
+@admin.register(UserBadge)
+class UserBadgeAdmin(ModelAdmin):
+    list_display = ('user', 'badge', 'awarded_at', 'awarded_by', 'reason')
+    list_filter = ('badge', 'awarded_at')
+    search_fields = ('user__username', 'badge__title', 'reason')
+    readonly_fields = (
+        'user', 'badge', 'award_key', 'awarded_at', 'awarded_by', 'reason',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PointTransaction)
+class PointTransactionAdmin(ModelAdmin):
+    list_display = (
+        'user', 'points', 'balance_after', 'action', 'source', 'created_at',
+    )
+    list_filter = ('source', 'action', 'created_at')
+    search_fields = ('user__username', 'description', 'idempotency_key')
+    readonly_fields = (
+        'user', 'action', 'points', 'balance_after', 'description', 'source',
+        'reference_type', 'reference_id', 'idempotency_key', 'created_by',
+        'reversal_of', 'metadata', 'created_at',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(Mission)
+class MissionAdmin(ModelAdmin):
+    list_display = (
+        'title', 'start_date', 'end_date', 'reward_points', 'active',
+    )
+    list_filter = ('active', 'start_date', 'end_date')
+    search_fields = ('title', 'slug', 'description')
+
+
+@admin.register(UserMissionProgress)
+class UserMissionProgressAdmin(ModelAdmin):
+    list_display = (
+        'user', 'mission', 'completed_at', 'rewarded_at', 'updated_at',
+    )
+    list_filter = ('mission', 'completed_at', 'rewarded_at')
+    search_fields = ('user__username', 'mission__title')
+    readonly_fields = (
+        'user', 'mission', 'progress', 'completed_at', 'rewarded_at',
+        'updated_at',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(MissionActivity)
+class MissionActivityAdmin(ModelAdmin):
+    list_display = ('user', 'mission', 'action', 'reference_id', 'created_at')
+    list_filter = ('mission', 'action', 'created_at')
+    search_fields = ('user__username', 'reference_id')
+    readonly_fields = ('user', 'mission', 'action', 'reference_id', 'created_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(DigitalReward)
+class DigitalRewardAdmin(ModelAdmin):
+    list_display = ('title', 'kind', 'key', 'active')
+    list_filter = ('kind', 'active')
+    search_fields = ('title', 'key')
+
+
+@admin.register(UserDigitalReward)
+class UserDigitalRewardAdmin(ModelAdmin):
+    list_display = ('user', 'reward', 'unlocked_at', 'source_badge', 'selected')
+    list_filter = ('reward__kind', 'selected', 'unlocked_at')
+    search_fields = ('user__username', 'reward__title')
+    readonly_fields = (
+        'user', 'reward', 'unlocked_at', 'source_badge', 'selected',
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 @admin.register(Cookie.ConsentRecord)
 class ConsentRecordAdmin(ModelAdmin):

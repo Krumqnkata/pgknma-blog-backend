@@ -19,6 +19,7 @@ from rest_framework import viewsets, generics, status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -29,15 +30,15 @@ from rest_framework.exceptions import (
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.html import escape
-from datetime import timedelta
+from datetime import datetime, timedelta
 import re
 from urllib.parse import urljoin
-from django.db.models import BooleanField, Count, Exists, OuterRef, Q, Value
+from django.db.models import BooleanField, Count, Exists, F, OuterRef, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile
+from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile, Badge, PointTransaction, UserBadge, UserDigitalReward
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
@@ -52,6 +53,14 @@ from .serializer import (
     CurrentUserSerializer, ProfileAvatarUpdateSerializer,
     CurrentProfileResponseSerializer, AvatarUpdateResponseSerializer,
     RegistrationResponseSerializer, EmailVerificationResendRequestSerializer,
+    GamificationProfileResponseSerializer, PointTransactionSerializer,
+    GamificationActivitySerializer, LeaderboardPreferenceSerializer,
+    PublicProfileResponseSerializer, PublicProfileSettingsSerializer,
+)
+from .gamification.services import (
+    active_missions_for_user,
+    level_state,
+    record_mission_activity,
 )
 from .avatars import (
     avatar_options_payload,
@@ -502,9 +511,350 @@ class CurrentProfileView(APIView):
                     context={'request': request},
                 ).data,
                 'avatar_options': avatar_options_payload(),
+                'public_profile': PublicProfileSettingsSerializer(
+                    user.userprofile
+                ).data,
             },
             status=status.HTTP_200_OK,
         )
+
+
+class PublicProfileSettingsView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+
+    @extend_schema(
+        operation_id='profile_public_settings_update',
+        summary='Настройки за публичната профилна страница',
+        tags=['Профил'],
+        request=PublicProfileSettingsSerializer,
+        responses={200: PublicProfileSettingsSerializer},
+    )
+    def patch(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        serializer = PublicProfileSettingsSerializer(
+            profile,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class PublicUserProfileView(APIView):
+    permission_classes = (SiteIsAvailable, AllowAny)
+
+    @extend_schema(
+        operation_id='public_user_profile',
+        summary='Публичен потребителски профил',
+        tags=['Профил'],
+        responses={200: PublicProfileResponseSerializer},
+    )
+    def get(self, request, username):
+        user = (
+            User.objects.select_related('userprofile')
+            .filter(username__iexact=username, is_active=True)
+            .order_by('pk')
+            .first()
+        )
+        if not user:
+            raise Http404
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        is_owner = request.user.is_authenticated and request.user.pk == user.pk
+        if not profile.public_profile_enabled and not is_owner:
+            raise Http404
+
+        now = timezone.now()
+        public_comments = (
+            Comments.objects.filter(
+                user=user,
+                post__published=True,
+                post__allowed=True,
+            )
+            .filter(
+                Q(post__published_at__isnull=True)
+                | Q(post__published_at__lte=now)
+            )
+            .select_related('post')
+            .order_by('-created_at')
+        )
+        comments_visible = is_owner or profile.show_comments_on_profile
+        earned_badges = list(
+            UserBadge.objects.filter(user=user)
+            .select_related('badge')
+            .order_by('-awarded_at')
+        )
+        rewards = list(
+            UserDigitalReward.objects.filter(user=user)
+            .select_related('reward')
+            .order_by('-unlocked_at')
+        )
+        state = level_state(profile.gamification_points)
+        recent_comments = []
+        if comments_visible:
+            for comment in public_comments[:6]:
+                content = comment.content.strip()
+                if len(content) > 360:
+                    content = f'{content[:357].rstrip()}…'
+                recent_comments.append({
+                    'id': comment.pk,
+                    'post_id': comment.post_id,
+                    'post_title': comment.post.title,
+                    'content': content,
+                    'created_at': comment.created_at,
+                })
+
+        payload = {
+            'user': {
+                'id': user.pk,
+                'username': user.username,
+                'avatar_url': profile.avatar_url,
+                'email': (
+                    (user.email or None)
+                    if is_owner or profile.show_email_on_profile
+                    else None
+                ),
+                'member_since': user.date_joined,
+            },
+            'is_owner': is_owner,
+            'profile_is_public': profile.public_profile_enabled,
+            'email_is_public': profile.show_email_on_profile,
+            'comments_are_public': profile.show_comments_on_profile,
+            'bio': profile.bio,
+            'level': state.current,
+            'points': profile.gamification_points,
+            'badges': [
+                {
+                    'slug': item.badge.slug,
+                    'title': item.badge.title,
+                    'description': item.badge.description,
+                    'icon': item.badge.icon,
+                    'rarity': item.badge.rarity,
+                    'awarded_at': item.awarded_at,
+                }
+                for item in earned_badges
+            ],
+            'rewards': [
+                {
+                    'key': item.reward.key,
+                    'title': item.reward.title,
+                    'kind': item.reward.kind,
+                    'config': item.reward.config,
+                    'unlocked_at': item.unlocked_at,
+                    'selected': item.selected,
+                }
+                for item in rewards
+            ],
+            'stats': {
+                'comments': public_comments.count() if comments_visible else 0,
+                'approved_memes': MemeOfWeek.objects.filter(
+                    user=user, status='approved'
+                ).count(),
+                'approved_songs': BellSongSuggestion.objects.filter(
+                    user=user, status='approved'
+                ).count(),
+                'poll_answers': PollAnswer.objects.filter(user=user).count(),
+                'badges': len(earned_badges),
+                'rewards': len(rewards),
+            },
+            'recent_comments': recent_comments,
+            'comments_visible': comments_visible,
+        }
+        return Response(PublicProfileResponseSerializer(payload).data)
+
+
+class GamificationProfileView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+
+    @extend_schema(
+        operation_id='gamification_profile',
+        summary='Точки, ниво, значки и последни промени',
+        tags=['Геймификация'],
+        responses={200: GamificationProfileResponseSerializer},
+    )
+    def get(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        state = level_state(profile.gamification_points)
+        earned_rows = {
+            item.badge_id: item
+            for item in UserBadge.objects.filter(user=request.user).select_related('badge')
+        }
+        badges = []
+        for badge in Badge.objects.filter(active=True).order_by('title'):
+            earned = earned_rows.get(badge.pk)
+            if badge.hidden and not earned:
+                continue
+            badges.append({
+                'slug': badge.slug,
+                'title': badge.title,
+                'description': badge.description,
+                'icon': badge.icon,
+                'rarity': badge.rarity,
+                'hidden': badge.hidden,
+                'points_reward': badge.points_reward,
+                'earned': earned is not None,
+                'awarded_at': earned.awarded_at if earned else None,
+            })
+        payload = {
+            'points': profile.gamification_points,
+            'level': state.current,
+            'next_level': state.next,
+            'progress_percent': state.progress_percent,
+            'points_to_next': state.points_to_next,
+            'leaderboard_opt_in': profile.leaderboard_opt_in,
+            'badges': badges,
+            'recent_transactions': PointTransaction.objects.filter(
+                user=request.user
+            )[:10],
+            'missions': active_missions_for_user(request.user),
+        }
+        return Response(GamificationProfileResponseSerializer(payload).data)
+
+
+class PointTransactionPagination(PageNumberPagination):
+    page_size = 25
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class PointTransactionListView(generics.ListAPIView):
+    serializer_class = PointTransactionSerializer
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+    pagination_class = PointTransactionPagination
+
+    def get_queryset(self):
+        return PointTransaction.objects.filter(user=self.request.user)
+
+
+class GamificationActivityView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+    throttle_scope = 'gamification_activity'
+
+    def post(self, request):
+        serializer = GamificationActivitySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        action_name = serializer.validated_data['action']
+        if action_name == 'post_read':
+            post = _public_posts_queryset().filter(
+                pk=serializer.validated_data['object_id']
+            ).first()
+            if not post:
+                raise Http404
+            reference_id = post.pk
+        else:
+            reference_id = timezone.localdate().isoformat()
+        completed = record_mission_activity(
+            request.user,
+            action_name,
+            reference_id,
+        )
+        return Response(
+            {'recorded': True, 'completed_mission_ids': completed},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class LeaderboardPreferenceView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+
+    def patch(self, request):
+        serializer = LeaderboardPreferenceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile.leaderboard_opt_in = serializer.validated_data[
+            'leaderboard_opt_in'
+        ]
+        profile.save(update_fields=('leaderboard_opt_in',))
+        return Response({
+            'leaderboard_opt_in': profile.leaderboard_opt_in,
+        })
+
+
+class GamificationLeaderboardView(APIView):
+    permission_classes = (SiteIsAvailable, AllowAny)
+
+    def _avatar_url(self, profile):
+        if not profile or not profile.avatar_url:
+            return None
+        return urljoin(f'{settings.PUBLIC_SITE_URL}/', profile.avatar_url.lstrip('/'))
+
+    def _ranking(self, start_at=None):
+        if start_at is None:
+            rows = list(
+                UserProfile.objects.filter(
+                    leaderboard_opt_in=True,
+                    gamification_points__gt=0,
+                )
+                .values(
+                    'user_id',
+                    'user__username',
+                    points=F('gamification_points'),
+                )
+            )
+        else:
+            rows = list(
+                PointTransaction.objects.filter(
+                    user__userprofile__leaderboard_opt_in=True,
+                    created_at__gte=start_at,
+                )
+                .values('user_id', 'user__username')
+                .annotate(points=Sum('points'))
+                .filter(points__gt=0)
+            )
+        rows.sort(key=lambda row: (-row['points'], row['user__username'].lower()))
+        profile_map = {
+            profile.user_id: profile
+            for profile in UserProfile.objects.filter(
+                user_id__in=[row['user_id'] for row in rows]
+            )
+        }
+        normalized = []
+        for index, row in enumerate(rows, start=1):
+            normalized.append({
+                'rank': index,
+                'username': row['user__username'],
+                'avatar_url': self._avatar_url(profile_map.get(row['user_id'])),
+                'points': row['points'],
+                'user_id': row['user_id'],
+            })
+        return normalized
+
+    def get(self, request):
+        today = timezone.localdate()
+        week_start_date = today - timedelta(days=today.weekday())
+        week_start = timezone.make_aware(
+            datetime.combine(week_start_date, datetime.min.time())
+        )
+        month_start = timezone.make_aware(
+            datetime.combine(today.replace(day=1), datetime.min.time())
+        )
+        rankings = {
+            'weekly': self._ranking(week_start),
+            'monthly': self._ranking(month_start),
+            'all_time': self._ranking(),
+        }
+        current_user_id = request.user.pk if request.user.is_authenticated else None
+        profile = (
+            UserProfile.objects.filter(user=request.user).first()
+            if request.user.is_authenticated else None
+        )
+        response = {}
+        for key, ranking in rankings.items():
+            current = next(
+                (row for row in ranking if row['user_id'] == current_user_id),
+                None,
+            ) if profile and profile.leaderboard_opt_in else None
+            response[key] = {
+                'top': [
+                    {field: value for field, value in row.items() if field != 'user_id'}
+                    for row in ranking[:10]
+                ],
+                'current_user': (
+                    {field: value for field, value in current.items() if field != 'user_id'}
+                    if current else None
+                ),
+            }
+        return Response(response)
 
 
 class ProfileAvatarView(APIView):
@@ -1493,9 +1843,18 @@ class ContactFormSubmitView(APIView):
             return Response({"detail": "Съобщението е изпратено успешно!"}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 class NotificationListView(generics.ListAPIView):
-    queryset = Notification.objects.filter(enabled=True).order_by('-created_at')
     serializer_class = NotificationSerializer
     permission_classes = [SiteIsAvailable, AllowAny]
+
+    def get_queryset(self):
+        queryset = Notification.objects.filter(enabled=True)
+        if self.request.user.is_authenticated:
+            queryset = queryset.filter(
+                Q(user__isnull=True) | Q(user=self.request.user)
+            )
+        else:
+            queryset = queryset.filter(user__isnull=True)
+        return queryset.order_by('-created_at')
 
 class EventListView(generics.ListAPIView):
     queryset = Event.objects.filter(published=True).order_by('-start_datetime')

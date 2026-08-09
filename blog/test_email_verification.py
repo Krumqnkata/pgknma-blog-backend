@@ -57,7 +57,7 @@ class EmailVerificationTests(TestCase):
         self.assertIn('/api/auth/verify-email/?token=', mail.outbox[0].body)
         html_body = mail.outbox[0].alternatives[0].content
         self.assertIn(
-            'src="https://pgknma.space/static/images/logo-sm.png"',
+            'src="data:image/svg+xml;base64,',
             html_body,
         )
 

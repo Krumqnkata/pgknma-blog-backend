@@ -404,6 +404,10 @@ REST_FRAMEWORK = {
             "THROTTLE_EMAIL_VERIFICATION_RESEND",
             "3/hour",
         ),
+        'gamification_activity': os.getenv(
+            "THROTTLE_GAMIFICATION_ACTIVITY",
+            "120/hour",
+        ),
     },
 }
 

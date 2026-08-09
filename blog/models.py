@@ -404,6 +404,38 @@ class UserProfile(models.Model):
         null=True,
         verbose_name='Имейлът е потвърден на',
     )
+    gamification_points = models.PositiveIntegerField(
+        default=0,
+        db_index=True,
+        verbose_name='Точки',
+        help_text='Кеширан баланс, поддържан от gamification service.',
+    )
+    leaderboard_opt_in = models.BooleanField(
+        default=False,
+        verbose_name='Участва в класацията',
+        help_text='Профилът се показва публично само след изрично съгласие.',
+    )
+    public_profile_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Публичен профил',
+        help_text='Позволява на останалите да отварят профилната страница.',
+    )
+    show_email_on_profile = models.BooleanField(
+        default=False,
+        verbose_name='Публичен имейл',
+        help_text='Имейлът никога не е публичен без изрично включване.',
+    )
+    show_comments_on_profile = models.BooleanField(
+        default=True,
+        verbose_name='Публични коментари',
+        help_text='Показва последните коментари към публични публикации.',
+    )
+    bio = models.CharField(
+        max_length=500,
+        blank=True,
+        default='',
+        verbose_name='За мен',
+    )
 
     class Meta:
         verbose_name = 'Профилна снимка'
@@ -422,6 +454,347 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"Профил на {self.user.username}"
+
+
+class GamificationLevel(models.Model):
+    number = models.PositiveSmallIntegerField(unique=True, verbose_name='Ниво')
+    title = models.CharField(max_length=80, verbose_name='Име')
+    icon = models.CharField(
+        max_length=40,
+        default='star',
+        verbose_name='Икона',
+        help_text='Име на икона от lucide-react.',
+    )
+    minimum_points = models.PositiveIntegerField(
+        unique=True,
+        verbose_name='Минимални точки',
+    )
+
+    class Meta:
+        verbose_name = 'Ниво'
+        verbose_name_plural = 'Нива'
+        ordering = ('minimum_points',)
+
+    def __str__(self):
+        return f'Ниво {self.number} — {self.title}'
+
+
+class Badge(models.Model):
+    class Rarity(models.TextChoices):
+        COMMON = 'common', 'Обикновена'
+        RARE = 'rare', 'Рядка'
+        EPIC = 'epic', 'Епична'
+        SEASONAL = 'seasonal', 'Сезонна'
+
+    slug = models.SlugField(max_length=80, unique=True)
+    title = models.CharField(max_length=100, verbose_name='Име')
+    description = models.TextField(verbose_name='Описание')
+    icon = models.CharField(
+        max_length=40,
+        default='award',
+        verbose_name='Икона',
+        help_text='Име на икона от lucide-react.',
+    )
+    rarity = models.CharField(
+        max_length=12,
+        choices=Rarity.choices,
+        default=Rarity.COMMON,
+        verbose_name='Рядкост',
+    )
+    requirement = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name='Условие',
+        help_text='Структурирано условие за автоматично отключване.',
+    )
+    active = models.BooleanField(default=True, verbose_name='Активна')
+    starts_at = models.DateTimeField(null=True, blank=True, verbose_name='Начало')
+    ends_at = models.DateTimeField(null=True, blank=True, verbose_name='Край')
+    hidden = models.BooleanField(default=False, verbose_name='Тайна')
+    points_reward = models.PositiveIntegerField(
+        default=0,
+        verbose_name='Бонус точки',
+    )
+    repeatable = models.BooleanField(default=False, verbose_name='Повторяема')
+    digital_rewards = models.ManyToManyField(
+        'DigitalReward',
+        blank=True,
+        related_name='badges',
+        verbose_name='Дигитални награди',
+    )
+
+    class Meta:
+        verbose_name = 'Значка'
+        verbose_name_plural = 'Значки'
+        ordering = ('title',)
+
+    def __str__(self):
+        return self.title
+
+
+class UserBadge(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='earned_badges',
+        verbose_name='Потребител',
+    )
+    badge = models.ForeignKey(
+        Badge,
+        on_delete=models.CASCADE,
+        related_name='awards',
+        verbose_name='Значка',
+    )
+    award_key = models.CharField(
+        max_length=120,
+        default='default',
+        verbose_name='Ключ на наградата',
+    )
+    awarded_at = models.DateTimeField(auto_now_add=True, verbose_name='Получена на')
+    awarded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='manually_awarded_badges',
+        verbose_name='Дадена от',
+    )
+    reason = models.CharField(max_length=255, blank=True, default='')
+
+    class Meta:
+        verbose_name = 'Получена значка'
+        verbose_name_plural = 'Получени значки'
+        ordering = ('-awarded_at',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'badge', 'award_key'),
+                name='blog_unique_badge_award_key',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.badge}'
+
+
+class PointTransaction(models.Model):
+    class Source(models.TextChoices):
+        ACTIVITY = 'activity', 'Активност'
+        BADGE = 'badge', 'Значка'
+        ADMIN = 'admin', 'Администратор'
+        REVERSAL = 'reversal', 'Корекция'
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='point_transactions',
+        verbose_name='Потребител',
+    )
+    action = models.CharField(max_length=60, db_index=True, verbose_name='Действие')
+    points = models.SmallIntegerField(verbose_name='Промяна')
+    balance_after = models.PositiveIntegerField(verbose_name='Баланс след промяната')
+    description = models.CharField(max_length=255, verbose_name='Описание')
+    source = models.CharField(
+        max_length=12,
+        choices=Source.choices,
+        default=Source.ACTIVITY,
+        verbose_name='Източник',
+    )
+    reference_type = models.CharField(max_length=60, blank=True, default='')
+    reference_id = models.CharField(max_length=80, blank=True, default='')
+    idempotency_key = models.CharField(
+        max_length=190,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name='Idempotency ключ',
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_point_transactions',
+        verbose_name='Извършено от',
+    )
+    reversal_of = models.OneToOneField(
+        'self',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='reversal',
+        verbose_name='Корекция на',
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създадена на')
+
+    class Meta:
+        verbose_name = 'Транзакция с точки'
+        verbose_name_plural = 'История на точките'
+        ordering = ('-created_at', '-pk')
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(points=0),
+                name='blog_point_transaction_nonzero',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=('user', 'created_at'), name='points_user_created_idx'),
+            models.Index(
+                fields=('reference_type', 'reference_id'),
+                name='points_reference_idx',
+            ),
+        ]
+
+    def __str__(self):
+        sign = '+' if self.points > 0 else ''
+        return f'{self.user}: {sign}{self.points} — {self.description}'
+
+
+class Mission(models.Model):
+    slug = models.SlugField(max_length=100, unique=True)
+    title = models.CharField(max_length=120, verbose_name='Име')
+    description = models.TextField(verbose_name='Описание')
+    start_date = models.DateTimeField(verbose_name='Начало')
+    end_date = models.DateTimeField(verbose_name='Край')
+    reward_points = models.PositiveIntegerField(default=0, verbose_name='Награда')
+    active = models.BooleanField(default=True, verbose_name='Активна')
+    requirements = models.JSONField(
+        default=list,
+        verbose_name='Изисквания',
+        help_text='Списък с key, action, label и target за всяка цел.',
+    )
+
+    class Meta:
+        verbose_name = 'Мисия'
+        verbose_name_plural = 'Мисии'
+        ordering = ('-start_date',)
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__gt=models.F('start_date')),
+                name='blog_mission_end_after_start',
+            ),
+        ]
+
+    def __str__(self):
+        return self.title
+
+
+class UserMissionProgress(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='mission_progress',
+        verbose_name='Потребител',
+    )
+    mission = models.ForeignKey(
+        Mission,
+        on_delete=models.CASCADE,
+        related_name='user_progress',
+        verbose_name='Мисия',
+    )
+    progress = models.JSONField(default=dict, blank=True, verbose_name='Прогрес')
+    completed_at = models.DateTimeField(null=True, blank=True, verbose_name='Завършена на')
+    rewarded_at = models.DateTimeField(null=True, blank=True, verbose_name='Наградена на')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновена на')
+
+    class Meta:
+        verbose_name = 'Прогрес по мисия'
+        verbose_name_plural = 'Прогрес по мисии'
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'mission'),
+                name='blog_unique_user_mission_progress',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.mission}'
+
+
+class MissionActivity(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='mission_activities',
+    )
+    mission = models.ForeignKey(
+        Mission,
+        on_delete=models.CASCADE,
+        related_name='activities',
+    )
+    action = models.CharField(max_length=50, db_index=True)
+    reference_id = models.CharField(max_length=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Активност по мисия'
+        verbose_name_plural = 'Активности по мисии'
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'mission', 'action', 'reference_id'),
+                name='blog_unique_mission_activity',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=('user', 'mission', 'action'),
+                name='mission_activity_lookup_idx',
+            ),
+        ]
+
+
+class DigitalReward(models.Model):
+    class Kind(models.TextChoices):
+        AVATAR_FRAME = 'avatar_frame', 'Рамка за аватар'
+        PROFILE_BORDER = 'profile_border', 'Рамка за профил'
+        PROFILE_THEME = 'profile_theme', 'Тема за профил'
+        USER_TITLE = 'user_title', 'Титла'
+        SPECIAL_ICON = 'special_icon', 'Специална икона'
+
+    key = models.SlugField(max_length=100, unique=True)
+    title = models.CharField(max_length=100, verbose_name='Име')
+    kind = models.CharField(max_length=20, choices=Kind.choices, verbose_name='Вид')
+    config = models.JSONField(default=dict, blank=True, verbose_name='Настройки')
+    active = models.BooleanField(default=True, verbose_name='Активна')
+
+    class Meta:
+        verbose_name = 'Дигитална награда'
+        verbose_name_plural = 'Дигитални награди'
+
+    def __str__(self):
+        return self.title
+
+
+class UserDigitalReward(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='digital_rewards',
+    )
+    reward = models.ForeignKey(
+        DigitalReward,
+        on_delete=models.CASCADE,
+        related_name='owners',
+    )
+    unlocked_at = models.DateTimeField(auto_now_add=True)
+    source_badge = models.ForeignKey(
+        Badge,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='unlocked_rewards',
+    )
+    selected = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = 'Отключена дигитална награда'
+        verbose_name_plural = 'Отключени дигитални награди'
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'reward'),
+                name='blog_unique_user_digital_reward',
+            ),
+        ]
 
 
 class EmailVerificationToken(models.Model):
@@ -634,8 +1007,19 @@ class ContactSubmission(models.Model):
 
 
 class Notification(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notifications',
+        verbose_name='Получател',
+        help_text='Празно поле означава общо известие за всички.',
+    )
     text = models.TextField(verbose_name="Текст на известието", help_text="Съдържанието на известието, което ще се показва на потребителите.")
     enabled = models.BooleanField(default=True, verbose_name="Активирано", help_text="Отбележете, за да активирате и покажете известието на сайта.")
+    category = models.CharField(max_length=30, blank=True, default='general')
+    action_url = models.CharField(max_length=255, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата и час на създаване на известието. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):

@@ -78,6 +78,41 @@ urlpatterns = [
         name='profile-current',
     ),
     path(
+        'profile/public-settings/',
+        blog_views.PublicProfileSettingsView.as_view(),
+        name='profile-public-settings',
+    ),
+    path(
+        'users/<str:username>/profile/',
+        blog_views.PublicUserProfileView.as_view(),
+        name='public-user-profile',
+    ),
+    path(
+        'gamification/profile/',
+        blog_views.GamificationProfileView.as_view(),
+        name='gamification-profile',
+    ),
+    path(
+        'gamification/transactions/',
+        blog_views.PointTransactionListView.as_view(),
+        name='gamification-transactions',
+    ),
+    path(
+        'gamification/activity/',
+        blog_views.GamificationActivityView.as_view(),
+        name='gamification-activity',
+    ),
+    path(
+        'gamification/preferences/',
+        blog_views.LeaderboardPreferenceView.as_view(),
+        name='gamification-preferences',
+    ),
+    path(
+        'gamification/leaderboard/',
+        blog_views.GamificationLeaderboardView.as_view(),
+        name='gamification-leaderboard',
+    ),
+    path(
         'profile/avatar/',
         blog_views.ProfileAvatarView.as_view(),
         name='profile-avatar',
