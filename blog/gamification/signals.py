@@ -33,11 +33,8 @@ def reward_poll_answer(sender, instance, created, raw=False, **kwargs):
         record_mission_activity(instance.user, 'poll_vote', instance.question_id)
 
 
-@receiver(pre_delete, sender=PollAnswer)
-def reverse_deleted_poll_answer(sender, instance, **kwargs):
-    reverse_activity(instance, 'poll_vote', 'Премахнат отговор в анкета')
-    if instance.user_id:
-        remove_mission_activity(instance.user, 'poll_vote', instance.question_id)
+# Изтриването на стара анкета е архивно почистване. Вече спечелените
+# точки и историческият прогрес по мисии остават при потребителя.
 
 
 def _remember_status(model, instance):
@@ -65,11 +62,6 @@ def sync_song_reward(sender, instance, raw=False, **kwargs):
         reverse_activity(instance, 'song_approved', 'Отменено одобрение на песен')
 
 
-@receiver(pre_delete, sender=BellSongSuggestion)
-def reverse_deleted_song(sender, instance, **kwargs):
-    reverse_activity(instance, 'song_approved', 'Премахнато предложение за песен')
-
-
 @receiver(pre_save, sender=MemeOfWeek)
 def remember_meme_status(sender, instance, **kwargs):
     _remember_status(MemeOfWeek, instance)
@@ -84,11 +76,6 @@ def sync_meme_reward(sender, instance, raw=False, **kwargs):
         award_activity(instance.user, 'meme_approved', instance)
     elif previous == 'approved' and instance.status != 'approved':
         reverse_activity(instance, 'meme_approved', 'Отменено одобрение на меме')
-
-
-@receiver(pre_delete, sender=MemeOfWeek)
-def reverse_deleted_meme(sender, instance, **kwargs):
-    reverse_activity(instance, 'meme_approved', 'Премахнато одобрено меме')
 
 
 @receiver(m2m_changed, sender=Badge.digital_rewards.through)

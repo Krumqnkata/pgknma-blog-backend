@@ -59,6 +59,11 @@ class AdminHelpGuideTests(TestCase):
         expected_urls = (
             "admin:blog_posts_add",
             "admin:blog_scheduleentry_import_csv",
+            "admin:blog_gamificationpointrule_changelist",
+            "admin:blog_mission_changelist",
+            "admin:blog_badge_changelist",
+            "admin:blog_digitalreward_changelist",
+            "admin:blog_pointtransaction_changelist",
             "admin:blog_personaldatacleanuprun_changelist",
             "admin:valentine_profile_changelist",
             "admin:valentine_profile_import_csv",
@@ -75,6 +80,8 @@ class AdminHelpGuideTests(TestCase):
                 self.assertTemplateUsed(response, "admin/index.html")
                 self.assertTemplateUsed(response, "admin/_help_guide.html")
                 self.assertContains(response, "Администраторско ръководство")
+                self.assertContains(response, "Геймификация — точки, мисии, значки")
+                self.assertContains(response, "независимо дали е изтрит от потребителя или от администратор")
                 self.assertContains(response, "Технически runbook")
                 self.assertContains(response, "Valentine сигнали, архив")
                 self.assertContains(response, "cleanup_personal_data --days 90 --dry-run")

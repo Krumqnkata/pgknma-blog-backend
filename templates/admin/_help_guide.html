@@ -3,8 +3,8 @@
         <div class="flex flex-col gap-6 p-6 lg:flex-row lg:items-center lg:justify-between">
             <div class="max-w-3xl">
                 <div class="mb-3 flex flex-wrap items-center gap-2 text-sm text-font-subtle">
-                    <span class="rounded-full bg-primary-500/10 px-3 py-1 font-semibold text-primary-600 dark:text-primary-400">Help Guide v1.0</span>
-                    <span>Актуализиран на 02.08.2026 г.</span>
+                    <span class="rounded-full bg-primary-500/10 px-3 py-1 font-semibold text-primary-600 dark:text-primary-400">Help Guide v1.1</span>
+                    <span>Актуализиран на 09.08.2026 г.</span>
                     <span aria-hidden="true">•</span>
                     <span>Натисни Ctrl + F за търсене</span>
                 </div>
@@ -13,7 +13,7 @@
                 </h2>
                 <p class="mt-3 text-base leading-7 text-font-default">
                     Подробни инструкции за ежедневната работа с блога, учебната програма,
-                    потребителите, модерацията, платформата „Валентинки“ и техническата
+                    потребителите, модерацията, геймификацията, платформата „Валентинки“ и техническата
                     поддръжка на production средата.
                 </p>
                 <p class="mt-3 text-sm leading-6 text-font-subtle">
@@ -348,9 +348,56 @@
             </div>
         </details>
 
+        <details id="guide-gamification" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
+            <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
+                8. Геймификация — точки, мисии, значки и дигитални награди
+            </summary>
+            <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
+                <div class="flex flex-wrap gap-3">
+                    <a href="{% url 'admin:blog_gamificationlevel_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Нива</a>
+                    <a href="{% url 'admin:blog_gamificationpointrule_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Правила за точки</a>
+                    <a href="{% url 'admin:blog_mission_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Мисии</a>
+                    <a href="{% url 'admin:blog_badge_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Значки</a>
+                    <a href="{% url 'admin:blog_digitalreward_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Дигитални награди</a>
+                    <a href="{% url 'admin:blog_pointtransaction_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">История на точките</a>
+                    <a href="{% url 'admin:blog_usermissionprogress_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Прогрес по мисии</a>
+                    <a href="{% url 'admin:blog_missionactivity_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Активности по мисии</a>
+                </div>
+
+                <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+                    <div>
+                        <h3 class="font-semibold text-font-important">Настройване на системата</h3>
+                        <ol class="mt-2 list-decimal space-y-2 pl-5">
+                            <li>В „Правила за точки“ определяй стойността и активността на всяко действие.</li>
+                            <li>Подреждай нивата по минимален брой точки и не използвай еднакви прагове.</li>
+                            <li>В мисиите добавяй условията през четимите редове за действие и необходим брой; не редактирай суров JSON.</li>
+                            <li>Свързвай значките с подходящите действия, прагове и дигитални награди.</li>
+                            <li>Използвай „Отключени награди“ и „Потребителски значки“ само за проверка или изрична административна корекция.</li>
+                        </ol>
+                    </div>
+                    <div>
+                        <h3 class="font-semibold text-font-important">Какво става при изтриване</h3>
+                        <ul class="mt-2 list-disc space-y-2 pl-5">
+                            <li><strong>Коментар:</strong> точките и участието му в активна мисия се отнемат, независимо дали е изтрит от потребителя или от администратор.</li>
+                            <li><strong>Одобрена песен или меме:</strong> при обикновено архивно изтриване спечелените точки остават.</li>
+                            <li><strong>Песен или меме с променен статус от „Одобрено“ на „Отхвърлено“:</strong> точките се отнемат.</li>
+                            <li><strong>Стара анкета и нейните отговори:</strong> при изтриване точките и историческият прогрес по мисии остават.</li>
+                            <li><strong>Вече получени значки и дигитални награди:</strong> остават, освен ако администратор не ги коригира изрично.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="mt-4 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
+                    „История на точките“ е отчетна следа. Не изтривай и не променяй транзакции ръчно,
+                    за да „поправяш“ баланс. Първо провери източника на действието и използвай предвидения
+                    статус или административна операция.
+                </div>
+            </div>
+        </details>
+
         <details id="guide-governance" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                8. Настройки, правни документи, съгласия и GDPR
+                9. Настройки, правни документи, съгласия и GDPR
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <div class="flex flex-wrap gap-3">
@@ -376,7 +423,7 @@
 
         <details id="guide-valentine-profiles" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                9. Valentine профили, CSV импорт, PDF кодове и PIN
+                10. Valentine профили, CSV импорт, PDF кодове и PIN
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <div class="flex flex-wrap gap-3">
@@ -427,7 +474,7 @@
 
         <details id="guide-valentine-year" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                10. Преминаване към следваща учебна година
+                11. Преминаване към следваща учебна година
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <ol class="list-decimal space-y-2 pl-5">
@@ -450,7 +497,7 @@
 
         <details id="guide-valentine-campaigns" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                11. Valentine кампании, периоди и ограничения
+                12. Valentine кампании, периоди и ограничения
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <div class="flex flex-wrap gap-3">
@@ -486,7 +533,7 @@
 
         <details id="guide-system-valentines" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                12. Системни валентинки
+                13. Системни валентинки
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <a href="{% url 'admin:valentine_profile_send_system_valentine' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Отвори персонализираната страница</a>
@@ -519,7 +566,7 @@
 
         <details id="guide-valentine-moderation" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                13. Valentine сигнали, архив, модерация и сесии
+                14. Valentine сигнали, архив, модерация и сесии
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <div class="flex flex-wrap gap-3">
@@ -544,7 +591,7 @@
 
         <details id="guide-runbook" class="rounded-lg border border-red-500/40 bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-red-600 dark:text-red-400">
-                14. Технически runbook — deploy, backup и rollback
+                15. Технически runbook — deploy, backup и rollback
             </summary>
             <div class="border-t border-red-500/30 p-5 text-sm leading-6 text-font-default">
                 <div class="rounded-lg border-l-4 border-red-500 bg-red-500/10 p-4">
@@ -633,7 +680,7 @@ curl -fsSI https://love.pgknma.space/</code></pre>
 
         <details id="guide-cleanup" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                15. Автоматично почистване и MaxMind ASN база
+                16. Автоматично почистване и MaxMind ASN база
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <h3 class="font-semibold text-font-important">Безопасен dry-run</h3>
@@ -669,7 +716,7 @@ file /var/www/blog/cms/data/GeoLite2-ASN.mmdb</code></pre>
 
         <details id="guide-diagnostics" class="rounded-lg border border-border-subtle bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-font-important">
-                16. Диагностика и често срещани проблеми
+                17. Диагностика и често срещани проблеми
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <h3 class="font-semibold text-font-important">Основни проверки</h3>
@@ -710,7 +757,7 @@ python manage.py showmigrations</code></pre>
 
         <details id="guide-incident" class="rounded-lg border border-yellow-500/50 bg-card-background shadow-sm">
             <summary class="cursor-pointer p-5 text-lg font-semibold text-yellow-700 dark:text-yellow-400">
-                17. Инцидент, компрометиран профил или загуба на данни
+                18. Инцидент, компрометиран профил или загуба на данни
             </summary>
             <div class="border-t border-yellow-500/30 p-5 text-sm leading-6 text-font-default">
                 <ol class="list-decimal space-y-2 pl-5">

@@ -269,6 +269,40 @@ class GamificationTestCase(TestCase):
             )
         self.assertEqual(self.points(), 5)
 
+    def test_deleting_old_poll_keeps_points_and_historical_mission_progress(self):
+        question = PollQuestion.objects.create(
+            title='Стара анкета',
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=1),
+        )
+        option = PollOption.objects.create(
+            question=question,
+            text='Отговор',
+            key='a',
+        )
+        PollAnswer.objects.create(
+            user=self.user,
+            question=question,
+            selected_option=option,
+        )
+        progress = UserMissionProgress.objects.get(
+            user=self.user,
+            mission=ensure_current_weekly_mission(),
+        )
+        self.assertEqual(progress.progress['poll_vote'], 1)
+
+        question.delete()
+
+        self.assertEqual(self.points(), 5)
+        progress.refresh_from_db()
+        self.assertEqual(progress.progress['poll_vote'], 1)
+        self.assertFalse(
+            PointTransaction.objects.filter(
+                user=self.user,
+                action='poll_vote_reversed',
+            ).exists()
+        )
+
     def test_approval_transitions_are_reversible_without_duplicate_rewards(self):
         suggestion = BellSongSuggestion.objects.create(
             user=self.user,
@@ -296,6 +330,25 @@ class GamificationTestCase(TestCase):
             2,
         )
 
+    def test_deleting_approved_song_during_cleanup_keeps_points(self):
+        suggestion = BellSongSuggestion.objects.create(
+            user=self.user,
+            title='Архивирана одобрена песен',
+            link='https://example.com/archived-song',
+        )
+        suggestion.status = 'approved'
+        suggestion.save(update_fields=('status',))
+
+        suggestion.delete()
+
+        self.assertEqual(self.points(), 20)
+        self.assertFalse(
+            PointTransaction.objects.filter(
+                user=self.user,
+                action='song_approved_reversed',
+            ).exists()
+        )
+
     def test_approved_meme_awards_points_and_badge_then_reverses(self):
         meme = MemeOfWeek.objects.create(
             user=self.user,
@@ -312,6 +365,23 @@ class GamificationTestCase(TestCase):
         meme.status = 'rejected'
         meme.save(update_fields=('status',))
         self.assertEqual(self.points(), 0)
+
+    def test_deleting_approved_meme_during_cleanup_keeps_points(self):
+        meme = MemeOfWeek.objects.create(
+            user=self.user,
+            title='Архивирано одобрено меме',
+            status='approved',
+        )
+
+        meme.delete()
+
+        self.assertEqual(self.points(), 20)
+        self.assertFalse(
+            PointTransaction.objects.filter(
+                user=self.user,
+                action='meme_approved_reversed',
+            ).exists()
+        )
 
     def test_badge_is_awarded_automatically_only_once(self):
         first = Comments.objects.create(
