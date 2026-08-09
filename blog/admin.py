@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -1060,15 +1060,99 @@ class BellSongSuggestionAdmin(ModelAdmin):
 
 @admin.register(Notification)
 class NotificationAdmin(ModelAdmin):
-    list_display = ('text', 'user', 'category', 'enabled', 'created_at')
-    list_filter = ('category', 'enabled', 'created_at')
+    list_display = ('text', 'recipient_display', 'enabled', 'created_at')
+    list_filter = ('enabled', 'created_at')
     search_fields = ('text', 'user__username')
     readonly_fields = ('created_at',)
+    fields = ('text', 'user', 'action_url', 'enabled', 'created_at')
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).exclude(
+            category__startswith='gamification_',
+        )
+
+    def save_model(self, request, obj, form, change):
+        obj.category = 'general'
+        super().save_model(request, obj, form, change)
+
+    @admin.display(description='Получател', ordering='user__username')
+    def recipient_display(self, obj):
+        return obj.user or 'Всички потребители'
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == 'text':
             kwargs['widget'] = MarkdownWidget(attrs={'rows': 3})
         return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+
+@admin.register(GamificationNotification)
+class GamificationNotificationAdmin(ModelAdmin):
+    list_display = (
+        'text_preview',
+        'recipient_display',
+        'event_display',
+        'created_at',
+    )
+    list_filter = ('category', 'created_at')
+    search_fields = ('text', 'user__username')
+    readonly_fields = (
+        'text',
+        'user',
+        'event_display',
+        'action_url',
+        'enabled',
+        'created_at',
+    )
+    fields = (
+        'text',
+        'user',
+        'event_display',
+        'action_url',
+        'enabled',
+        'created_at',
+    )
+    actions = None
+
+    CATEGORY_LABELS = {
+        'gamification_points': 'Точки',
+        'gamification_level': 'Ново ниво',
+        'gamification_badge': 'Значка',
+        'gamification_reward': 'Дигитална награда',
+        'gamification_mission': 'Мисия',
+    }
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).filter(
+            category__startswith='gamification_',
+        ).select_related('user')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_view_permission(self, request, obj=None):
+        return (
+            request.user.has_perm('blog.view_notification')
+            or super().has_view_permission(request, obj)
+        )
+
+    @admin.display(description='Съобщение')
+    def text_preview(self, obj):
+        return Truncator(obj.text).chars(90)
+
+    @admin.display(description='Получател', ordering='user__username')
+    def recipient_display(self, obj):
+        return obj.user or 'Всички потребители'
+
+    @admin.display(description='Събитие', ordering='category')
+    def event_display(self, obj):
+        return self.CATEGORY_LABELS.get(obj.category, obj.category)
+
 
 @admin.register(ContactSubmission)
 class ContactSubmissionAdmin(ModelAdmin):

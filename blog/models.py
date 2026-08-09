@@ -1064,6 +1064,17 @@ class Notification(models.Model):
         verbose_name_plural = "Известия"
         ordering = ['-created_at']
 
+
+class GamificationNotification(Notification):
+    """Admin-only proxy used to keep automatic game events separate."""
+
+    class Meta:
+        proxy = True
+        verbose_name = 'Известие от геймификацията'
+        verbose_name_plural = 'Известия от геймификацията'
+        ordering = ['-created_at']
+
+
 class TermsOfService(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Автор", help_text="Авторът, който е създал/редактирал условията.")
     content = models.TextField(null=False, help_text="Пълният текст на Условията за ползване. Поддържа се Markdown.")

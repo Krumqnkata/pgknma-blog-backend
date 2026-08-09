@@ -1,11 +1,12 @@
 import json
 from datetime import timedelta
 
+from django.contrib import admin
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Sum
-from django.test import TestCase
+from django.test import RequestFactory, TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -26,6 +27,7 @@ from .models import (
     Comments,
     DigitalReward,
     GamificationPointRule,
+    GamificationNotification,
     MemeOfWeek,
     Notification,
     PointTransaction,
@@ -402,6 +404,47 @@ class GamificationTestCase(TestCase):
             {'Нова значка', 'Глобални точки'},
         )
         self.assertTrue(all(item['is_gamification'] for item in achievements.data))
+
+    def test_admin_keeps_official_and_gamification_notifications_separate(self):
+        Notification.objects.create(text='Официално', category='general')
+        Notification.objects.create(
+            user=self.user,
+            text='Получени точки',
+            category='gamification_points',
+        )
+        request = RequestFactory().get('/admin/')
+        request.user = User.objects.create_superuser(
+            username='notification-admin',
+            email='notification-admin@example.com',
+            password='Strong-password-2026',
+        )
+        official_admin = admin.site._registry[Notification]
+        game_admin = admin.site._registry[GamificationNotification]
+
+        self.assertEqual(
+            list(official_admin.get_queryset(request).values_list('text', flat=True)),
+            ['Официално'],
+        )
+        self.assertEqual(
+            list(game_admin.get_queryset(request).values_list('text', flat=True)),
+            ['Получени точки'],
+        )
+
+        official = Notification(text='Ново официално', category='gamification_badge')
+        official_admin.save_model(request, official, form=None, change=False)
+        self.assertEqual(official.category, 'general')
+
+        self.client.force_login(request.user)
+        self.assertEqual(
+            self.client.get(reverse('admin:blog_notification_changelist')).status_code,
+            200,
+        )
+        self.assertEqual(
+            self.client.get(
+                reverse('admin:blog_gamificationnotification_changelist')
+            ).status_code,
+            200,
+        )
 
     def test_balance_never_falls_below_zero(self):
         point_transaction, created = change_points(

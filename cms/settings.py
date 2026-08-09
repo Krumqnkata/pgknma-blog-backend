@@ -634,7 +634,7 @@ UNFOLD = {
                         "icon": "calendar_month",
                     },
                     {
-                        "title": "Известия",
+                        "title": "Официални известия",
                         "link": "/admin/blog/notification/",
                         "icon": "notifications",
                     },
@@ -728,6 +728,11 @@ UNFOLD = {
                         "title": "Отключени награди",
                         "link": "/admin/blog/userdigitalreward/",
                         "icon": "lock_open",
+                    },
+                    {
+                        "title": "Известия от играта",
+                        "link": "/admin/blog/gamificationnotification/",
+                        "icon": "notifications_active",
                     },
                 ],
             },
