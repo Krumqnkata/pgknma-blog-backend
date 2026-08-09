@@ -197,6 +197,8 @@ class MissionRequirementsField(forms.JSONField):
     widget = MissionRequirementsWidget
 
     def prepare_value(self, value):
+        if value is None:
+            value = []
         if isinstance(value, str):
             return value
         return json.dumps(value, ensure_ascii=False, indent=2)
@@ -205,6 +207,7 @@ class MissionRequirementsField(forms.JSONField):
 class MissionAdminForm(forms.ModelForm):
     requirements = MissionRequirementsField(
         label='Условия на мисията',
+        initial=list,
         help_text=(
             'Добавете действията, които потребителят трябва да извърши, '
             'и необходимия брой за всяко от тях.'

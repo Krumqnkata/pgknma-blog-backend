@@ -40,6 +40,7 @@
         } catch (_error) {
             return;
         }
+        if (rows === null) rows = [];
         if (!Array.isArray(rows)) return;
 
         textarea.dataset.missionRequirementsReady = "true";

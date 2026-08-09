@@ -1,5 +1,7 @@
 import json
+from contextlib import redirect_stdout
 from datetime import timedelta
+from io import StringIO
 
 from django.contrib import admin
 from django.contrib.auth.models import User
@@ -154,6 +156,11 @@ class MissionAdminFormTests(TestCase):
     def test_widget_loads_visual_editor_assets(self):
         form = MissionAdminForm()
 
+        self.assertEqual(form['requirements'].value(), '[]')
+        self.assertEqual(
+            form.fields['requirements'].prepare_value(None),
+            '[]',
+        )
         self.assertEqual(
             form.fields['requirements'].widget.attrs['data-mission-requirements-input'],
             'true',
@@ -799,3 +806,84 @@ class GamificationTestCase(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_official_reward_seed_is_idempotent_and_can_link_badges(self):
+        from seed_official_digital_rewards import OFFICIAL_REWARDS, seed_rewards
+
+        with redirect_stdout(StringIO()):
+            seed_rewards(link_badges=True, grant_to=None, select=False)
+            seed_rewards(link_badges=True, grant_to=None, select=False)
+
+        keys = [definition['key'] for definition in OFFICIAL_REWARDS]
+        self.assertEqual(len(keys), 10)
+        self.assertEqual(len(set(keys)), 10)
+        self.assertEqual(
+            DigitalReward.objects.filter(key__in=keys).count(),
+            10,
+        )
+        for reward_kind, _label in DigitalReward.Kind.choices:
+            self.assertEqual(
+                DigitalReward.objects.filter(
+                    key__in=keys,
+                    kind=reward_kind,
+                ).count(),
+                2,
+            )
+        self.assertEqual(
+            sum(
+                Badge.objects.get(slug=definition['badge_slug'])
+                .digital_rewards.filter(key=definition['key'])
+                .count()
+                for definition in OFFICIAL_REWARDS
+            ),
+            10,
+        )
+
+    def test_blog_pioneer_badge_is_given_once_to_existing_active_users(self):
+        from award_blog_pioneer_badge import (
+            BADGE_SLUG,
+            REWARD_KEY,
+            award_to_users,
+            eligible_users,
+        )
+
+        second_user = User.objects.create_user(username='second-pioneer')
+        inactive_user = User.objects.create_user(
+            username='inactive-pioneer',
+            is_active=False,
+        )
+        users = eligible_users(cutoff=timezone.now() + timedelta(minutes=1))
+        with redirect_stdout(StringIO()):
+            first_result = award_to_users(users)
+            second_result = award_to_users(users)
+
+        badge = Badge.objects.get(slug=BADGE_SLUG)
+        reward = DigitalReward.objects.get(key=REWARD_KEY)
+        self.assertEqual(first_result['awarded'], 2)
+        self.assertEqual(second_result['awarded'], 0)
+        self.assertEqual(UserBadge.objects.filter(badge=badge).count(), 2)
+        self.assertEqual(
+            UserDigitalReward.objects.filter(reward=reward).count(),
+            2,
+        )
+        self.assertFalse(
+            UserBadge.objects.filter(user=inactive_user, badge=badge).exists()
+        )
+        self.assertFalse(
+            UserDigitalReward.objects.get(user=second_user, reward=reward).selected
+        )
+        self.assertEqual(self.points(), 0)
+        self.assertEqual(
+            Notification.objects.filter(category='gamification_badge').count(),
+            2,
+        )
+        self.assertEqual(
+            Notification.objects.filter(category='gamification_reward').count(),
+            2,
+        )
+
+        with redirect_stdout(StringIO()):
+            award_to_users(users, select_title=True)
+        self.assertTrue(
+            UserDigitalReward.objects.get(user=second_user, reward=reward).selected
+        )
