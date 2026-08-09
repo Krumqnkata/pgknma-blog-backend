@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from django.contrib.auth.models import User
@@ -17,6 +18,7 @@ from .gamification.services import (
     record_mission_activity,
     remove_mission_activity,
 )
+from .forms import MissionAdminForm
 from .models import (
     Badge,
     BellSongSuggestion,
@@ -34,6 +36,86 @@ from .models import (
     UserDigitalReward,
     UserMissionProgress,
 )
+
+
+class MissionAdminFormTests(TestCase):
+    def form_data(self, requirements):
+        start = timezone.now() + timedelta(days=1)
+        return {
+            'slug': 'readable-mission',
+            'title': 'Четима мисия',
+            'description': 'Описание',
+            'start_date': start,
+            'end_date': start + timedelta(days=7),
+            'reward_points': 50,
+            'active': True,
+            'requirements': json.dumps(requirements, ensure_ascii=False),
+        }
+
+    def test_form_accepts_and_normalizes_readable_requirements(self):
+        requirements = [
+            {
+                'key': 'read_posts',
+                'label': 'Прочети 3 различни публикации',
+                'action': 'post_read',
+                'target': '3',
+            },
+            {
+                'key': 'comment',
+                'label': 'Остави коментар',
+                'action': 'comment',
+                'target': 1,
+            },
+        ]
+        form = MissionAdminForm(data=self.form_data(requirements))
+
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        self.assertEqual(form.cleaned_data['requirements'][0]['target'], 3)
+        self.assertEqual(
+            form.cleaned_data['requirements'][0]['label'],
+            'Прочети 3 различни публикации',
+        )
+
+    def test_form_rejects_unsupported_action(self):
+        requirements = [{
+            'key': 'unknown_goal',
+            'label': 'Неподдържана цел',
+            'action': 'unknown_action',
+            'target': 1,
+        }]
+        form = MissionAdminForm(data=self.form_data(requirements))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('изберете поддържано действие', form.errors['requirements'][0])
+
+    def test_form_rejects_duplicate_system_keys(self):
+        requirements = [
+            {
+                'key': 'comment',
+                'label': 'Първи коментар',
+                'action': 'comment',
+                'target': 1,
+            },
+            {
+                'key': 'comment',
+                'label': 'Още коментари',
+                'action': 'comment',
+                'target': 3,
+            },
+        ]
+        form = MissionAdminForm(data=self.form_data(requirements))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('се повтаря', form.errors['requirements'][0])
+
+    def test_widget_loads_visual_editor_assets(self):
+        form = MissionAdminForm()
+
+        self.assertEqual(
+            form.fields['requirements'].widget.attrs['data-mission-requirements-input'],
+            'true',
+        )
+        self.assertIn('blog/admin/mission_requirements.js', str(form.media))
 
 
 class GamificationTestCase(TestCase):
@@ -355,6 +437,8 @@ class GamificationTestCase(TestCase):
 
     def test_leaderboard_is_opt_in_and_preference_is_private(self):
         other = User.objects.create_user(username='leader-student')
+        other.is_staff = True
+        other.save(update_fields=('is_staff',))
         change_points(
             user=self.user,
             points=40,
@@ -376,6 +460,10 @@ class GamificationTestCase(TestCase):
             row['username'] for row in public_response.data['all_time']['top']
         ]
         self.assertEqual(usernames, ['leader-student'])
+        self.assertEqual(
+            public_response.data['all_time']['top'][0]['site_role'],
+            'contributor',
+        )
 
         client.force_authenticate(self.user)
         preference = client.patch(
@@ -390,6 +478,40 @@ class GamificationTestCase(TestCase):
         self.assertEqual(
             ranked.data['all_time']['current_user']['username'],
             'game-student',
+        )
+        self.assertIsNone(
+            ranked.data['all_time']['current_user']['site_role'],
+        )
+
+    def test_poll_leaderboard_includes_administrator_role(self):
+        question = PollQuestion.objects.create(
+            title='Роля в класацията',
+            start_date=timezone.now() - timedelta(hours=1),
+            end_date=timezone.now() + timedelta(hours=1),
+        )
+        option = PollOption.objects.create(
+            question=question,
+            text='Верен отговор',
+            key='correct',
+            is_correct=True,
+        )
+        PollAnswer.objects.create(
+            user=self.user,
+            question=question,
+            selected_option=option,
+        )
+        self.user.is_staff = True
+        self.user.is_superuser = True
+        self.user.save(update_fields=('is_staff', 'is_superuser'))
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.get(reverse('poll-statistics'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data['leaderboard'][0]['site_role'],
+            'administrator',
         )
 
     def test_badge_can_unlock_configured_digital_reward(self):

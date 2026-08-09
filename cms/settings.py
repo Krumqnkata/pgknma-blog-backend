@@ -670,6 +670,63 @@ UNFOLD = {
                 ],
             },
             {
+                "separator": True,
+                "collapsible": True,
+                "title": "Геймификация",
+                "items": [
+                    {
+                        "title": "Потребителски профили",
+                        "link": "/admin/blog/userprofile/",
+                        "icon": "account_circle",
+                    },
+                    {
+                        "title": "Нива",
+                        "link": "/admin/blog/gamificationlevel/",
+                        "icon": "military_tech",
+                    },
+                    {
+                        "title": "Значки",
+                        "link": "/admin/blog/badge/",
+                        "icon": "workspace_premium",
+                    },
+                    {
+                        "title": "Получени значки",
+                        "link": "/admin/blog/userbadge/",
+                        "icon": "emoji_events",
+                    },
+                    {
+                        "title": "История на точките",
+                        "link": "/admin/blog/pointtransaction/",
+                        "icon": "stars",
+                    },
+                    {
+                        "title": "Мисии",
+                        "link": "/admin/blog/mission/",
+                        "icon": "flag",
+                    },
+                    {
+                        "title": "Прогрес по мисии",
+                        "link": "/admin/blog/usermissionprogress/",
+                        "icon": "task_alt",
+                    },
+                    {
+                        "title": "Активности по мисии",
+                        "link": "/admin/blog/missionactivity/",
+                        "icon": "timeline",
+                    },
+                    {
+                        "title": "Дигитални награди",
+                        "link": "/admin/blog/digitalreward/",
+                        "icon": "redeem",
+                    },
+                    {
+                        "title": "Отключени награди",
+                        "link": "/admin/blog/userdigitalreward/",
+                        "icon": "lock_open",
+                    },
+                ],
+            },
+            {
 		"separator": True,
                 "collapsible": True,
                 "title": "Валентинки",
@@ -762,11 +819,6 @@ UNFOLD = {
                         "title": "Активни сесии",
                         "link": "/admin/blog/blogloginsession/?session_status=active",
                         "icon": "devices",
-                    },
-                    {
-                        "title": "Профилни снимки",
-                        "link": "/admin/blog/userprofile/",
-                        "icon": "account_circle",
                     },
                     {
                         "title": "Групи",

@@ -545,6 +545,7 @@ class PollIntegrityTests(TestCase):
             'id': self.user.id,
             'username': self.user.username,
             'correct_answers': 1,
+            'site_role': None,
         }])
 
     def test_poll_and_event_validate_date_ranges(self):

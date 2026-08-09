@@ -1,0 +1,197 @@
+.mission-requirements[hidden],
+textarea[data-mission-requirements-input="true"][hidden] {
+    display: none !important;
+}
+
+.mission-requirements {
+    width: 100%;
+    border: 1px solid #dbe3ee;
+    border-radius: 14px;
+    padding: 16px;
+    background: #f8fafc;
+}
+
+.mission-requirements__toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.mission-requirements__summary,
+.mission-requirements__hint,
+.mission-requirements__empty {
+    margin: 0;
+}
+
+.mission-requirements__summary {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.mission-requirements__hint {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 13px;
+}
+
+.mission-requirements__add,
+.mission-requirements__remove {
+    border: 0;
+    border-radius: 9px;
+    padding: 9px 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.mission-requirements__add {
+    color: #fff;
+    background: #2563eb;
+}
+
+.mission-requirements__add:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+}
+
+.mission-requirements__list {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.mission-requirements__empty {
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    color: #64748b;
+}
+
+.mission-requirements__card {
+    display: grid;
+    grid-template-columns: minmax(240px, 2fr) minmax(210px, 1.25fr) minmax(120px, .6fr) auto;
+    gap: 12px;
+    align-items: end;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 14px;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, .04);
+}
+
+.mission-requirements__number {
+    grid-column: 1 / -1;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.mission-requirements__field {
+    display: grid;
+    gap: 6px;
+}
+
+.mission-requirements__label {
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.mission-requirements input,
+.mission-requirements select {
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    padding: 8px 10px;
+    color: #0f172a;
+    background: #fff;
+}
+
+.mission-requirements input:focus,
+.mission-requirements select:focus,
+.mission-requirements button:focus-visible,
+.mission-requirements summary:focus-visible {
+    outline: 3px solid rgba(37, 99, 235, .35);
+    outline-offset: 2px;
+}
+
+.mission-requirements__remove {
+    color: #b91c1c;
+    background: #fee2e2;
+}
+
+.mission-requirements__remove:hover {
+    background: #fecaca;
+}
+
+.mission-requirements__advanced {
+    grid-column: 1 / -1;
+    color: #475569;
+    font-size: 13px;
+}
+
+.mission-requirements__advanced summary {
+    width: fit-content;
+    cursor: pointer;
+    font-weight: 650;
+}
+
+.mission-requirements__advanced .mission-requirements__field {
+    max-width: 360px;
+    margin-top: 10px;
+}
+
+.dark .mission-requirements {
+    border-color: #334155;
+    background: #0f172a;
+}
+
+.dark .mission-requirements__summary,
+.dark .mission-requirements input,
+.dark .mission-requirements select {
+    color: #f8fafc;
+}
+
+.dark .mission-requirements__card,
+.dark .mission-requirements input,
+.dark .mission-requirements select {
+    border-color: #475569;
+    background: #1e293b;
+}
+
+.dark .mission-requirements__label,
+.dark .mission-requirements__number,
+.dark .mission-requirements__advanced {
+    color: #cbd5e1;
+}
+
+@media (max-width: 1100px) {
+    .mission-requirements__card {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .mission-requirements {
+        padding: 12px;
+    }
+
+    .mission-requirements__toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .mission-requirements__card {
+        grid-template-columns: 1fr;
+    }
+
+    .mission-requirements__number,
+    .mission-requirements__advanced {
+        grid-column: 1;
+    }
+}

@@ -67,6 +67,26 @@ class PublicUserProfileTests(TestCase):
         )
         self.assertTrue(owner_response.data['is_owner'])
 
+    def test_public_profile_exposes_editorial_role(self):
+        regular_response = self.client.get(self.url)
+        self.assertIsNone(regular_response.data['user']['site_role'])
+
+        self.user.is_staff = True
+        self.user.save(update_fields=('is_staff',))
+        contributor_response = self.client.get(self.url)
+        self.assertEqual(
+            contributor_response.data['user']['site_role'],
+            'contributor',
+        )
+
+        self.user.is_superuser = True
+        self.user.save(update_fields=('is_superuser',))
+        administrator_response = self.client.get(self.url)
+        self.assertEqual(
+            administrator_response.data['user']['site_role'],
+            'administrator',
+        )
+
     def test_owner_can_update_profile_and_explicitly_publish_email(self):
         anonymous = self.client.patch(
             self.settings_url,

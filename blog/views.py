@@ -83,6 +83,7 @@ from .session_auth import (
     get_current_session_id,
     revoke_login_session,
 )
+from .site_roles import get_site_role
 
 
 def _public_posts_queryset():
@@ -615,6 +616,7 @@ class PublicUserProfileView(APIView):
                     else None
                 ),
                 'member_since': user.date_joined,
+                'site_role': get_site_role(user),
             },
             'is_owner': is_owner,
             'profile_is_public': profile.public_profile_enabled,
@@ -788,6 +790,8 @@ class GamificationLeaderboardView(APIView):
                 .values(
                     'user_id',
                     'user__username',
+                    'user__is_staff',
+                    'user__is_superuser',
                     points=F('gamification_points'),
                 )
             )
@@ -797,7 +801,12 @@ class GamificationLeaderboardView(APIView):
                     user__userprofile__leaderboard_opt_in=True,
                     created_at__gte=start_at,
                 )
-                .values('user_id', 'user__username')
+                .values(
+                    'user_id',
+                    'user__username',
+                    'user__is_staff',
+                    'user__is_superuser',
+                )
                 .annotate(points=Sum('points'))
                 .filter(points__gt=0)
             )
@@ -816,6 +825,11 @@ class GamificationLeaderboardView(APIView):
                 'avatar_url': self._avatar_url(profile_map.get(row['user_id'])),
                 'points': row['points'],
                 'user_id': row['user_id'],
+                'site_role': (
+                    'administrator'
+                    if row['user__is_superuser']
+                    else 'contributor' if row['user__is_staff'] else None
+                ),
             })
         return normalized
 
@@ -1827,8 +1841,20 @@ class WeeklyPollViewSet(viewsets.ViewSet):
                 )
             )
             .order_by('-correct_answers', 'username', 'id')
-            .values('id', 'username', 'correct_answers')[:5]
+            .values(
+                'id',
+                'username',
+                'correct_answers',
+                'is_staff',
+                'is_superuser',
+            )[:5]
         )
+        for entry in aggregates['leaderboard']:
+            entry['site_role'] = (
+                'administrator'
+                if entry.pop('is_superuser')
+                else 'contributor' if entry.pop('is_staff') else None
+            )
         serializer = PollStatisticsSerializer(aggregates)
         return Response(serializer.data)
 

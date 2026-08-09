@@ -14,6 +14,7 @@ from unfold_markdown.widgets import MarkdownWidget
 from unfold.widgets import UnfoldBooleanSwitchWidget
 from .forms import (
     MemeSelectionForm,
+    MissionAdminForm,
     PollQuestionSelectionForm,
     PostAdminForm,
     SongSuggestionSelectionForm,
@@ -1285,6 +1286,7 @@ class PointTransactionAdmin(ModelAdmin):
 
 @admin.register(Mission)
 class MissionAdmin(ModelAdmin):
+    form = MissionAdminForm
     list_display = (
         'title', 'start_date', 'end_date', 'reward_points', 'active',
     )

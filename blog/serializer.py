@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from .network import get_client_ip
 from .session_auth import issue_session_tokens
+from .site_roles import get_site_role
 
 
 def _user_profile(user):
@@ -45,6 +46,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     avatar_source = serializers.SerializerMethodField()
     avatar_preset = serializers.SerializerMethodField()
     email_verified = serializers.SerializerMethodField()
+    site_role = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -57,6 +59,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             'avatar_source',
             'avatar_preset',
             'email_verified',
+            'site_role',
         )
         read_only_fields = fields
 
@@ -81,6 +84,9 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     def get_email_verified(self, obj) -> bool:
         profile = _user_profile(obj)
         return profile.email_verified if profile else True
+
+    def get_site_role(self, obj) -> str | None:
+        return get_site_role(obj)
 
 
 class ProfileAvatarUpdateSerializer(serializers.Serializer):
@@ -182,6 +188,7 @@ class PostDocumentSerializer(serializers.ModelSerializer):
 class PostSerializer(serializers.ModelSerializer):
     author_username = serializers.SerializerMethodField()
     author_avatar_url = serializers.SerializerMethodField()
+    author_site_role = serializers.SerializerMethodField()
     category_name = serializers.StringRelatedField(source='category')
     images = serializers.SerializerMethodField()
     gallery = PostImageSerializer(source='images', many=True, read_only=True)
@@ -197,6 +204,7 @@ class PostSerializer(serializers.ModelSerializer):
             'author',         # Запазваме ID на автора
             'author_username',# ⬅️ Добавено: Потребителско име
             'author_avatar_url',
+            'author_site_role',
             'title',
             'banner',
             'hook',
@@ -220,6 +228,9 @@ class PostSerializer(serializers.ModelSerializer):
 
     def get_author_avatar_url(self, obj) -> str | None:
         return _user_avatar_url(obj.author)
+
+    def get_author_site_role(self, obj) -> str | None:
+        return get_site_role(obj.author)
 
     def get_images(self, obj):
         images = obj.images.all()
@@ -444,29 +455,37 @@ class CommentSerializer(serializers.ModelSerializer):
     )
     username = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
+    site_role = serializers.SerializerMethodField()
     post_id = serializers.IntegerField(source='post.id', read_only=True)
     parent_id = serializers.PrimaryKeyRelatedField(source='parent', read_only=True)
     parent_username = serializers.SerializerMethodField()
+    parent_site_role = serializers.SerializerMethodField()
     reply_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Comments
-        fields = ['id', 'post_id', 'username', 'avatar_url', 'content', 'created_at', 'parent', 'parent_id', 'parent_username', 'reply_count']
+        fields = ['id', 'post_id', 'username', 'avatar_url', 'site_role', 'content', 'created_at', 'parent', 'parent_id', 'parent_username', 'parent_site_role', 'reply_count']
         extra_kwargs = {
             'parent': {'write_only': True, 'required': False, 'allow_null': True, 'queryset': Comments.objects.all()},
         }
-        read_only_fields = ['id', 'created_at', 'username', 'avatar_url', 'post_id', 'parent_id', 'parent_username', 'reply_count']
+        read_only_fields = ['id', 'created_at', 'username', 'avatar_url', 'site_role', 'post_id', 'parent_id', 'parent_username', 'parent_site_role', 'reply_count']
 
     def get_parent_username(self, obj):
         if obj.parent:
             return obj.parent.user.username if obj.parent.user else None
         return None
 
+    def get_parent_site_role(self, obj) -> str | None:
+        return get_site_role(obj.parent.user) if obj.parent else None
+
     def get_username(self, obj):
         return obj.user.username if obj.user else None
 
     def get_avatar_url(self, obj) -> str | None:
         return _user_avatar_url(obj.user)
+
+    def get_site_role(self, obj) -> str | None:
+        return get_site_role(obj.user)
 
     def get_reply_count(self, obj):
         if obj.parent is None:
@@ -549,6 +568,7 @@ class PollLeaderboardEntrySerializer(serializers.Serializer):
     id = serializers.IntegerField()
     username = serializers.CharField()
     correct_answers = serializers.IntegerField()
+    site_role = serializers.CharField(allow_null=True)
 
 
 class PollStatisticsSerializer(serializers.Serializer):
@@ -658,6 +678,7 @@ class PublicUserSummarySerializer(serializers.Serializer):
     avatar_url = serializers.CharField(allow_null=True)
     email = serializers.EmailField(allow_null=True)
     member_since = serializers.DateTimeField()
+    site_role = serializers.CharField(allow_null=True)
 
 
 class PublicEarnedBadgeSerializer(serializers.Serializer):

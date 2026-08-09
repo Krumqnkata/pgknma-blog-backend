@@ -80,6 +80,26 @@ class AvatarApiTests(APITestCase):
             '/static/blog/avatars/code.svg',
         )
 
+    def test_profile_role_follows_django_admin_access(self):
+        regular_response = self.client.get('/api/profile/')
+        self.assertIsNone(regular_response.data['user']['site_role'])
+
+        self.user.is_staff = True
+        self.user.save(update_fields=('is_staff',))
+        contributor_response = self.client.get('/api/profile/')
+        self.assertEqual(
+            contributor_response.data['user']['site_role'],
+            'contributor',
+        )
+
+        self.user.is_superuser = True
+        self.user.save(update_fields=('is_superuser',))
+        administrator_response = self.client.get('/api/profile/')
+        self.assertEqual(
+            administrator_response.data['user']['site_role'],
+            'administrator',
+        )
+
     def test_preset_and_reset_to_initials(self):
         preset_response = self.client.put(
             '/api/profile/avatar/',
@@ -140,6 +160,8 @@ class AvatarApiTests(APITestCase):
         self.assertFalse(UserProfile.objects.get(user=self.user).avatar)
 
     def test_comments_posts_and_export_contain_current_avatar(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=('is_staff',))
         profile = UserProfile.objects.get(user=self.user)
         profile.avatar_source = UserProfile.AvatarSource.PRESET
         profile.avatar_preset = 'code'
@@ -170,6 +192,8 @@ class AvatarApiTests(APITestCase):
             comment_response.data[0]['avatar_url'],
             '/static/blog/avatars/code.svg',
         )
+        self.assertEqual(post_response.data['author_site_role'], 'contributor')
+        self.assertEqual(comment_response.data[0]['site_role'], 'contributor')
         self.assertEqual(exported['account']['avatar']['source'], 'preset')
         self.assertEqual(exported['account']['avatar']['preset'], 'code')
 

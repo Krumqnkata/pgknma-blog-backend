@@ -1,4 +1,7 @@
 # blog/forms.py
+import json
+import re
+
 from django import forms
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -11,6 +14,7 @@ from django.utils.html import format_html
 from .models import (
     BellSongSuggestion,
     MemeOfWeek,
+    Mission,
     PollQuestion,
     PostDocument,
     Posts,
@@ -22,6 +26,115 @@ from .models import (
 MAX_GALLERY_IMAGES = 10
 MAX_GALLERY_DOCUMENTS = 10
 ADMIN_SELECTION_LIMIT = 200
+
+MISSION_ACTION_CHOICES = (
+    ('post_read', 'Прочетена публикация'),
+    ('poll_vote', 'Гласуване в анкета'),
+    ('calendar_visit', 'Посещение на училищния календар'),
+    ('comment', 'Публикуван валиден коментар'),
+)
+MISSION_ACTION_VALUES = {value for value, _label in MISSION_ACTION_CHOICES}
+MISSION_REQUIREMENT_KEY_PATTERN = re.compile(r'^[a-z][a-z0-9_]{0,49}$')
+
+
+class MissionRequirementsWidget(forms.Textarea):
+    """Progressively enhanced JSON editor for mission goals in Django admin."""
+
+    def __init__(self, attrs=None):
+        default_attrs = {
+            'rows': 10,
+            'data-mission-requirements-input': 'true',
+        }
+        if attrs:
+            default_attrs.update(attrs)
+        super().__init__(default_attrs)
+
+    class Media:
+        css = {
+            'all': ('blog/admin/mission_requirements.css',),
+        }
+        js = ('blog/admin/mission_requirements.js',)
+
+
+class MissionRequirementsField(forms.JSONField):
+    widget = MissionRequirementsWidget
+
+    def prepare_value(self, value):
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False, indent=2)
+
+
+class MissionAdminForm(forms.ModelForm):
+    requirements = MissionRequirementsField(
+        label='Условия на мисията',
+        help_text=(
+            'Добавете действията, които потребителят трябва да извърши, '
+            'и необходимия брой за всяко от тях.'
+        ),
+    )
+
+    class Meta:
+        model = Mission
+        fields = '__all__'
+
+    def clean_requirements(self):
+        requirements = self.cleaned_data['requirements']
+        if not isinstance(requirements, list):
+            raise ValidationError('Условията трябва да бъдат списък от цели.')
+        if not requirements:
+            raise ValidationError('Добавете поне едно условие към мисията.')
+
+        cleaned = []
+        used_keys = set()
+        for index, requirement in enumerate(requirements, start=1):
+            if not isinstance(requirement, dict):
+                raise ValidationError(f'Условие №{index} е в невалиден формат.')
+
+            key = str(requirement.get('key', '')).strip()
+            label = str(requirement.get('label', '')).strip()
+            action = str(requirement.get('action', '')).strip()
+            target = requirement.get('target')
+
+            if not MISSION_REQUIREMENT_KEY_PATTERN.fullmatch(key):
+                raise ValidationError(
+                    f'Условие №{index}: системният ключ трябва да започва с '
+                    'малка латинска буква и да съдържа само букви, цифри и _.'
+                )
+            if key in used_keys:
+                raise ValidationError(
+                    f'Условие №{index}: системният ключ „{key}“ се повтаря.'
+                )
+            if not label:
+                raise ValidationError(f'Условие №{index}: въведете описание.')
+            if action not in MISSION_ACTION_VALUES:
+                raise ValidationError(
+                    f'Условие №{index}: изберете поддържано действие.'
+                )
+            if isinstance(target, bool):
+                raise ValidationError(
+                    f'Условие №{index}: необходимият брой трябва да е число.'
+                )
+            try:
+                target = int(target)
+            except (TypeError, ValueError):
+                raise ValidationError(
+                    f'Условие №{index}: необходимият брой трябва да е число.'
+                )
+            if not 1 <= target <= 10000:
+                raise ValidationError(
+                    f'Условие №{index}: необходимият брой трябва да е между 1 и 10 000.'
+                )
+
+            used_keys.add(key)
+            cleaned.append({
+                'key': key,
+                'label': label,
+                'action': action,
+                'target': target,
+            })
+
+        return cleaned
 
 
 def format_upload_limit(size_bytes):
