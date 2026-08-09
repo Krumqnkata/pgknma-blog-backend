@@ -1,13 +1,14 @@
-from django.db.models.signals import post_save, pre_delete, pre_save
+from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
 from django.dispatch import receiver
 
-from blog.models import BellSongSuggestion, Comments, MemeOfWeek, PollAnswer
+from blog.models import Badge, BellSongSuggestion, Comments, DigitalReward, MemeOfWeek, PollAnswer
 
 from .services import (
     award_activity,
     record_mission_activity,
     remove_mission_activity,
     reverse_activity,
+    sync_badge_rewards,
 )
 
 
@@ -88,3 +89,22 @@ def sync_meme_reward(sender, instance, raw=False, **kwargs):
 @receiver(pre_delete, sender=MemeOfWeek)
 def reverse_deleted_meme(sender, instance, **kwargs):
     reverse_activity(instance, 'meme_approved', 'Премахнато одобрено меме')
+
+
+@receiver(m2m_changed, sender=Badge.digital_rewards.through)
+def backfill_linked_digital_rewards(sender, instance, action, reverse=False, **kwargs):
+    if action != 'post_add':
+        return
+    if reverse:
+        for badge in instance.badges.all():
+            sync_badge_rewards(badge)
+        return
+    sync_badge_rewards(instance)
+
+
+@receiver(post_save, sender=DigitalReward)
+def backfill_reactivated_digital_reward(sender, instance, raw=False, **kwargs):
+    if raw or not instance.active:
+        return
+    for badge in instance.badges.all():
+        sync_badge_rewards(badge)

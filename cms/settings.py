@@ -700,6 +700,11 @@ UNFOLD = {
                         "icon": "stars",
                     },
                     {
+                        "title": "Правила за точки",
+                        "link": "/admin/blog/gamificationpointrule/",
+                        "icon": "rule",
+                    },
+                    {
                         "title": "Мисии",
                         "link": "/admin/blog/mission/",
                         "icon": "flag",

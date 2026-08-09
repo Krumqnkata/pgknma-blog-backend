@@ -650,6 +650,40 @@ class PointTransaction(models.Model):
         return f'{self.user}: {sign}{self.points} — {self.description}'
 
 
+class GamificationPointRule(models.Model):
+    ACTION_CHOICES = (
+        ('poll_vote', 'Гласуване в анкета'),
+        ('comment', 'Валиден коментар'),
+        ('song_approved', 'Одобрено предложение за песен'),
+        ('meme_approved', 'Одобрено меме'),
+        ('post_read', 'Прочетена публикация'),
+        ('calendar_visit', 'Посещение на календара'),
+    )
+
+    action = models.CharField(
+        max_length=40,
+        unique=True,
+        choices=ACTION_CHOICES,
+        verbose_name='Действие',
+    )
+    points = models.PositiveSmallIntegerField(default=1, verbose_name='Точки')
+    daily_limit = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='Дневен лимит',
+        help_text='Оставете празно за неограничен брой наградени действия на ден.',
+    )
+    active = models.BooleanField(default=True, verbose_name='Активно')
+
+    class Meta:
+        verbose_name = 'Правило за точки'
+        verbose_name_plural = 'Правила за точки'
+        ordering = ('action',)
+
+    def __str__(self):
+        return f'{self.get_action_display()}: {self.points} т.'
+
+
 class Mission(models.Model):
     slug = models.SlugField(max_length=100, unique=True)
     title = models.CharField(max_length=120, verbose_name='Име')

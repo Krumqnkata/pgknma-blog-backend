@@ -55,12 +55,16 @@ from .serializer import (
     RegistrationResponseSerializer, EmailVerificationResendRequestSerializer,
     GamificationProfileResponseSerializer, PointTransactionSerializer,
     GamificationActivitySerializer, LeaderboardPreferenceSerializer,
+    DigitalRewardSelectionSerializer,
     PublicProfileResponseSerializer, PublicProfileSettingsSerializer,
 )
 from .gamification.services import (
     active_missions_for_user,
+    award_activity,
+    award_tracked_activity,
     level_state,
     record_mission_activity,
+    select_digital_reward,
 )
 from .avatars import (
     avatar_options_payload,
@@ -586,7 +590,7 @@ class PublicUserProfileView(APIView):
             .order_by('-awarded_at')
         )
         rewards = list(
-            UserDigitalReward.objects.filter(user=user)
+            UserDigitalReward.objects.filter(user=user, reward__active=True)
             .select_related('reward')
             .order_by('-unlocked_at')
         )
@@ -709,6 +713,20 @@ class GamificationProfileView(APIView):
                 user=request.user
             )[:10],
             'missions': active_missions_for_user(request.user),
+            'rewards': [
+                {
+                    'key': row.reward.key,
+                    'title': row.reward.title,
+                    'kind': row.reward.kind,
+                    'config': row.reward.config,
+                    'unlocked_at': row.unlocked_at,
+                    'selected': row.selected,
+                }
+                for row in UserDigitalReward.objects.filter(
+                    user=request.user,
+                    reward__active=True,
+                ).select_related('reward').order_by('reward__kind', 'reward__title')
+            ],
         }
         return Response(GamificationProfileResponseSerializer(payload).data)
 
@@ -743,17 +761,56 @@ class GamificationActivityView(APIView):
             if not post:
                 raise Http404
             reference_id = post.pk
+            point_transaction, points_created = award_activity(
+                request.user,
+                'post_read',
+                post,
+            )
         else:
             reference_id = timezone.localdate().isoformat()
+            point_transaction, points_created = award_tracked_activity(
+                request.user,
+                'calendar_visit',
+                'blog.calendar_visit',
+                reference_id,
+            )
         completed = record_mission_activity(
             request.user,
             action_name,
             reference_id,
         )
         return Response(
-            {'recorded': True, 'completed_mission_ids': completed},
+            {
+                'recorded': True,
+                'points_awarded': point_transaction.points if points_created else 0,
+                'completed_mission_ids': completed,
+            },
             status=status.HTTP_202_ACCEPTED,
         )
+
+
+class DigitalRewardSelectionView(APIView):
+    permission_classes = (SiteIsAvailable, IsAuthenticated)
+
+    def patch(self, request, reward_key):
+        serializer = DigitalRewardSelectionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            row = select_digital_reward(
+                request.user,
+                reward_key,
+                selected=serializer.validated_data['selected'],
+            )
+        except UserDigitalReward.DoesNotExist:
+            raise Http404
+        return Response({
+            'key': row.reward.key,
+            'title': row.reward.title,
+            'kind': row.reward.kind,
+            'config': row.reward.config,
+            'unlocked_at': row.unlocked_at,
+            'selected': row.selected,
+        })
 
 
 class LeaderboardPreferenceView(APIView):
@@ -817,6 +874,20 @@ class GamificationLeaderboardView(APIView):
                 user_id__in=[row['user_id'] for row in rows]
             )
         }
+        reward_map = {}
+        for owned_reward in UserDigitalReward.objects.filter(
+            user_id__in=[row['user_id'] for row in rows],
+            reward__active=True,
+            selected=True,
+        ).select_related('reward'):
+            reward_map.setdefault(owned_reward.user_id, []).append({
+                'key': owned_reward.reward.key,
+                'title': owned_reward.reward.title,
+                'kind': owned_reward.reward.kind,
+                'config': owned_reward.reward.config,
+                'unlocked_at': owned_reward.unlocked_at,
+                'selected': True,
+            })
         normalized = []
         for index, row in enumerate(rows, start=1):
             normalized.append({
@@ -825,6 +896,7 @@ class GamificationLeaderboardView(APIView):
                 'avatar_url': self._avatar_url(profile_map.get(row['user_id'])),
                 'points': row['points'],
                 'user_id': row['user_id'],
+                'equipped_rewards': reward_map.get(row['user_id'], []),
                 'site_role': (
                     'administrator'
                     if row['user__is_superuser']
@@ -1879,7 +1951,16 @@ class NotificationListView(generics.ListAPIView):
                 Q(user__isnull=True) | Q(user=self.request.user)
             )
         else:
-            queryset = queryset.filter(user__isnull=True)
+            queryset = queryset.filter(user__isnull=True).exclude(
+                category__startswith='gamification_'
+            )
+        channel = self.request.query_params.get('channel')
+        if channel == 'gamification':
+            if not self.request.user.is_authenticated:
+                return queryset.none()
+            queryset = queryset.filter(category__startswith='gamification_')
+        elif channel == 'general':
+            queryset = queryset.exclude(category__startswith='gamification_')
         return queryset.order_by('-created_at')
 
 class EventListView(generics.ListAPIView):

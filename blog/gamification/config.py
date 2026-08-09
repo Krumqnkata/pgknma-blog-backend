@@ -6,6 +6,14 @@ DEFAULT_POINT_RULES = {
     'comment': 5,
     'song_approved': 20,
     'meme_approved': 20,
+    'post_read': 2,
+    'calendar_visit': 2,
+}
+
+DEFAULT_DAILY_LIMITS = {
+    'comment': 5,
+    'post_read': 5,
+    'calendar_visit': 1,
 }
 
 ACTION_DESCRIPTIONS = {
@@ -13,13 +21,27 @@ ACTION_DESCRIPTIONS = {
     'comment': 'Валиден коментар',
     'song_approved': 'Одобрено предложение за песен',
     'meme_approved': 'Одобрено меме',
+    'post_read': 'Прочетена публикация',
+    'calendar_visit': 'Посещение на училищния календар',
 }
 
 
 def point_value(action):
+    from blog.models import GamificationPointRule
+
+    rule = GamificationPointRule.objects.filter(action=action).first()
+    if rule:
+        return rule.points if rule.active else 0
     configured = getattr(settings, 'GAMIFICATION_POINTS', {})
     return int(configured.get(action, DEFAULT_POINT_RULES[action]))
 
 
-def rewarded_comments_per_day():
-    return int(getattr(settings, 'GAMIFICATION_COMMENT_DAILY_LIMIT', 5))
+def daily_limit(action):
+    from blog.models import GamificationPointRule
+
+    rule = GamificationPointRule.objects.filter(action=action).first()
+    if rule:
+        return rule.daily_limit if rule.active else 0
+    if action == 'comment':
+        return int(getattr(settings, 'GAMIFICATION_COMMENT_DAILY_LIMIT', 5))
+    return DEFAULT_DAILY_LIMITS.get(action)

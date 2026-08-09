@@ -18,13 +18,14 @@ from .gamification.services import (
     record_mission_activity,
     remove_mission_activity,
 )
-from .forms import MissionAdminForm
+from .forms import BadgeAdminForm, DigitalRewardAdminForm, MissionAdminForm
 from .models import (
     Badge,
     BellSongSuggestion,
     Category,
     Comments,
     DigitalReward,
+    GamificationPointRule,
     MemeOfWeek,
     Notification,
     PointTransaction,
@@ -36,6 +37,46 @@ from .models import (
     UserDigitalReward,
     UserMissionProgress,
 )
+
+
+class GamificationAdminFormTests(TestCase):
+    def test_badge_condition_is_stored_as_readable_structured_data(self):
+        form = BadgeAdminForm(data={
+            'slug': 'helpful-reader',
+            'title': 'Полезен читател',
+            'description': 'За редовно четене.',
+            'icon': 'book-open',
+            'rarity': Badge.Rarity.RARE,
+            'condition_type': 'action_count',
+            'condition_action': 'post_read',
+            'condition_target': 7,
+            'active': True,
+            'points_reward': 10,
+        })
+
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        self.assertEqual(form.cleaned_data['requirement'], {
+            'type': 'action_count',
+            'action': 'post_read',
+            'target': 7,
+        })
+
+    def test_digital_reward_visual_settings_are_stored_without_raw_json(self):
+        form = DigitalRewardAdminForm(data={
+            'key': 'violet-title',
+            'title': 'Виолетова титла',
+            'kind': DigitalReward.Kind.USER_TITLE,
+            'active': True,
+            'visual_color': '#8b5cf6',
+            'secondary_color': '#22d3ee',
+            'effect_style': 'gradient',
+            'display_text': 'Училищен посланик',
+            'display_icon': 'sparkles',
+        })
+
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        self.assertEqual(form.cleaned_data['config']['text'], 'Училищен посланик')
+        self.assertEqual(form.cleaned_data['config']['style'], 'gradient')
 
 
 class MissionAdminFormTests(TestCase):
@@ -180,6 +221,20 @@ class GamificationTestCase(TestCase):
             5,
         )
 
+    def test_point_value_and_daily_limit_are_configurable_from_database(self):
+        GamificationPointRule.objects.update_or_create(
+            action='comment',
+            defaults={'points': 9, 'daily_limit': 1, 'active': True},
+        )
+        Comments.objects.create(user=self.user, post=self.post, content='Награден')
+        Comments.objects.create(user=self.user, post=self.post, content='Ненаграден')
+
+        self.assertEqual(self.points(), 9)
+        self.assertEqual(
+            PointTransaction.objects.filter(user=self.user, action='comment').count(),
+            1,
+        )
+
     def test_poll_answer_is_unique_and_awards_once(self):
         question = PollQuestion.objects.create(
             title='Анкета',
@@ -321,6 +376,33 @@ class GamificationTestCase(TestCase):
         self.assertIn('Общо съобщение', user_texts)
         self.assertNotIn('Чужда награда', user_texts)
 
+    def test_gamification_notifications_have_a_separate_channel(self):
+        Notification.objects.create(text='Общо съобщение', category='general')
+        Notification.objects.create(
+            user=self.user,
+            text='Нова значка',
+            category='gamification_badge',
+        )
+        # Дори погрешно създадено глобално игрово известие не се показва анонимно.
+        Notification.objects.create(text='Глобални точки', category='gamification_points')
+
+        client = APIClient()
+        anonymous = client.get(reverse('notification-list'))
+        self.assertEqual([item['text'] for item in anonymous.data], ['Общо съобщение'])
+
+        client.force_authenticate(self.user)
+        general = client.get(reverse('notification-list'), {'channel': 'general'})
+        achievements = client.get(
+            reverse('notification-list'),
+            {'channel': 'gamification'},
+        )
+        self.assertEqual([item['text'] for item in general.data], ['Общо съобщение'])
+        self.assertEqual(
+            {item['text'] for item in achievements.data},
+            {'Нова значка', 'Глобални точки'},
+        )
+        self.assertTrue(all(item['is_gamification'] for item in achievements.data))
+
     def test_balance_never_falls_below_zero(self):
         point_transaction, created = change_points(
             user=self.user,
@@ -434,6 +516,54 @@ class GamificationTestCase(TestCase):
             mission=ensure_current_weekly_mission(),
         )
         self.assertEqual(progress.progress['read_posts'], 1)
+        self.assertEqual(self.points(), 2)
+        self.assertEqual(
+            PointTransaction.objects.filter(
+                user=self.user,
+                action='post_read',
+                points__gt=0,
+            ).count(),
+            1,
+        )
+
+    def test_calendar_visit_awards_points_only_once_per_day(self):
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        first = client.post(
+            reverse('gamification-activity'),
+            {'action': 'calendar_visit'},
+            format='json',
+        )
+        repeated = client.post(
+            reverse('gamification-activity'),
+            {'action': 'calendar_visit'},
+            format='json',
+        )
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(first.data['points_awarded'], 2)
+        self.assertEqual(repeated.status_code, 202)
+        self.assertEqual(repeated.data['points_awarded'], 0)
+        self.assertEqual(self.points(), 2)
+
+    def test_new_badges_use_generic_admin_condition_instead_of_slug_logic(self):
+        badge = Badge.objects.create(
+            slug='two-helpful-comments',
+            title='Два полезни коментара',
+            description='Универсално условие',
+            requirement={
+                'type': 'action_count',
+                'action': 'comment',
+                'target': 2,
+            },
+        )
+
+        Comments.objects.create(user=self.user, post=self.post, content='Първи')
+        self.assertFalse(UserBadge.objects.filter(user=self.user, badge=badge).exists())
+        Comments.objects.create(user=self.user, post=self.post, content='Втори')
+
+        self.assertTrue(UserBadge.objects.filter(user=self.user, badge=badge).exists())
 
     def test_leaderboard_is_opt_in_and_preference_is_private(self):
         other = User.objects.create_user(username='leader-student')
@@ -530,3 +660,99 @@ class GamificationTestCase(TestCase):
                 source_badge=badge,
             ).exists()
         )
+
+    def test_linking_reward_backfills_users_who_already_earned_badge(self):
+        badge = Badge.objects.create(
+            slug='legacy-winner',
+            title='Стара значка',
+            description='Получена преди добавяне на наградата',
+            requirement={'type': 'manual'},
+        )
+        award_badge(self.user, badge, reason='Стара награда')
+        reward = DigitalReward.objects.create(
+            key='legacy-glow',
+            title='Сияние за стара значка',
+            kind=DigitalReward.Kind.PROFILE_BORDER,
+        )
+
+        badge.digital_rewards.add(reward)
+
+        self.assertTrue(UserDigitalReward.objects.filter(
+            user=self.user,
+            reward=reward,
+            source_badge=badge,
+        ).exists())
+
+    def test_owned_rewards_can_be_selected_one_per_kind_and_are_public(self):
+        first = DigitalReward.objects.create(
+            key='blue-frame',
+            title='Синя рамка',
+            kind=DigitalReward.Kind.AVATAR_FRAME,
+            config={'color': '#2563eb', 'style': 'solid'},
+        )
+        second = DigitalReward.objects.create(
+            key='gold-frame',
+            title='Златна рамка',
+            kind=DigitalReward.Kind.AVATAR_FRAME,
+            config={'color': '#f59e0b', 'style': 'glow'},
+        )
+        UserDigitalReward.objects.create(user=self.user, reward=first)
+        UserDigitalReward.objects.create(user=self.user, reward=second)
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        selected_first = client.patch(
+            reverse('gamification-reward-select', args=(first.key,)),
+            {'selected': True},
+            format='json',
+        )
+        selected_second = client.patch(
+            reverse('gamification-reward-select', args=(second.key,)),
+            {'selected': True},
+            format='json',
+        )
+
+        self.assertEqual(selected_first.status_code, 200)
+        self.assertEqual(selected_second.status_code, 200)
+        self.assertFalse(UserDigitalReward.objects.get(
+            user=self.user,
+            reward=first,
+        ).selected)
+        self.assertTrue(UserDigitalReward.objects.get(
+            user=self.user,
+            reward=second,
+        ).selected)
+
+        progress = client.get(reverse('gamification-profile'))
+        selected = [row for row in progress.data['rewards'] if row['selected']]
+        self.assertEqual([row['key'] for row in selected], ['gold-frame'])
+
+        current_profile = client.get(reverse('profile-current'))
+        self.assertEqual(
+            current_profile.data['user']['equipped_rewards'][0]['key'],
+            'gold-frame',
+        )
+        public_profile = client.get(
+            reverse('public-user-profile', args=(self.user.username,))
+        )
+        self.assertEqual(
+            [row['key'] for row in public_profile.data['rewards'] if row['selected']],
+            ['gold-frame'],
+        )
+
+    def test_unowned_reward_cannot_be_selected(self):
+        reward = DigitalReward.objects.create(
+            key='locked-theme',
+            title='Заключена тема',
+            kind=DigitalReward.Kind.PROFILE_THEME,
+        )
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        response = client.patch(
+            reverse('gamification-reward-select', args=(reward.key,)),
+            {'selected': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 404)

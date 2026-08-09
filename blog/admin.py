@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -14,6 +14,8 @@ from unfold_markdown.widgets import MarkdownWidget
 from unfold.widgets import UnfoldBooleanSwitchWidget
 from .forms import (
     MemeSelectionForm,
+    BadgeAdminForm,
+    DigitalRewardAdminForm,
     MissionAdminForm,
     PollQuestionSelectionForm,
     PostAdminForm,
@@ -34,7 +36,7 @@ from io import StringIO
 import csv
 from .session_auth import revoke_login_session
 from .avatars import reset_profile_avatar
-from .gamification.services import award_badge, change_points
+from .gamification.services import award_badge, change_points, evaluate_badge_for_all_users
 
 try:
     admin.site.unregister(Group)
@@ -1238,11 +1240,29 @@ class GamificationLevelAdmin(ModelAdmin):
 
 @admin.register(Badge)
 class BadgeAdmin(ModelAdmin):
+    form = BadgeAdminForm
     list_display = (
         'title', 'rarity', 'active', 'hidden', 'repeatable', 'points_reward',
     )
     list_filter = ('active', 'hidden', 'repeatable', 'rarity')
     search_fields = ('title', 'slug', 'description')
+    filter_horizontal = ('digital_rewards',)
+    fieldsets = (
+        ('Основна информация', {'fields': ('slug', 'title', 'description', 'icon', 'rarity')}),
+        ('Автоматично отключване', {'fields': ('condition_type', 'condition_action', 'condition_target')}),
+        ('Награди', {'fields': ('points_reward', 'digital_rewards')}),
+        ('Достъпност и период', {'fields': ('active', 'hidden', 'repeatable', 'starts_at', 'ends_at')}),
+    )
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        awarded = evaluate_badge_for_all_users(obj)
+        if awarded:
+            self.message_user(
+                request,
+                f'Значката беше дадена автоматично на {awarded} потребители.',
+                messages.SUCCESS,
+            )
 
 
 @admin.register(UserBadge)
@@ -1282,6 +1302,14 @@ class PointTransactionAdmin(ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(GamificationPointRule)
+class GamificationPointRuleAdmin(ModelAdmin):
+    list_display = ('action', 'points', 'daily_limit', 'active')
+    list_editable = ('points', 'daily_limit', 'active')
+    list_filter = ('active',)
+    ordering = ('action',)
 
 
 @admin.register(Mission)
@@ -1329,9 +1357,14 @@ class MissionActivityAdmin(ModelAdmin):
 
 @admin.register(DigitalReward)
 class DigitalRewardAdmin(ModelAdmin):
+    form = DigitalRewardAdminForm
     list_display = ('title', 'kind', 'key', 'active')
     list_filter = ('kind', 'active')
     search_fields = ('title', 'key')
+    fieldsets = (
+        ('Основна информация', {'fields': ('key', 'title', 'kind', 'active')}),
+        ('Визуален дизайн', {'fields': ('visual_color', 'secondary_color', 'effect_style', 'display_text', 'display_icon')}),
+    )
 
 
 @admin.register(UserDigitalReward)
@@ -1339,15 +1372,16 @@ class UserDigitalRewardAdmin(ModelAdmin):
     list_display = ('user', 'reward', 'unlocked_at', 'source_badge', 'selected')
     list_filter = ('reward__kind', 'selected', 'unlocked_at')
     search_fields = ('user__username', 'reward__title')
-    readonly_fields = (
-        'user', 'reward', 'unlocked_at', 'source_badge', 'selected',
-    )
+    readonly_fields = ('unlocked_at',)
+    autocomplete_fields = ('user', 'reward', 'source_badge')
 
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
+    def save_model(self, request, obj, form, change):
+        if obj.selected:
+            UserDigitalReward.objects.filter(
+                user=obj.user,
+                reward__kind=obj.reward.kind,
+            ).exclude(pk=obj.pk).update(selected=False)
+        super().save_model(request, obj, form, change)
 
 @admin.register(Cookie.ConsentRecord)
 class ConsentRecordAdmin(ModelAdmin):

@@ -12,7 +12,10 @@ from django.urls import reverse
 from django.utils.html import format_html
 
 from .models import (
+    Badge,
     BellSongSuggestion,
+    DigitalReward,
+    GamificationPointRule,
     MemeOfWeek,
     Mission,
     PollQuestion,
@@ -35,6 +38,140 @@ MISSION_ACTION_CHOICES = (
 )
 MISSION_ACTION_VALUES = {value for value, _label in MISSION_ACTION_CHOICES}
 MISSION_REQUIREMENT_KEY_PATTERN = re.compile(r'^[a-z][a-z0-9_]{0,49}$')
+
+BADGE_CONDITION_TYPES = (
+    ('manual', 'Само ръчно даване'),
+    ('action_count', 'Брой извършени действия'),
+    ('active_days', 'Активност в различни дни'),
+    ('total_points', 'Достигнат общ брой точки'),
+)
+
+
+class BadgeAdminForm(forms.ModelForm):
+    condition_type = forms.ChoiceField(
+        label='Автоматично условие',
+        choices=BADGE_CONDITION_TYPES,
+        initial='manual',
+    )
+    condition_action = forms.ChoiceField(
+        label='Следено действие',
+        choices=(('', 'Изберете действие'),) + GamificationPointRule.ACTION_CHOICES,
+        required=False,
+    )
+    condition_target = forms.IntegerField(
+        label='Необходим брой',
+        min_value=1,
+        max_value=1000000,
+        initial=1,
+    )
+    requirement = forms.JSONField(required=False, widget=forms.HiddenInput())
+
+    class Meta:
+        model = Badge
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        requirement = self.instance.requirement or {}
+        condition_type = requirement.get('type')
+        if not condition_type:
+            if 'action' in requirement:
+                condition_type = 'action_count'
+            elif 'activity_days' in requirement:
+                condition_type = 'active_days'
+            elif requirement.get('manual_or_event'):
+                condition_type = 'manual'
+        self.fields['condition_type'].initial = condition_type or 'manual'
+        self.fields['condition_action'].initial = requirement.get('action', '')
+        self.fields['condition_target'].initial = requirement.get(
+            'target',
+            requirement.get('count', requirement.get('activity_days', 1)),
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        condition_type = cleaned.get('condition_type')
+        action = cleaned.get('condition_action')
+        target = cleaned.get('condition_target') or 1
+        if condition_type == 'action_count' and not action:
+            self.add_error('condition_action', 'Изберете действие за автоматичното условие.')
+        if condition_type == 'manual':
+            cleaned['requirement'] = {'type': 'manual'}
+        elif condition_type == 'action_count':
+            cleaned['requirement'] = {
+                'type': 'action_count',
+                'action': action,
+                'target': target,
+            }
+        else:
+            cleaned['requirement'] = {'type': condition_type, 'target': target}
+        return cleaned
+
+
+class DigitalRewardAdminForm(forms.ModelForm):
+    EFFECT_STYLES = (
+        ('solid', 'Плътна'),
+        ('gradient', 'Градиент'),
+        ('glow', 'Със сияние'),
+    )
+    visual_color = forms.CharField(
+        label='Основен цвят',
+        initial='#8b5cf6',
+        widget=forms.TextInput(attrs={'type': 'color'}),
+    )
+    secondary_color = forms.CharField(
+        label='Допълнителен цвят',
+        initial='#22d3ee',
+        widget=forms.TextInput(attrs={'type': 'color'}),
+    )
+    effect_style = forms.ChoiceField(label='Визуален ефект', choices=EFFECT_STYLES)
+    display_text = forms.CharField(
+        label='Текст на титлата',
+        max_length=60,
+        required=False,
+        help_text='Използва се при награда от вид „Титла“.',
+    )
+    display_icon = forms.CharField(
+        label='Икона',
+        max_length=40,
+        required=False,
+        initial='sparkles',
+        help_text='Име на поддържана lucide икона.',
+    )
+    config = forms.JSONField(required=False, widget=forms.HiddenInput())
+
+    class Meta:
+        model = DigitalReward
+        fields = '__all__'
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        config = self.instance.config or {}
+        self.fields['visual_color'].initial = config.get('color', '#8b5cf6')
+        self.fields['secondary_color'].initial = config.get('secondary_color', '#22d3ee')
+        self.fields['effect_style'].initial = config.get('style', 'solid')
+        self.fields['display_text'].initial = config.get('text', '')
+        self.fields['display_icon'].initial = config.get('icon', 'sparkles')
+
+    def clean(self):
+        cleaned = super().clean()
+        color_pattern = re.compile(r'^#[0-9a-fA-F]{6}$')
+        color = cleaned.get('visual_color', '')
+        secondary = cleaned.get('secondary_color', '')
+        if not color_pattern.fullmatch(color):
+            self.add_error('visual_color', 'Изберете валиден шестцифрен цвят.')
+        if not color_pattern.fullmatch(secondary):
+            self.add_error('secondary_color', 'Изберете валиден шестцифрен цвят.')
+        if cleaned.get('kind') == DigitalReward.Kind.USER_TITLE and not cleaned.get('display_text'):
+            self.add_error('display_text', 'Въведете текста на титлата.')
+        cleaned['config'] = {
+            'color': color,
+            'secondary_color': secondary,
+            'style': cleaned.get('effect_style', 'solid'),
+            'text': (cleaned.get('display_text') or '').strip(),
+            'icon': (cleaned.get('display_icon') or 'sparkles').strip(),
+        }
+        return cleaned
 
 
 class MissionRequirementsWidget(forms.Textarea):

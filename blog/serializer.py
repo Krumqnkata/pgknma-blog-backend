@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
-    validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge
+    validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge, UserDigitalReward
 from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
 from django.conf import settings
 from django.contrib.auth.models import User, update_last_login
@@ -40,6 +40,30 @@ def _user_avatar_url(user):
     return profile.avatar_url if profile else None
 
 
+def _digital_reward_payload(row):
+    return {
+        'key': row.reward.key,
+        'title': row.reward.title,
+        'kind': row.reward.kind,
+        'config': row.reward.config,
+        'unlocked_at': row.unlocked_at,
+        'selected': row.selected,
+    }
+
+
+def _user_equipped_rewards(user):
+    if not user:
+        return []
+    return [
+        _digital_reward_payload(row)
+        for row in UserDigitalReward.objects.filter(
+            user=user,
+            selected=True,
+            reward__active=True,
+        ).select_related('reward')
+    ]
+
+
 class CurrentUserSerializer(serializers.ModelSerializer):
     has_password = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
@@ -47,6 +71,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     avatar_preset = serializers.SerializerMethodField()
     email_verified = serializers.SerializerMethodField()
     site_role = serializers.SerializerMethodField()
+    equipped_rewards = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -60,6 +85,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             'avatar_preset',
             'email_verified',
             'site_role',
+            'equipped_rewards',
         )
         read_only_fields = fields
 
@@ -87,6 +113,9 @@ class CurrentUserSerializer(serializers.ModelSerializer):
 
     def get_site_role(self, obj) -> str | None:
         return get_site_role(obj)
+
+    def get_equipped_rewards(self, obj) -> list[dict]:
+        return _user_equipped_rewards(obj)
 
 
 class ProfileAvatarUpdateSerializer(serializers.Serializer):
@@ -189,6 +218,7 @@ class PostSerializer(serializers.ModelSerializer):
     author_username = serializers.SerializerMethodField()
     author_avatar_url = serializers.SerializerMethodField()
     author_site_role = serializers.SerializerMethodField()
+    author_equipped_rewards = serializers.SerializerMethodField()
     category_name = serializers.StringRelatedField(source='category')
     images = serializers.SerializerMethodField()
     gallery = PostImageSerializer(source='images', many=True, read_only=True)
@@ -205,6 +235,7 @@ class PostSerializer(serializers.ModelSerializer):
             'author_username',# ⬅️ Добавено: Потребителско име
             'author_avatar_url',
             'author_site_role',
+            'author_equipped_rewards',
             'title',
             'banner',
             'hook',
@@ -231,6 +262,9 @@ class PostSerializer(serializers.ModelSerializer):
 
     def get_author_site_role(self, obj) -> str | None:
         return get_site_role(obj.author)
+
+    def get_author_equipped_rewards(self, obj) -> list[dict]:
+        return _user_equipped_rewards(obj.author)
 
     def get_images(self, obj):
         images = obj.images.all()
@@ -456,6 +490,7 @@ class CommentSerializer(serializers.ModelSerializer):
     username = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
     site_role = serializers.SerializerMethodField()
+    equipped_rewards = serializers.SerializerMethodField()
     post_id = serializers.IntegerField(source='post.id', read_only=True)
     parent_id = serializers.PrimaryKeyRelatedField(source='parent', read_only=True)
     parent_username = serializers.SerializerMethodField()
@@ -464,11 +499,11 @@ class CommentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Comments
-        fields = ['id', 'post_id', 'username', 'avatar_url', 'site_role', 'content', 'created_at', 'parent', 'parent_id', 'parent_username', 'parent_site_role', 'reply_count']
+        fields = ['id', 'post_id', 'username', 'avatar_url', 'site_role', 'equipped_rewards', 'content', 'created_at', 'parent', 'parent_id', 'parent_username', 'parent_site_role', 'reply_count']
         extra_kwargs = {
             'parent': {'write_only': True, 'required': False, 'allow_null': True, 'queryset': Comments.objects.all()},
         }
-        read_only_fields = ['id', 'created_at', 'username', 'avatar_url', 'site_role', 'post_id', 'parent_id', 'parent_username', 'parent_site_role', 'reply_count']
+        read_only_fields = ['id', 'created_at', 'username', 'avatar_url', 'site_role', 'equipped_rewards', 'post_id', 'parent_id', 'parent_username', 'parent_site_role', 'reply_count']
 
     def get_parent_username(self, obj):
         if obj.parent:
@@ -486,6 +521,9 @@ class CommentSerializer(serializers.ModelSerializer):
 
     def get_site_role(self, obj) -> str | None:
         return get_site_role(obj.user)
+
+    def get_equipped_rewards(self, obj) -> list[dict]:
+        return _user_equipped_rewards(obj.user)
 
     def get_reply_count(self, obj):
         if obj.parent is None:
@@ -593,11 +631,13 @@ class ContactSubmissionSerializer(serializers.ModelSerializer):
 
 class NotificationSerializer(serializers.ModelSerializer):
     html_text = serializers.SerializerMethodField()
+    is_gamification = serializers.SerializerMethodField()
     class Meta:
         model = Notification
         fields = [
             'id', 'text', 'enabled', 'created_at', 'html_text',
             'category', 'action_url',
+            'is_gamification',
         ]
         read_only_fields = ['html_text']
 
@@ -605,6 +645,9 @@ class NotificationSerializer(serializers.ModelSerializer):
         # Notifications are rendered as escaped plaintext. Only line breaks are
         # converted, so Markdown cannot synthesize javascript: links.
         return '<br>'.join(escape(obj.text).splitlines())
+
+    def get_is_gamification(self, obj) -> bool:
+        return obj.category.startswith('gamification_')
 
 
 class GamificationLevelSerializer(serializers.ModelSerializer):
@@ -644,6 +687,7 @@ class GamificationProfileResponseSerializer(serializers.Serializer):
     badges = GamificationBadgeSerializer(many=True)
     recent_transactions = PointTransactionSerializer(many=True)
     missions = serializers.ListField(child=serializers.DictField())
+    rewards = serializers.ListField(child=serializers.DictField())
 
 
 class GamificationActivitySerializer(serializers.Serializer):
@@ -666,6 +710,10 @@ class GamificationActivitySerializer(serializers.Serializer):
                     'engagement_seconds': 'Нужни са поне 15 секунди четене.',
                 })
         return attrs
+
+
+class DigitalRewardSelectionSerializer(serializers.Serializer):
+    selected = serializers.BooleanField(default=True)
 
 
 class LeaderboardPreferenceSerializer(serializers.Serializer):

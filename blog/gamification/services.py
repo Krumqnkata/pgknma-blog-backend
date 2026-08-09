@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from blog.models import (
@@ -17,7 +17,7 @@ from blog.models import (
     UserProfile,
 )
 
-from .config import ACTION_DESCRIPTIONS, point_value, rewarded_comments_per_day
+from .config import ACTION_DESCRIPTIONS, daily_limit, point_value
 
 
 @dataclass(frozen=True)
@@ -136,12 +136,10 @@ def change_points(
     return point_transaction, True
 
 
-def award_activity(user, action, reference):
+def award_tracked_activity(user, action, reference_type, reference_id):
     if not user or not user.is_authenticated:
         return None, False
 
-    reference_type = reference._meta.label_lower
-    reference_id = reference.pk
     base_key = f'activity:{action}:{reference_type}:{reference_id}'
     prior_awards = PointTransaction.objects.filter(
         user=user,
@@ -156,25 +154,41 @@ def award_activity(user, action, reference):
     award_number = prior_awards.count() + 1
     idempotency_key = base_key if award_number == 1 else f'{base_key}:cycle:{award_number}'
 
-    if action == 'comment':
+    limit = daily_limit(action)
+    if limit == 0:
+        return None, False
+    if limit is not None:
         local_day = timezone.localdate()
         day_start = timezone.make_aware(datetime.combine(local_day, time.min))
         if PointTransaction.objects.filter(
             user=user,
-            action='comment',
+            action=action,
             points__gt=0,
             created_at__gte=day_start,
-        ).count() >= rewarded_comments_per_day():
+            reversal__isnull=True,
+        ).count() >= limit:
             return None, False
 
+    points = point_value(action)
+    if points <= 0:
+        return None, False
     return change_points(
         user=user,
-        points=point_value(action),
+        points=points,
         action=action,
         description=ACTION_DESCRIPTIONS[action],
         idempotency_key=idempotency_key,
         reference_type=reference_type,
         reference_id=reference_id,
+    )
+
+
+def award_activity(user, action, reference):
+    return award_tracked_activity(
+        user,
+        action,
+        reference._meta.label_lower,
+        reference.pk,
     )
 
 
@@ -219,6 +233,7 @@ def award_badge(user, badge, *, awarded_by=None, reason='', award_key='default')
     if not badge.repeatable:
         existing = UserBadge.objects.filter(user=user, badge=badge).first()
         if existing:
+            sync_badge_rewards(badge, user=user)
             return existing, False
 
     with transaction.atomic():
@@ -247,43 +262,138 @@ def award_badge(user, badge, *, awarded_by=None, reason='', award_key='default')
                 source=PointTransaction.Source.BADGE,
                 evaluate_badges=False,
             )
-        for digital_reward in badge.digital_rewards.filter(active=True):
-            UserDigitalReward.objects.get_or_create(
-                user=user,
-                reward=digital_reward,
-                defaults={'source_badge': badge},
-            )
+        sync_badge_rewards(badge, user=user)
     return user_badge, True
 
 
-def evaluate_automatic_badges(user, action):
-    checks = {
-        'first-comment': lambda: PointTransaction.objects.filter(
-            user=user, action='comment', points__gt=0
-        ).exists(),
-        'student-voice': lambda: PointTransaction.objects.filter(
-            user=user, action='poll_vote', points__gt=0
-        ).count() >= 3,
-        'meme-master': lambda: PointTransaction.objects.filter(
-            user=user, action='meme_approved', points__gt=0
-        ).exists(),
-        'music-selector': lambda: PointTransaction.objects.filter(
-            user=user, action='song_approved', points__gt=0
-        ).exists(),
-        'regular-reader': lambda: PointTransaction.objects.filter(
-            user=user, points__gt=0
-        ).dates('created_at', 'day').count() >= 5,
-    }
-    relevant = {
-        'comment': ('first-comment', 'regular-reader'),
-        'poll_vote': ('student-voice', 'regular-reader'),
-        'meme_approved': ('meme-master', 'regular-reader'),
-        'song_approved': ('music-selector', 'regular-reader'),
-    }
-    for slug in relevant.get(action, ()):
-        badge = Badge.objects.filter(slug=slug, active=True).first()
-        if badge and checks[slug]():
-            award_badge(user, badge, reason='Автоматично изпълнено условие')
+def unlock_digital_reward(user, reward, *, source_badge=None):
+    row, created = UserDigitalReward.objects.get_or_create(
+        user=user,
+        reward=reward,
+        defaults={'source_badge': source_badge},
+    )
+    if created:
+        _notification(
+            user,
+            f'🎁 Нова дигитална награда: „{reward.title}“!',
+            'gamification_reward',
+        )
+    return row, created
+
+
+def sync_badge_rewards(badge, *, user=None):
+    rewards = list(badge.digital_rewards.filter(active=True))
+    if not rewards:
+        return 0
+    if user is not None:
+        users = [user]
+    else:
+        users = [row.user for row in badge.awards.select_related('user')]
+    created = 0
+    for badge_user in users:
+        for reward in rewards:
+            _, was_created = unlock_digital_reward(
+                badge_user,
+                reward,
+                source_badge=badge,
+            )
+            created += int(was_created)
+    return created
+
+
+def select_digital_reward(user, reward_key, *, selected=True):
+    with transaction.atomic():
+        owned = (
+            UserDigitalReward.objects.select_for_update()
+            .select_related('reward')
+            .get(user=user, reward__key=reward_key, reward__active=True)
+        )
+        same_kind = UserDigitalReward.objects.select_for_update().filter(
+            user=user,
+            reward__kind=owned.reward.kind,
+        )
+        same_kind.exclude(pk=owned.pk).update(selected=False)
+        if owned.selected != bool(selected):
+            owned.selected = bool(selected)
+            owned.save(update_fields=('selected',))
+    return owned
+
+
+def _badge_metric(user, requirement):
+    requirement_type = requirement.get('type')
+    if not requirement_type:
+        if 'action' in requirement:
+            requirement_type = 'action_count'
+        elif 'activity_days' in requirement:
+            requirement_type = 'active_days'
+        elif requirement.get('manual_or_event'):
+            requirement_type = 'manual'
+
+    if requirement_type == 'action_count':
+        action = str(requirement.get('action', '')).strip()
+        if not action:
+            return 0, 1, requirement_type
+        target = max(int(requirement.get('target', requirement.get('count', 1))), 1)
+        value = PointTransaction.objects.filter(
+            user=user,
+            action=action,
+            points__gt=0,
+            reversal__isnull=True,
+        ).count()
+        return value, target, requirement_type
+    if requirement_type == 'active_days':
+        target = max(int(requirement.get('target', requirement.get('activity_days', 1))), 1)
+        value = PointTransaction.objects.filter(
+            user=user,
+            points__gt=0,
+            reversal__isnull=True,
+        ).dates('created_at', 'day').count()
+        return value, target, requirement_type
+    if requirement_type == 'total_points':
+        target = max(int(requirement.get('target', 1)), 1)
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        return profile.gamification_points, target, requirement_type
+    return 0, 1, 'manual'
+
+
+def evaluate_badge(user, badge, *, triggering_action=None):
+    requirement = badge.requirement or {}
+    requirement_action = str(requirement.get('action', '')).strip()
+    if triggering_action and requirement_action and requirement_action != triggering_action:
+        return None, False
+    value, target, requirement_type = _badge_metric(user, requirement)
+    if requirement_type == 'manual' or value < target:
+        return None, False
+    award_key = 'default'
+    if badge.repeatable:
+        award_key = f'cycle-{max(value // target, 1)}'
+    return award_badge(
+        user,
+        badge,
+        reason='Автоматично изпълнено условие',
+        award_key=award_key,
+    )
+
+
+def evaluate_automatic_badges(user, action=None):
+    now = timezone.now()
+    badges = Badge.objects.filter(active=True).filter(
+        models.Q(starts_at__isnull=True) | models.Q(starts_at__lte=now),
+        models.Q(ends_at__isnull=True) | models.Q(ends_at__gte=now),
+    )
+    awarded = 0
+    for badge in badges:
+        _, created = evaluate_badge(user, badge, triggering_action=action)
+        awarded += int(created)
+    return awarded
+
+
+def evaluate_badge_for_all_users(badge):
+    awarded = 0
+    for profile in UserProfile.objects.select_related('user').filter(user__is_active=True):
+        _, created = evaluate_badge(profile.user, badge)
+        awarded += int(created)
+    return awarded
 
 
 def ensure_current_weekly_mission():

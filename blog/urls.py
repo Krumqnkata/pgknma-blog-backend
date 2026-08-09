@@ -103,6 +103,11 @@ urlpatterns = [
         name='gamification-activity',
     ),
     path(
+        'gamification/rewards/<slug:reward_key>/select/',
+        blog_views.DigitalRewardSelectionView.as_view(),
+        name='gamification-reward-select',
+    ),
+    path(
         'gamification/preferences/',
         blog_views.LeaderboardPreferenceView.as_view(),
         name='gamification-preferences',
