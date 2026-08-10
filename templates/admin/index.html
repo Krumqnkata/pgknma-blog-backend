@@ -1,5 +1,5 @@
 {% extends "unfold/layouts/base.html" %}
-{% load static i18n %}
+{% load static i18n admin_dashboard %}
 
 {% block title %}{% trans "Начално табло" %} | {{ site_title|default:_("Django site admin") }}{% endblock %}
 
@@ -27,6 +27,8 @@
             </p>
         </div>
     </div>
+
+    {% admin_statistics_dashboard %}
 
     <h2 class="mb-4 text-xl font-semibold text-font-important">{% trans "Бързи действия" %}</h2>
     <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">

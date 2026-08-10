@@ -8,7 +8,7 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 from valentine.models import Register, ValentineLoginAttempt
 
-from .models import BlogLoginSession, ConsentRecord, EmailVerificationToken
+from .models import BlogLoginSession, ConsentRecord, EmailVerificationToken, PageView
 
 
 def cleanup_personal_data(*, days, now=None, dry_run=False):
@@ -30,6 +30,7 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
     old_email_verification_tokens = EmailVerificationToken.objects.filter(
         Q(expires_at__lt=cutoff) | Q(used_at__lt=cutoff)
     )
+    old_page_views = PageView.objects.filter(created_at__lt=cutoff)
 
     counts = {
         'consent_records': old_consents.count(),
@@ -39,6 +40,7 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         'expired_django_sessions': expired_django_sessions.count(),
         'expired_jwt_tokens': expired_jwt_tokens.count(),
         'email_verification_tokens': old_email_verification_tokens.count(),
+        'page_views': old_page_views.count(),
     }
     if dry_run:
         return counts
@@ -53,5 +55,6 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         expired_django_sessions.delete()
         expired_jwt_tokens.delete()
         old_email_verification_tokens.delete()
+        old_page_views.delete()
 
     return counts

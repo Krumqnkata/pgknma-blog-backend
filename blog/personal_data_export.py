@@ -8,6 +8,9 @@ from .models import (
     ContactSubmission,
     GoogleIdentity,
     MemeOfWeek,
+    NotificationPreference,
+    NotificationReadState,
+    PageView,
     PollAnswer,
     Posts,
     UserProfile,
@@ -221,6 +224,44 @@ def build_personal_data_export(user):
         )
     ]
 
+    notification_preferences = NotificationPreference.objects.filter(
+        user=user,
+    ).values(
+        'general_enabled',
+        'points_enabled',
+        'levels_enabled',
+        'badges_enabled',
+        'missions_enabled',
+        'rewards_enabled',
+        'updated_at',
+    ).first()
+    if notification_preferences:
+        notification_preferences['updated_at'] = _iso(
+            notification_preferences['updated_at'],
+        )
+
+    notification_reads = [
+        {
+            'notification_id': state.notification_id,
+            'read_at': _iso(state.read_at),
+        }
+        for state in NotificationReadState.objects.filter(user=user).order_by(
+            'read_at',
+            'pk',
+        )
+    ]
+    page_views = [
+        {
+            'path': page_view.path,
+            'post_id': page_view.post_id,
+            'created_at': _iso(page_view.created_at),
+        }
+        for page_view in PageView.objects.filter(user=user).order_by(
+            'created_at',
+            'pk',
+        )
+    ]
+
     return {
         'format_version': '1.0',
         'scope': 'pgknma-blog',
@@ -261,10 +302,13 @@ def build_personal_data_export(user):
             'poll_answers': poll_answers,
             'song_votes': song_votes,
             'meme_votes': meme_votes,
+            'page_views': page_views,
         },
         'privacy_and_security': {
             'consent_records': consent_records,
             'login_sessions': login_sessions,
+            'notification_preferences': notification_preferences,
+            'notification_reads': notification_reads,
         },
         'excluded_for_security': [
             'password and password hash',

@@ -54,12 +54,17 @@ def level_state(points):
     )
 
 
-def _notification(user, text, category):
+def _notification(
+    user,
+    text,
+    category,
+    action_url='/profile?tab=progress',
+):
     Notification.objects.create(
         user=user,
         text=text,
         category=category,
-        action_url='/profile?tab=progress',
+        action_url=action_url,
     )
 
 
@@ -119,10 +124,16 @@ def change_points(
 
         new_level = level_state(new_balance).current
         if applied_points > 0:
+            notification_url = (
+                f'/post/{reference_id}'
+                if reference_type == 'blog.posts' and reference_id
+                else '/profile?tab=progress'
+            )
             _notification(
                 user,
                 f'⭐ +{applied_points} точки — {description}.',
                 'gamification_points',
+                notification_url,
             )
         if old_level and new_level and old_level.pk != new_level.pk:
             _notification(

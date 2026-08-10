@@ -1065,6 +1065,83 @@ class Notification(models.Model):
         ordering = ['-created_at']
 
 
+class NotificationReadState(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='notification_read_states',
+        verbose_name='Потребител',
+    )
+    notification = models.ForeignKey(
+        Notification,
+        on_delete=models.CASCADE,
+        related_name='read_states',
+        verbose_name='Известие',
+    )
+    read_at = models.DateTimeField(auto_now=True, verbose_name='Прочетено на')
+
+    class Meta:
+        verbose_name = 'Прочетено известие'
+        verbose_name_plural = 'Прочетени известия'
+        ordering = ('-read_at',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'notification'),
+                name='blog_unique_notification_read_state',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=('user', 'read_at'),
+                name='notification_read_user_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.notification_id}'
+
+
+class NotificationPreference(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='notification_preferences',
+        verbose_name='Потребител',
+    )
+    general_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Официални известия',
+    )
+    points_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Получени точки',
+    )
+    levels_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Нови нива',
+    )
+    badges_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Получени значки',
+    )
+    missions_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Завършени мисии',
+    )
+    rewards_enabled = models.BooleanField(
+        default=True,
+        verbose_name='Дигитални награди',
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновени на')
+
+    class Meta:
+        verbose_name = 'Настройки за известия'
+        verbose_name_plural = 'Настройки за известия'
+
+    def __str__(self):
+        return f'Известия на {self.user}'
+
+
 class GamificationNotification(Notification):
     """Admin-only proxy used to keep automatic game events separate."""
 
@@ -1310,6 +1387,45 @@ class ScheduleImport(models.Model):
 
     def __str__(self):
         return f"Програма от {self.imported_at.strftime('%d.%m.%Y %H:%M')}"
+
+
+class PageView(models.Model):
+    path = models.CharField(
+        max_length=255,
+        db_index=True,
+        verbose_name='Страница',
+    )
+    post = models.ForeignKey(
+        Posts,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='page_views',
+        verbose_name='Публикация',
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='page_views',
+        verbose_name='Потребител',
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = 'Преглед на страница'
+        verbose_name_plural = 'Прегледи на страници'
+        ordering = ('-created_at',)
+        indexes = [
+            models.Index(
+                fields=('post', 'created_at'),
+                name='page_view_post_created_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return self.path
 
 
 class Changelog(models.Model):

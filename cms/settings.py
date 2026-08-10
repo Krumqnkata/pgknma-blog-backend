@@ -408,6 +408,7 @@ REST_FRAMEWORK = {
             "THROTTLE_GAMIFICATION_ACTIVITY",
             "120/hour",
         ),
+        'analytics': os.getenv("THROTTLE_ANALYTICS", "240/hour"),
     },
 }
 
@@ -588,6 +589,11 @@ UNFOLD = {
                         "icon": "home",
                     },
                     {
+                        "title": "Статистика",
+                        "link": "/admin/#site-statistics",
+                        "icon": "monitoring",
+                    },
+                    {
                         "title": "Изпратени контактни формуляри",
                         "link": "/admin/blog/contactsubmission/",
                         "icon": "mail",
@@ -637,6 +643,11 @@ UNFOLD = {
                         "title": "Официални известия",
                         "link": "/admin/blog/notification/",
                         "icon": "notifications",
+                    },
+                    {
+                        "title": "Прегледи на страници",
+                        "link": "/admin/blog/pageview/",
+                        "icon": "visibility",
                     },
                 ],
             },

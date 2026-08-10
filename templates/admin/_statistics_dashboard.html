@@ -1,0 +1,63 @@
+{% load i18n %}
+{% if show_statistics %}
+<section id="site-statistics" class="mb-10" aria-labelledby="statistics-heading">
+    <div class="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <p class="text-xs font-semibold uppercase tracking-wider text-primary-600 dark:text-primary-400">{% trans "Последни 30 дни" %}</p>
+            <h2 id="statistics-heading" class="text-xl font-semibold text-font-important">{% trans "Статистика на сайта" %}</h2>
+        </div>
+        <a href="{% url 'admin:blog_pageview_changelist' %}" class="text-sm font-medium text-primary-600 hover:underline dark:text-primary-400">
+            {% trans "Всички посещения" %}
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <article class="rounded-lg border border-border-subtle bg-card-background p-5 shadow-sm">
+            <p class="text-sm text-font-subtle">{% trans "Нови регистрации" %}</p>
+            <p class="mt-2 text-3xl font-bold text-font-important">{{ new_users }}</p>
+        </article>
+        <article class="rounded-lg border border-border-subtle bg-card-background p-5 shadow-sm">
+            <p class="text-sm text-font-subtle">{% trans "Активни потребители" %}</p>
+            <p class="mt-2 text-3xl font-bold text-font-important">{{ active_users }}</p>
+        </article>
+        <article class="rounded-lg border border-border-subtle bg-card-background p-5 shadow-sm">
+            <p class="text-sm text-font-subtle">{% trans "Посещения днес" %}</p>
+            <p class="mt-2 text-3xl font-bold text-font-important">{{ visits_today }}</p>
+            <p class="mt-1 text-xs text-font-subtle">{{ visits_last_30_days }} {% trans "за 30 дни" %}</p>
+        </article>
+        <article class="rounded-lg border border-border-subtle bg-card-background p-5 shadow-sm">
+            <p class="text-sm text-font-subtle">{% trans "Завършени мисии" %}</p>
+            <p class="mt-2 text-3xl font-bold text-font-important">{{ completed_missions }}</p>
+        </article>
+        <article class="rounded-lg border border-border-subtle bg-card-background p-5 shadow-sm">
+            <p class="text-sm text-font-subtle">{% trans "Раздадени значки" %}</p>
+            <p class="mt-2 text-3xl font-bold text-font-important">{{ awarded_badges }}</p>
+        </article>
+        <article class="rounded-lg border border-border-subtle bg-card-background p-5 shadow-sm">
+            <p class="text-sm text-font-subtle">{% trans "Спечелени точки" %}</p>
+            <p class="mt-2 text-3xl font-bold text-font-important">{{ awarded_points }}</p>
+            <p class="mt-1 text-xs text-font-subtle">{{ current_points }} {% trans "текущ общ баланс" %}</p>
+        </article>
+    </div>
+
+    <div class="mt-5 overflow-hidden rounded-lg border border-border-subtle bg-card-background shadow-sm">
+        <div class="border-b border-border-subtle px-5 py-4">
+            <h3 class="font-semibold text-font-important">{% trans "Най-четени публикации" %}</h3>
+        </div>
+        {% if top_posts %}
+        <ol class="divide-y divide-border-subtle">
+            {% for post in top_posts %}
+            <li class="flex items-center justify-between gap-4 px-5 py-3">
+                <a href="{% url 'admin:blog_posts_change' post.pk %}" class="min-w-0 truncate font-medium text-primary-600 hover:underline dark:text-primary-400">
+                    {{ forloop.counter }}. {{ post.title }}
+                </a>
+                <span class="shrink-0 text-sm text-font-subtle">{{ post.views_last_30_days }} {% trans "прегледа" %}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p class="px-5 py-8 text-center text-sm text-font-subtle">{% trans "Все още няма записани прегледи." %}</p>
+        {% endif %}
+    </div>
+</section>
+{% endif %}

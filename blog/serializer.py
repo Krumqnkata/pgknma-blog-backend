@@ -1,7 +1,8 @@
 from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
-    validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge, UserDigitalReward
+    validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge, UserDigitalReward, \
+    NotificationPreference, PageView
 from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
 from django.conf import settings
 from django.contrib.auth.models import User, update_last_login
@@ -637,14 +638,17 @@ class ContactSubmissionSerializer(serializers.ModelSerializer):
 class NotificationSerializer(serializers.ModelSerializer):
     html_text = serializers.SerializerMethodField()
     is_gamification = serializers.SerializerMethodField()
+    is_read = serializers.SerializerMethodField()
+    read_at = serializers.SerializerMethodField()
+
     class Meta:
         model = Notification
         fields = [
             'id', 'text', 'enabled', 'created_at', 'html_text',
             'category', 'action_url',
-            'is_gamification',
+            'is_gamification', 'is_read', 'read_at',
         ]
-        read_only_fields = ['html_text']
+        read_only_fields = fields
 
     def get_html_text(self, obj):
         # Notifications are rendered as escaped plaintext. Only line breaks are
@@ -653,6 +657,41 @@ class NotificationSerializer(serializers.ModelSerializer):
 
     def get_is_gamification(self, obj) -> bool:
         return obj.category.startswith('gamification_')
+
+    def get_is_read(self, obj) -> bool:
+        return getattr(obj, '_read_at', None) is not None
+
+    def get_read_at(self, obj):
+        return getattr(obj, '_read_at', None)
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = (
+            'general_enabled',
+            'points_enabled',
+            'levels_enabled',
+            'badges_enabled',
+            'missions_enabled',
+            'rewards_enabled',
+            'updated_at',
+        )
+        read_only_fields = ('updated_at',)
+
+
+class PageViewCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PageView
+        fields = ('path',)
+
+    def validate_path(self, value):
+        path = value.strip()
+        if not path.startswith('/') or path.startswith('//'):
+            raise serializers.ValidationError('Невалиден път на страница.')
+        if '?' in path or '#' in path:
+            raise serializers.ValidationError('Изпратете път без query параметри и fragment.')
+        return path
 
 
 class GamificationLevelSerializer(serializers.ModelSerializer):

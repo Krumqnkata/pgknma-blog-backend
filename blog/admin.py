@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -1152,6 +1152,57 @@ class GamificationNotificationAdmin(ModelAdmin):
     @admin.display(description='Събитие', ordering='category')
     def event_display(self, obj):
         return self.CATEGORY_LABELS.get(obj.category, obj.category)
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(ModelAdmin):
+    list_display = (
+        'user',
+        'general_enabled',
+        'points_enabled',
+        'badges_enabled',
+        'missions_enabled',
+        'updated_at',
+    )
+    list_filter = (
+        'general_enabled',
+        'points_enabled',
+        'levels_enabled',
+        'badges_enabled',
+        'missions_enabled',
+        'rewards_enabled',
+    )
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('updated_at',)
+
+
+@admin.register(NotificationReadState)
+class NotificationReadStateAdmin(ModelAdmin):
+    list_display = ('user', 'notification', 'read_at')
+    list_filter = ('read_at',)
+    search_fields = ('user__username', 'notification__text')
+    readonly_fields = ('user', 'notification', 'read_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PageView)
+class PageViewAdmin(ModelAdmin):
+    list_display = ('path', 'post', 'user', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('path', 'post__title', 'user__username')
+    readonly_fields = ('path', 'post', 'user', 'created_at')
+    date_hierarchy = 'created_at'
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(ContactSubmission)

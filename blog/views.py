@@ -33,12 +33,12 @@ from django.utils.html import escape
 from datetime import datetime, timedelta
 import re
 from urllib.parse import urljoin
-from django.db.models import BooleanField, Count, Exists, F, OuterRef, Q, Sum, Value
+from django.db.models import BooleanField, Count, DateTimeField, Exists, F, OuterRef, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile, Badge, PointTransaction, UserBadge, UserDigitalReward
+from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile, Badge, PointTransaction, UserBadge, UserDigitalReward, NotificationPreference, NotificationReadState, PageView
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
@@ -46,6 +46,7 @@ from .serializer import (
     PostSerializer, RegisterSerializer, CommentSerializer,
     PollQuestionSerializer, UserPollStatusSerializer, PollAnswerSerializer,
     PollStatisticsSerializer, ContactSubmissionSerializer, NotificationSerializer,
+    NotificationPreferenceSerializer, PageViewCreateSerializer,
     EventSerializer, TermsOfServiceSerializer, BellSongSuggestionSerializer,
     PrivacyPolicySerializer, MemeOfWeekSerializer, ConsentRecordSerializer, SiteSettingsSerializer,
     ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer, BlogLoginSessionSerializer,
@@ -1940,28 +1941,160 @@ class ContactFormSubmitView(APIView):
             serializer.save(user=request.user if request.user.is_authenticated else None)
             return Response({"detail": "Съобщението е изпратено успешно!"}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+NOTIFICATION_PREFERENCE_CATEGORIES = {
+    'points_enabled': 'gamification_points',
+    'levels_enabled': 'gamification_level',
+    'badges_enabled': 'gamification_badge',
+    'missions_enabled': 'gamification_mission',
+    'rewards_enabled': 'gamification_reward',
+}
+
+
+def _visible_notification_queryset(user, *, apply_preferences=True):
+    queryset = Notification.objects.filter(enabled=True)
+    if not user.is_authenticated:
+        return queryset.filter(user__isnull=True).exclude(
+            category__startswith='gamification_',
+        )
+
+    queryset = queryset.filter(Q(user__isnull=True) | Q(user=user))
+    if not apply_preferences:
+        return queryset
+
+    preferences, _ = NotificationPreference.objects.get_or_create(user=user)
+    if not preferences.general_enabled:
+        queryset = queryset.filter(category__startswith='gamification_')
+    for field_name, category in NOTIFICATION_PREFERENCE_CATEGORIES.items():
+        if not getattr(preferences, field_name):
+            queryset = queryset.exclude(category=category)
+    return queryset
+
+
+def _filter_notification_channel(queryset, channel, *, authenticated):
+    if channel == 'gamification':
+        if not authenticated:
+            return queryset.none()
+        return queryset.filter(category__startswith='gamification_')
+    if channel == 'general':
+        return queryset.exclude(category__startswith='gamification_')
+    return queryset
+
+
 class NotificationListView(generics.ListAPIView):
     serializer_class = NotificationSerializer
     permission_classes = [SiteIsAvailable, AllowAny]
 
     def get_queryset(self):
-        queryset = Notification.objects.filter(enabled=True)
-        if self.request.user.is_authenticated:
-            queryset = queryset.filter(
-                Q(user__isnull=True) | Q(user=self.request.user)
+        user = self.request.user
+        queryset = _visible_notification_queryset(user)
+        queryset = _filter_notification_channel(
+            queryset,
+            self.request.query_params.get('channel'),
+            authenticated=user.is_authenticated,
+        )
+        if user.is_authenticated:
+            read_state = NotificationReadState.objects.filter(
+                user=user,
+                notification_id=OuterRef('pk'),
+            )
+            queryset = queryset.annotate(
+                _read_at=Subquery(
+                    read_state.values('read_at')[:1],
+                    output_field=DateTimeField(),
+                ),
             )
         else:
-            queryset = queryset.filter(user__isnull=True).exclude(
-                category__startswith='gamification_'
+            queryset = queryset.annotate(
+                _read_at=Value(None, output_field=DateTimeField()),
             )
-        channel = self.request.query_params.get('channel')
-        if channel == 'gamification':
-            if not self.request.user.is_authenticated:
-                return queryset.none()
-            queryset = queryset.filter(category__startswith='gamification_')
-        elif channel == 'general':
-            queryset = queryset.exclude(category__startswith='gamification_')
         return queryset.order_by('-created_at')
+
+
+class NotificationReadView(APIView):
+    permission_classes = [SiteIsAvailable, IsAuthenticated]
+
+    def post(self, request, pk):
+        notification = get_object_or_404(
+            _visible_notification_queryset(request.user, apply_preferences=False),
+            pk=pk,
+        )
+        state, _ = NotificationReadState.objects.update_or_create(
+            user=request.user,
+            notification=notification,
+            defaults={'read_at': timezone.now()},
+        )
+        return Response({'id': notification.pk, 'read_at': state.read_at})
+
+
+class NotificationReadAllView(APIView):
+    permission_classes = [SiteIsAvailable, IsAuthenticated]
+
+    def post(self, request):
+        channel = request.data.get('channel')
+        if channel not in (None, '', 'general', 'gamification'):
+            raise RestValidationError({'channel': 'Невалиден канал за известия.'})
+
+        queryset = _filter_notification_channel(
+            _visible_notification_queryset(request.user),
+            channel,
+            authenticated=True,
+        )
+        existing_ids = NotificationReadState.objects.filter(
+            user=request.user,
+            notification_id__in=queryset.values('pk'),
+        ).values_list('notification_id', flat=True)
+        unread_ids = queryset.exclude(pk__in=existing_ids).values_list('pk', flat=True)
+        read_at = timezone.now()
+        states = [
+            NotificationReadState(
+                user=request.user,
+                notification_id=pk,
+                read_at=read_at,
+            )
+            for pk in unread_ids
+        ]
+        NotificationReadState.objects.bulk_create(states, ignore_conflicts=True)
+        return Response({'marked_read': len(states)})
+
+
+class NotificationPreferenceView(APIView):
+    permission_classes = [SiteIsAvailable, IsAuthenticated]
+
+    def get_object(self, user):
+        preferences, _ = NotificationPreference.objects.get_or_create(user=user)
+        return preferences
+
+    def get(self, request):
+        serializer = NotificationPreferenceSerializer(self.get_object(request.user))
+        return Response(serializer.data)
+
+    def patch(self, request):
+        preferences = self.get_object(request.user)
+        serializer = NotificationPreferenceSerializer(
+            preferences,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class PageViewCreateView(generics.CreateAPIView):
+    serializer_class = PageViewCreateSerializer
+    permission_classes = [SiteIsAvailable, AllowAny]
+    throttle_scope = 'analytics'
+
+    def perform_create(self, serializer):
+        path = serializer.validated_data['path']
+        post = None
+        match = re.fullmatch(r'/post/(\d+)/?', path)
+        if match:
+            post = _public_posts_queryset().filter(pk=int(match.group(1))).first()
+        serializer.save(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            post=post,
+        )
 
 class EventListView(generics.ListAPIView):
     queryset = Event.objects.filter(published=True).order_by('-start_datetime')

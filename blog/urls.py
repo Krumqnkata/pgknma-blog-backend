@@ -157,6 +157,28 @@ urlpatterns = [
 
     # Път за известия
     path('notifications/', blog_views.NotificationListView.as_view(), name='notification-list'),
+    path(
+        'notifications/<int:pk>/read/',
+        blog_views.NotificationReadView.as_view(),
+        name='notification-read',
+    ),
+    path(
+        'notifications/read-all/',
+        blog_views.NotificationReadAllView.as_view(),
+        name='notification-read-all',
+    ),
+    path(
+        'notifications/preferences/',
+        blog_views.NotificationPreferenceView.as_view(),
+        name='notification-preferences',
+    ),
+
+    # Анонимна статистика за прегледи (не се съхранява IP адрес).
+    path(
+        'analytics/page-view/',
+        blog_views.PageViewCreateView.as_view(),
+        name='analytics-page-view',
+    ),
 
     # Път за събития
     path('events/', blog_views.EventListView.as_view(), name='event-list'),
