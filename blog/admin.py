@@ -37,6 +37,7 @@ import csv
 from .session_auth import revoke_login_session
 from .avatars import reset_profile_avatar
 from .gamification.services import award_badge, change_points, evaluate_badge_for_all_users
+from .admin_roles import ADMIN_ROLE_BY_NAME
 
 try:
     admin.site.unregister(Group)
@@ -420,17 +421,32 @@ class ScheduleImportAdmin(ModelAdmin):
 # 2. Регистрираме Group наново, но с Unfold класа
 @admin.register(Group)
 class GroupAdmin(BaseGroupAdmin, ModelAdmin):
-    # Това прави кутиите с правата хоризонтални (една до друга)
+    list_display = ('name', 'role_description', 'permission_count', 'member_count')
+    search_fields = ('name',)
     filter_horizontal = ("permissions",)
-    
-    # Тук добавяме специален CSS клас "permissions-box", за да го таргетираме по-късно
     fieldsets = (
         (None, {"fields": ("name",)}),
         ("Права", {
             "fields": ("permissions",),
-            "classes": ["permissions-box"], 
+            "classes": ["permissions-box"],
         }),
     )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('permissions', 'user_set')
+
+    @admin.display(description='Предназначение')
+    def role_description(self, obj):
+        role = ADMIN_ROLE_BY_NAME.get(obj.name)
+        return role.description if role else 'Персонализирана роля'
+
+    @admin.display(description='Права')
+    def permission_count(self, obj):
+        return len(obj.permissions.all())
+
+    @admin.display(description='Потребители')
+    def member_count(self, obj):
+        return len(obj.user_set.all())
 
 
 admin.site.unregister(User)
@@ -591,10 +607,21 @@ class UserProfileAdmin(ModelAdmin):
 class UserAdmin(BaseUserAdmin, ModelAdmin):
     form = UserChangeForm
     add_form = UserCreationForm
-    # Unfold автоматично ще приложи стиловете си сега
-    list_display = ('username', 'email', 'first_name', 'last_name', 'is_staff', 'last_login', 'date_joined')
+    list_display = (
+        'username', 'email', 'first_name', 'last_name', 'assigned_roles',
+        'is_staff', 'last_login', 'date_joined',
+    )
     ordering = ('-last_login',)  # По подразбиране — последно логвалите се първи
-    list_filter = ('is_staff', 'is_superuser', 'is_active', 'last_login')
+    list_filter = ('is_staff', 'is_superuser', 'is_active', 'groups', 'last_login')
+    search_fields = ('username', 'first_name', 'last_name', 'email', 'groups__name')
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('groups')
+
+    @admin.display(description='Роли')
+    def assigned_roles(self, obj):
+        names = [group.name for group in obj.groups.all()]
+        return ', '.join(names) if names else 'Без роля'
 
 
 class PostImageInlineFormSet(BaseInlineFormSet):

@@ -22,7 +22,11 @@ register = template.Library()
 @register.inclusion_tag('admin/_statistics_dashboard.html', takes_context=True)
 def admin_statistics_dashboard(context):
     request = context['request']
-    if not request.user.is_active or not request.user.is_staff:
+    if (
+        not request.user.is_active
+        or not request.user.is_staff
+        or not request.user.has_perm('blog.view_pageview')
+    ):
         return {'show_statistics': False}
 
     now = timezone.now()

@@ -30,8 +30,10 @@
 
     {% admin_statistics_dashboard %}
 
+    {% if perms.blog.add_posts or perms.blog.change_bellsongsuggestion or perms.blog.view_comments or perms.blog.add_event or perms.blog.add_pollquestion or perms.blog.change_sitesettings or perms.blog.change_scheduleentry or perms.blog.change_memeofweek or perms.valentine.view_profile or perms.valentine.view_valenitines %}
     <h2 class="mb-4 text-xl font-semibold text-font-important">{% trans "Бързи действия" %}</h2>
     <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {% if perms.blog.add_posts %}
         <a href="{% url 'admin:blog_posts_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -43,7 +45,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.blog.change_bellsongsuggestion %}
         <a href="{% url 'admin:blog_bellsongsuggestion_changelist' %}?status__exact=pending" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -55,7 +59,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.blog.view_comments %}
         <a href="{% url 'admin:blog_comments_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -67,7 +73,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.blog.add_event %}
         <a href="{% url 'admin:blog_event_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -79,7 +87,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.blog.add_pollquestion %}
         <a href="{% url 'admin:blog_pollquestion_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -91,7 +101,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.blog.change_sitesettings %}
         <a href="{% url 'admin:blog_sitesettings_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -103,7 +115,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.blog.change_scheduleentry %}
         <a href="{% url 'admin:blog_scheduleentry_import_csv' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -115,7 +129,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.blog.change_memeofweek %}
         <a href="{% url 'admin:blog_memeofweek_changelist' %}?status__exact=pending" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -127,7 +143,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.valentine.view_profile %}
         <a href="{% url 'admin:valentine_profile_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -139,7 +157,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
 
+        {% if perms.valentine.view_valenitines %}
         <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
             <div class="flex items-center">
                 <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
@@ -151,7 +171,9 @@
                 </div>
             </div>
         </a>
+        {% endif %}
     </div>
+    {% endif %}
 
     {% include "admin/_help_guide.html" %}
 </div>
