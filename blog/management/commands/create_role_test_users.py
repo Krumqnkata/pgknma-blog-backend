@@ -17,6 +17,7 @@ ROLE_SLUGS = {
     "moderator": "Модератори",
     "gamification": "Мениджъри на геймификацията",
     "valentine": "Мениджъри на Валентинки",
+    "valentine-codes": "Достъп до Valentine кодове",
     "site-manager": "Управление на сайта",
 }
 

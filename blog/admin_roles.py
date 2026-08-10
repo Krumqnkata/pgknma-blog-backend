@@ -42,84 +42,99 @@ EDITOR_PERMISSIONS = (
             "postdocument",
             "event",
             "scheduleentry",
-            "scheduleimport",
             "notification",
             "changelog",
-            "termsofservice",
-            "privacypolicy",
         ),
+    )
+    | _model_permissions("blog", ("scheduleimport",), ("view", "change"))
+    | _model_permissions(
+        "blog",
+        ("termsofservice", "privacypolicy"),
+        ("view", "add", "change"),
     )
     | {
         "blog.can_allow_posts",
         "blog.can_edit_users_post",
         "blog.can_view_all_pnp_posts",
-        "blog.can_view_all_posts",
     }
 )
 
-MODERATOR_PERMISSIONS = _model_permissions(
-    "blog",
-    (
-        "comments",
-        "pollquestion",
-        "pollanswer",
-        "bellsongsuggestion",
-        "memeofweek",
-        "contactsubmission",
-    ),
+MODERATOR_PERMISSIONS = (
+    _model_permissions("blog", ("comments", "pollanswer", "contactsubmission"), ("view", "delete"))
+    | _model_permissions("blog", ("pollquestion",))
+    | _model_permissions(
+        "blog",
+        ("bellsongsuggestion", "memeofweek"),
+        ("view", "change", "delete"),
+    )
 )
 
 GAMIFICATION_PERMISSIONS = (
-    _model_permissions(
+    _model_permissions("blog", ("userprofile",), ("view", "change"))
+    | _model_permissions("blog", ("gamificationlevel",))
+    | _model_permissions(
         "blog",
         (
-            "userprofile",
-            "gamificationlevel",
             "badge",
-            "userbadge",
-            "pointtransaction",
             "gamificationpointrule",
             "mission",
+            "digitalreward",
+        ),
+        ("view", "add", "change"),
+    )
+    | _model_permissions(
+        "blog",
+        (
+            "userbadge",
+            "pointtransaction",
             "usermissionprogress",
             "missionactivity",
-            "digitalreward",
-            "userdigitalreward",
         ),
+        ("view",),
+    )
+    | _model_permissions(
+        "blog", ("userdigitalreward",), ("view", "add", "change")
     )
     | _model_permissions("blog", ("gamificationnotification",), ("view",))
-    | _model_permissions("blog", ("notification",), ("view",))
     | _model_permissions("auth", ("user",), ("view",))
 )
 
 VALENTINE_PERMISSIONS = (
-    _model_permissions(
+    _model_permissions("valentine", ("settings",), ("view", "add", "change"))
+    | _model_permissions("valentine", ("profile",), ("view", "add", "change"))
+    | _model_permissions(
         "valentine",
-        (
-            "settings",
-            "profile",
-            "register",
-            "valenitines",
-            "valentinecampaign",
-            "archivedvalentine",
-            "valentinemoderationevent",
-        ),
+        ("register",),
+        ("view", "change", "delete"),
     )
+    | _model_permissions(
+        "valentine",
+        ("valenitines", "archivedvalentine"),
+        ("view", "change"),
+    )
+    | _model_permissions(
+        "valentine", ("valentinecampaign",), ("view", "add", "change")
+    )
+    | _model_permissions("valentine", ("valentinemoderationevent",), ("view",))
+)
+
+VALENTINE_CODE_PERMISSIONS = (
+    _model_permissions("valentine", ("profile",), ("view",))
     | {"valentine.view_profile_codes"}
 )
 
 SITE_MANAGER_PERMISSIONS = (
-    _model_permissions(
+    _model_permissions("blog", ("sitesettings",), ("view", "add", "change"))
+    | _model_permissions("blog", ("changelog",))
+    | _model_permissions(
         "blog",
-        (
-            "sitesettings",
-            "changelog",
-            "privacypolicy",
-            "termsofservice",
-            "consentrecord",
-            "personaldatacleanuprun",
-            "blogloginsession",
-            "pageview",
-        ),
+        ("privacypolicy", "termsofservice"),
+        ("view", "add", "change"),
+    )
+    | _model_permissions(
+        "blog",
+        ("consentrecord", "blogloginsession", "pageview"),
+        ("view",),
     )
     | _model_permissions("admin", ("logentry",), ("view",))
 )
@@ -148,8 +163,13 @@ ADMIN_ROLES = (
     ),
     AdminRole(
         "Мениджъри на Валентинки",
-        "Управляват Valentine профили, кампании, сигнали и архив.",
+        "Управляват Valentine профили, кампании, сигнали и архив, без достъп до тайните кодове.",
         frozenset(VALENTINE_PERMISSIONS),
+    ),
+    AdminRole(
+        "Достъп до Valentine кодове",
+        "Допълнителна чувствителна роля за преглед, експорт и регенериране на Valentine кодове.",
+        frozenset(VALENTINE_CODE_PERMISSIONS),
     ),
     AdminRole(
         "Управление на сайта",
@@ -164,9 +184,9 @@ ADMIN_ROLE_BY_NAME = {role.name: role for role in ADMIN_ROLES}
 def sync_admin_roles(*, using=DEFAULT_DB_ALIAS, reset=False):
     """Create/update the predefined groups and return a short result summary.
 
-    Normal synchronization adds missing baseline permissions and preserves any
-    extra permissions assigned by a superuser. ``reset=True`` restores the
-    exact predefined permission set.
+    Normal synchronization initializes only newly-created roles and preserves
+    all later admin customizations. ``reset=True`` restores the exact
+    predefined permission set for every standard role.
     """
 
     permission_lookup = {
@@ -188,12 +208,11 @@ def sync_admin_roles(*, using=DEFAULT_DB_ALIAS, reset=False):
 
             before = set(group.permissions.values_list("pk", flat=True))
             desired = {permission.pk for permission in resolved}
-            if reset:
+            if created or reset:
                 group.permissions.set(resolved)
                 after = desired
             else:
-                group.permissions.add(*resolved)
-                after = before | desired
+                after = before
 
             result["created"] += int(created)
             result["updated"] += int(before != after and not created)

@@ -21,6 +21,11 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Created: {result['created']}; updated: {result['updated']}."
         )
+        if not options["reset"]:
+            self.stdout.write(
+                "Existing role customizations were preserved. "
+                "Use --reset to apply the exact secure baseline."
+            )
         if result["missing"]:
             self.stdout.write(
                 self.style.WARNING(

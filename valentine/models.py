@@ -183,7 +183,7 @@ class Profile(models.Model):
         permissions = (
             (
                 "view_profile_codes",
-                "Може да вижда и експортира Valentine кодове",
+                "Може да вижда, експортира и регенерира Valentine кодове",
             ),
         )
 

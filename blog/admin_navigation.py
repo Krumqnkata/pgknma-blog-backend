@@ -1,5 +1,8 @@
 """Permission-aware Unfold sidebar navigation."""
 
+from django.apps import apps
+from django.contrib import admin
+
 
 def _permissions(app_label, model_name, actions=("view", "add", "change", "delete")):
     return tuple(f"{app_label}.{action}_{model_name}" for action in actions)
@@ -122,6 +125,40 @@ ADMIN_NAVIGATION = (
 )
 
 
+def _registered_model_admin(permissions):
+    for permission in permissions:
+        try:
+            app_label, codename = permission.split(".", 1)
+        except ValueError:
+            continue
+        for action in ("view", "add", "change", "delete"):
+            prefix = f"{action}_"
+            if not codename.startswith(prefix):
+                continue
+            try:
+                model = apps.get_model(app_label, codename[len(prefix):])
+            except LookupError:
+                return None
+            return admin.site._registry.get(model) if model is not None else None
+    return None
+
+
+def _model_admin_allows_access(request, permissions):
+    model_admin = _registered_model_admin(permissions)
+    if model_admin is None:
+        return True
+    if not model_admin.has_module_permission(request):
+        return False
+    return any(
+        (
+            model_admin.has_view_permission(request),
+            model_admin.has_add_permission(request),
+            model_admin.has_change_permission(request),
+            model_admin.has_delete_permission(request),
+        )
+    )
+
+
 def build_admin_navigation(request):
     """Return only menu entries the current staff user may actually open."""
 
@@ -137,6 +174,8 @@ def build_admin_navigation(request):
             if required and not user.is_superuser and not any(
                 user.has_perm(permission) for permission in required
             ):
+                continue
+            if required and not _model_admin_allows_access(request, required):
                 continue
             visible_items.append(
                 {key: value for key, value in configured_item.items() if key != "_permissions"}

@@ -200,11 +200,11 @@ class Posts(models.Model):
 
     class Meta:
         permissions = [
-            ('view_only_posts', 'View only users posts'),
-            ('can_view_all_posts', 'Can view all posts'),
-            ('can_view_all_pnp_posts', 'Can view all post if they not published'),
-            ('can_allow_posts', 'Can allow posts'),
-            ('can_edit_users_post', 'Can edit users posts'),
+            ('view_only_posts', 'Може да вижда собствените си публикации'),
+            ('can_view_all_posts', 'Може да вижда всички публикувани публикации'),
+            ('can_view_all_pnp_posts', 'Може да вижда всички публикации, включително чернови'),
+            ('can_allow_posts', 'Може да одобрява публикации'),
+            ('can_edit_users_post', 'Може да редактира публикации на други потребители'),
         ]
         verbose_name = "Публикация"
         verbose_name_plural = "Публикации"

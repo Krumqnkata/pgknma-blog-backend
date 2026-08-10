@@ -149,7 +149,10 @@ class BlogLoginSessionAdmin(ModelAdmin):
             return 'Изтекла'
         return 'Активна'
 
-    @admin.action(description='Прекрати избраните сесии')
+    @admin.action(
+        description='Прекрати избраните сесии',
+        permissions=('change',),
+    )
     def revoke_selected_sessions(self, request, queryset):
         if not request.user.is_superuser:
             raise PermissionDenied
@@ -418,6 +421,9 @@ class ScheduleImportAdmin(ModelAdmin):
     def has_add_permission(self, request):
         return False
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 # 2. Регистрираме Group наново, но с Unfold класа
 @admin.register(Group)
 class GroupAdmin(BaseGroupAdmin, ModelAdmin):
@@ -447,6 +453,15 @@ class GroupAdmin(BaseGroupAdmin, ModelAdmin):
     @admin.display(description='Потребители')
     def member_count(self, obj):
         return len(obj.user_set.all())
+
+    def has_add_permission(self, request):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser
 
 
 admin.site.unregister(User)
@@ -489,6 +504,17 @@ class UserProfileAdmin(ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
 
+    def get_readonly_fields(self, request, obj=None):
+        fields = set(super().get_readonly_fields(request, obj))
+        if not request.user.is_superuser:
+            fields.update(field.name for field in self.model._meta.fields)
+        return tuple(fields)
+
+    def get_search_fields(self, request):
+        if not request.user.is_superuser:
+            return ('user__username',)
+        return super().get_search_fields(request)
+
     def _gamification_action_response(self, request, queryset, form, title, action):
         return TemplateResponse(
             request,
@@ -503,8 +529,13 @@ class UserProfileAdmin(ModelAdmin):
             },
         )
 
-    @admin.action(description='Дай или отнеми точки с причина')
+    @admin.action(
+        description='Дай или отнеми точки с причина',
+        permissions=('change',),
+    )
     def adjust_points(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         if 'apply' in request.POST:
             form = PointAdjustmentForm(request.POST)
             if form.is_valid():
@@ -533,8 +564,13 @@ class UserProfileAdmin(ModelAdmin):
             request, queryset, form, 'Корекция на точки', 'adjust_points'
         )
 
-    @admin.action(description='Дай значка на избраните потребители')
+    @admin.action(
+        description='Дай значка на избраните потребители',
+        permissions=('change',),
+    )
     def award_selected_badge(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         if 'apply' in request.POST:
             form = BadgeAwardForm(request.POST)
             if form.is_valid():
@@ -575,8 +611,13 @@ class UserProfileAdmin(ModelAdmin):
             initial,
         )
 
-    @admin.action(description='Върни избраните профили към инициали')
+    @admin.action(
+        description='Върни избраните профили към инициали',
+        permissions=('change',),
+    )
     def reset_selected_avatars(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         changed = 0
         with transaction.atomic():
             profiles = UserProfile.objects.select_for_update().filter(
@@ -618,10 +659,48 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related('groups')
 
+    def get_list_display(self, request):
+        if not request.user.is_superuser:
+            return (
+                'username', 'first_name', 'last_name', 'is_active', 'last_login',
+            )
+        return super().get_list_display(request)
+
+    def get_list_filter(self, request):
+        if not request.user.is_superuser:
+            return ('is_active', 'last_login')
+        return super().get_list_filter(request)
+
+    def get_search_fields(self, request):
+        if not request.user.is_superuser:
+            return ('username', 'first_name', 'last_name')
+        return super().get_search_fields(request)
+
     @admin.display(description='Роли')
     def assigned_roles(self, obj):
         names = [group.name for group in obj.groups.all()]
         return ', '.join(names) if names else 'Без роля'
+
+    def get_fieldsets(self, request, obj=None):
+        if not request.user.is_superuser and obj is not None:
+            return (
+                (None, {
+                    'fields': (
+                        'username', 'first_name', 'last_name', 'is_active',
+                        'last_login', 'date_joined',
+                    ),
+                }),
+            )
+        return super().get_fieldsets(request, obj)
+
+    def has_add_permission(self, request):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_active and request.user.is_superuser
 
 
 class PostImageInlineFormSet(BaseInlineFormSet):
@@ -825,6 +904,20 @@ class PostsAdmin(ModelAdmin):
         if user.has_perm('blog.view_only_posts'):
             return qs.filter(author=user)
         return qs.filter(author=user, published=True)
+
+    def has_change_permission(self, request, obj=None):
+        if not super().has_change_permission(request, obj):
+            return False
+        if obj is None or request.user.is_superuser or obj.author_id == request.user.pk:
+            return True
+        return request.user.has_perm('blog.can_edit_users_post')
+
+    def has_delete_permission(self, request, obj=None):
+        if not super().has_delete_permission(request, obj):
+            return False
+        if obj is None or request.user.is_superuser or obj.author_id == request.user.pk:
+            return True
+        return request.user.has_perm('blog.can_edit_users_post')
 
 @admin.register(Category)
 class CategoryAdmin(ModelAdmin):
@@ -1216,6 +1309,9 @@ class NotificationReadStateAdmin(ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return False
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(PageView)
 class PageViewAdmin(ModelAdmin):
@@ -1229,6 +1325,9 @@ class PageViewAdmin(ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 
@@ -1267,6 +1366,9 @@ class TermsOfServiceAdmin(ModelAdmin):
         return "-"
     content_preview.short_description = 'Преглед'
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 @admin.register(PrivacyPolicy)
 class PrivacyPolicyAdmin(ModelAdmin):
     list_display = ('user', 'content_preview', 'date')
@@ -1288,6 +1390,9 @@ class PrivacyPolicyAdmin(ModelAdmin):
             return format_html("{}", Truncator(obj.content).chars(150))
         return "-"
     content_preview.short_description = 'Преглед'
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.register(Event)
 class EventAdmin(ModelAdmin):
@@ -1355,6 +1460,17 @@ class PostImageAdmin(ModelAdmin):
     def has_add_permission(self, request):
         return False  # Images are created from the parent post form.
 
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request).select_related('post', 'post__author')
+        if request.user.is_superuser or request.user.has_perm('blog.can_view_all_pnp_posts'):
+            return queryset
+        return queryset.filter(post__author=request.user)
+
+    def get_list_filter(self, request):
+        if request.user.is_superuser or request.user.has_perm('blog.can_view_all_pnp_posts'):
+            return super().get_list_filter(request)
+        return ('is_featured',)
+
 @admin.register(PostDocument)
 class PostDocumentAdmin(ModelAdmin):
     list_display = ('post', 'get_file_name')
@@ -1372,12 +1488,25 @@ class PostDocumentAdmin(ModelAdmin):
         # Documents are added via the Post admin, not directly
         return False
 
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request).select_related('post', 'post__author')
+        if request.user.is_superuser or request.user.has_perm('blog.can_view_all_pnp_posts'):
+            return queryset
+        return queryset.filter(post__author=request.user)
+
+    def get_list_filter(self, request):
+        if request.user.is_superuser or request.user.has_perm('blog.can_view_all_pnp_posts'):
+            return super().get_list_filter(request)
+        return ()
+
 @admin.register(MemeOfWeek)
 class MemeOfWeekAdmin(ModelAdmin):
     list_display = ('title', 'user', 'image_preview', 'status', 'votes', 'created_at')
     list_filter = ('status', 'created_at')
     search_fields = ('title', 'user__username')
-    readonly_fields = ('user', 'created_at', 'image_preview', 'votes', 'title',)
+    readonly_fields = (
+        'user', 'created_at', 'image', 'image_preview', 'votes', 'title',
+    )
     exclude = ('voted_by',)
 
     def image_preview(self, obj):
@@ -1398,6 +1527,9 @@ class GamificationLevelAdmin(ModelAdmin):
     list_display = ('number', 'title', 'minimum_points', 'icon')
     ordering = ('minimum_points',)
     search_fields = ('title',)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Badge)
@@ -1426,6 +1558,9 @@ class BadgeAdmin(ModelAdmin):
                 messages.SUCCESS,
             )
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(UserBadge)
 class UserBadgeAdmin(ModelAdmin):
@@ -1440,6 +1575,9 @@ class UserBadgeAdmin(ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 
@@ -1473,6 +1611,9 @@ class GamificationPointRuleAdmin(ModelAdmin):
     list_filter = ('active',)
     ordering = ('action',)
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Mission)
 class MissionAdmin(ModelAdmin):
@@ -1482,6 +1623,9 @@ class MissionAdmin(ModelAdmin):
     )
     list_filter = ('active', 'start_date', 'end_date')
     search_fields = ('title', 'slug', 'description')
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(UserMissionProgress)
@@ -1502,6 +1646,9 @@ class UserMissionProgressAdmin(ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return False
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(MissionActivity)
 class MissionActivityAdmin(ModelAdmin):
@@ -1516,6 +1663,9 @@ class MissionActivityAdmin(ModelAdmin):
     def has_change_permission(self, request, obj=None):
         return False
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(DigitalReward)
 class DigitalRewardAdmin(ModelAdmin):
@@ -1528,6 +1678,9 @@ class DigitalRewardAdmin(ModelAdmin):
         ('Визуален дизайн', {'fields': ('visual_color', 'secondary_color', 'effect_style', 'display_text', 'display_icon')}),
     )
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(UserDigitalReward)
 class UserDigitalRewardAdmin(ModelAdmin):
@@ -1537,6 +1690,12 @@ class UserDigitalRewardAdmin(ModelAdmin):
     readonly_fields = ('unlocked_at',)
     autocomplete_fields = ('user', 'reward', 'source_badge')
 
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj is not None:
+            fields.extend(('user', 'reward', 'source_badge'))
+        return tuple(fields)
+
     def save_model(self, request, obj, form, change):
         if obj.selected:
             UserDigitalReward.objects.filter(
@@ -1544,6 +1703,9 @@ class UserDigitalRewardAdmin(ModelAdmin):
                 reward__kind=obj.reward.kind,
             ).exclude(pk=obj.pk).update(selected=False)
         super().save_model(request, obj, form, change)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.register(Cookie.ConsentRecord)
 class ConsentRecordAdmin(ModelAdmin):
@@ -1557,6 +1719,9 @@ class ConsentRecordAdmin(ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False # Records should not be changeable
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     def user_display(self, obj):
         return obj.user.username if obj.user else "Анонимен"

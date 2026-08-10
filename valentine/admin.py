@@ -154,6 +154,12 @@ class ProfileAdmin(ModelAdmin):
             fields.append("code")
         return tuple(fields)
 
+    def get_exclude(self, request, obj=None):
+        excluded = list(super().get_exclude(request, obj) or ())
+        if not self.has_view_codes_permission(request):
+            excluded.append("code")
+        return tuple(excluded)
+
     def get_actions(self, request):
         actions = super().get_actions(request)
         if not self.has_view_codes_permission(request):
@@ -383,9 +389,10 @@ class ProfileAdmin(ModelAdmin):
         )
         response.write("\ufeff")
         writer = csv.writer(response, delimiter=";")
-        writer.writerow(
-            ("first_name", "last_name", "class", "email", "code")
-        )
+        headers = ["first_name", "last_name", "class", "email"]
+        if self.has_view_codes_permission(request):
+            headers.append("code")
+        writer.writerow(headers)
         return response
 
     def import_profiles_csv(self, request):
@@ -455,9 +462,26 @@ class ProfileAdmin(ModelAdmin):
             except ProfileImportError as exc:
                 import_errors.extend(exc.errors)
             else:
-                plans, plan_errors = build_profile_import_plan(rows)
                 import_errors.extend(parse_errors)
-                import_errors.extend(plan_errors)
+                supplied_code_rows = [
+                    row["row_number"] for row in rows if row.get("code")
+                ]
+                if supplied_code_rows and not self.has_view_codes_permission(request):
+                    import_errors.append(
+                        "Нямаш право да задаваш Valentine кодове чрез CSV "
+                        "(редове: "
+                        + ", ".join(str(number) for number in supplied_code_rows)
+                        + "). Премахни колоната с кодовете."
+                    )
+                    if not self.has_change_permission(request):
+                        import_errors.append(
+                            "Нямаш право да обновяваш или възстановяваш "
+                            "съществуващи профили."
+                        )
+                    plans = []
+                else:
+                    plans, plan_errors = build_profile_import_plan(rows)
+                    import_errors.extend(plan_errors)
                 if (
                     not self.has_change_permission(request)
                     and any(
@@ -528,9 +552,12 @@ class ProfileAdmin(ModelAdmin):
         )
 
     @admin.action(
-        description="Мигрирай към следващата учебна година"
+        description="Мигрирай към следващата учебна година",
+        permissions=("change",),
     )
     def promote_to_next_academic_year(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         selected_years = list(
             queryset.exclude(clas="U").values_list(
                 "academic_year_start",
@@ -659,9 +686,12 @@ class ProfileAdmin(ModelAdmin):
         )
 
     @admin.action(
-        description="Деактивирай без изтриване на историята"
+        description="Деактивирай без изтриване на историята",
+        permissions=("change",),
     )
     def deactivate_profiles(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         profile_ids = list(queryset.values_list("pk", flat=True))
         count = Profile.objects.filter(
             pk__in=profile_ids,
@@ -677,8 +707,13 @@ class ProfileAdmin(ModelAdmin):
             messages.SUCCESS,
         )
 
-    @admin.action(description="Възстанови избраните профили")
+    @admin.action(
+        description="Възстанови избраните профили",
+        permissions=("change",),
+    )
     def reactivate_profiles(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         count = queryset.filter(is_active=False).update(is_active=True)
         self.message_user(
             request,
@@ -687,8 +722,13 @@ class ProfileAdmin(ModelAdmin):
             messages.SUCCESS,
         )
 
-    @admin.action(description="Изпрати позитивна системна валентинка")
+    @admin.action(
+        description="Изпрати позитивна системна валентинка",
+        permissions=("change",),
+    )
     def send_system_valentine(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         inactive_count = queryset.filter(is_active=False).count()
         queryset = queryset.filter(is_active=True)
         platform_settings = Settings.objects.first()
@@ -742,7 +782,10 @@ class ProfileAdmin(ModelAdmin):
             messages.SUCCESS,
         )
 
-    @admin.action(description="Генерирай нов код за достъп")
+    @admin.action(
+        description="Генерирай нов код за достъп",
+        permissions=("view_codes",),
+    )
     def regenerate_access_codes(self, request, queryset):
         if not self.has_view_codes_permission(request):
             raise PermissionDenied
@@ -763,6 +806,8 @@ class ProfileAdmin(ModelAdmin):
         permissions=("change",),
     )
     def reset_pins(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         profile_ids = list(queryset.values_list("pk", flat=True))
         if not profile_ids:
             return
@@ -846,8 +891,13 @@ class RegisterAdmin(ModelAdmin):
             fields.remove("profile__code")
         return tuple(fields)
 
-    @admin.action(description="Прекрати избраните сесии")
+    @admin.action(
+        description="Прекрати избраните сесии",
+        permissions=("change",),
+    )
     def revoke_sessions(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         count = queryset.update(revoked=True)
         self.message_user(request, f"Прекратени сесии: {count}.")
 
@@ -856,6 +906,8 @@ class RegisterAdmin(ModelAdmin):
         permissions=("delete",),
     )
     def delete_expired_sessions(self, request, queryset):
+        if not self.has_delete_permission(request):
+            raise PermissionDenied
         count, _ = Register.objects.filter(expires_at__lte=timezone.now()).delete()
         self.message_user(request, f"Изтрити изтекли сесии: {count}.")
 
@@ -965,8 +1017,13 @@ class ValentinesAdmin(ModelAdmin):
     def content_preview(self, obj):
         return obj.content[:80] + ("…" if len(obj.content) > 80 else "")
 
-    @admin.action(description="Скрий избраните сигнали")
+    @admin.action(
+        description="Скрий избраните сигнали",
+        permissions=("change",),
+    )
     def hide_reported(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         dispatch_count, delivery_count = self._moderate_dispatches(
             request,
             queryset,
@@ -980,8 +1037,13 @@ class ValentinesAdmin(ModelAdmin):
             f"({delivery_count} доставки).",
         )
 
-    @admin.action(description="Възстанови избраните послания")
+    @admin.action(
+        description="Възстанови избраните послания",
+        permissions=("change",),
+    )
     def restore_messages(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         dispatch_count, delivery_count = self._moderate_dispatches(
             request,
             queryset,
@@ -1040,8 +1102,13 @@ class ValentinesAdmin(ModelAdmin):
             )
         return len(dispatch_keys), len(delivery_ids)
 
-    @admin.action(description="Експорт на модерираните (CSV)")
+    @admin.action(
+        description="Експорт на модерираните (CSV)",
+        permissions=("view",),
+    )
     def export_reported_valentines(self, request, queryset):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
         reported = queryset.filter(
             moderation_status__in=(
                 Valenitines.ModerationStatus.PENDING,
@@ -1086,8 +1153,13 @@ class ValentinesAdmin(ModelAdmin):
             )
         return response
 
-    @admin.action(description="Експорт на обобщена статистика (CSV)")
+    @admin.action(
+        description="Експорт на обобщена статистика (CSV)",
+        permissions=("view",),
+    )
     def export_valentine_stats(self, request, queryset):
+        if not self.has_view_permission(request):
+            raise PermissionDenied
         response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
         response["Content-Disposition"] = (
             'attachment; filename="valentine_statistics.csv"'
@@ -1665,9 +1737,12 @@ class ValentineCampaignAdmin(ModelAdmin):
         return response
 
     @admin.action(
-        description="Направи активна и архивирай предишната кампания"
+        description="Направи активна и архивирай предишната кампания",
+        permissions=("change",),
     )
     def make_active(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         if queryset.count() != 1:
             self.message_user(
                 request,
@@ -1767,8 +1842,13 @@ class ValentineCampaignAdmin(ModelAdmin):
             messages.SUCCESS,
         )
 
-    @admin.action(description="Архивирай избраните минали кампании")
+    @admin.action(
+        description="Архивирай избраните минали кампании",
+        permissions=("change",),
+    )
     def archive_campaigns(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         active_campaign_id = (
             Settings.objects.values_list(
                 "active_campaign_id",
@@ -1795,8 +1875,13 @@ class ValentineCampaignAdmin(ModelAdmin):
             messages.SUCCESS,
         )
 
-    @admin.action(description="Възстанови избраните кампании от архива")
+    @admin.action(
+        description="Възстанови избраните кампании от архива",
+        permissions=("change",),
+    )
     def restore_campaigns(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
         count = queryset.update(
             is_archived=False,
             archived_at=None,
