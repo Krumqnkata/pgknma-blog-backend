@@ -172,6 +172,15 @@ urlpatterns = [
         blog_views.NotificationPreferenceView.as_view(),
         name='notification-preferences',
     ),
+    path('push/config/', blog_views.PushConfigView.as_view(), name='push-config'),
+    path(
+        'push/subscription/',
+        blog_views.PushSubscriptionView.as_view(),
+        name='push-subscription',
+    ),
+
+    # Общо търсене в публичните публикации, събития, песни и мемета.
+    path('search/', blog_views.GlobalSearchView.as_view(), name='global-search'),
 
     # Анонимна статистика за прегледи (не се съхранява IP адрес).
     path(

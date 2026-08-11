@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -1310,6 +1310,28 @@ class NotificationReadStateAdmin(ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PushSubscription)
+class PushSubscriptionAdmin(ModelAdmin):
+    list_display = ('user', 'browser_display', 'active', 'failure_count', 'last_success_at', 'updated_at')
+    list_filter = ('active', 'updated_at', 'last_success_at')
+    search_fields = ('user__username', 'user__email', 'endpoint', 'user_agent')
+    readonly_fields = (
+        'user', 'endpoint', 'p256dh', 'auth', 'user_agent', 'active',
+        'failure_count', 'created_at', 'updated_at', 'last_success_at',
+    )
+    fields = readonly_fields
+
+    @admin.display(description='Браузър')
+    def browser_display(self, obj):
+        return Truncator(obj.user_agent or 'Неизвестен браузър').chars(70)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
 

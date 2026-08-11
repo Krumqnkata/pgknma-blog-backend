@@ -136,6 +136,7 @@ SITE_MANAGER_PERMISSIONS = (
         ("consentrecord", "blogloginsession", "pageview"),
         ("view",),
     )
+    | _model_permissions("blog", ("pushsubscription",), ("view", "delete"))
     | _model_permissions("admin", ("logentry",), ("view",))
 )
 

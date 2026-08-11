@@ -1142,6 +1142,53 @@ class NotificationPreference(models.Model):
         return f'Известия на {self.user}'
 
 
+class PushSubscription(models.Model):
+    """A browser push endpoint owned by one authenticated user."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='push_subscriptions',
+        verbose_name='Потребител',
+    )
+    # Browser endpoints can be much longer than MySQL's safe indexed varchar
+    # length under utf8mb4. Store the full value unindexed and index its digest.
+    endpoint = models.TextField(verbose_name='Push endpoint')
+    endpoint_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        editable=False,
+        verbose_name='SHA-256 на Push endpoint-а',
+    )
+    p256dh = models.CharField(max_length=255, verbose_name='Публичен ключ на браузъра')
+    auth = models.CharField(max_length=255, verbose_name='Auth ключ на браузъра')
+    user_agent = models.CharField(max_length=255, blank=True, verbose_name='Браузър')
+    active = models.BooleanField(default=True, verbose_name='Активен')
+    failure_count = models.PositiveSmallIntegerField(default=0, verbose_name='Поредни грешки')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създаден на')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновен на')
+    last_success_at = models.DateTimeField(null=True, blank=True, verbose_name='Последно успешно изпращане')
+
+    class Meta:
+        verbose_name = 'Push абонамент'
+        verbose_name_plural = 'Push абонаменти'
+        ordering = ('-updated_at',)
+        indexes = [
+            models.Index(fields=('user', 'active'), name='push_user_active_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.endpoint[:60]}'
+
+    @staticmethod
+    def digest_endpoint(endpoint):
+        return hashlib.sha256(endpoint.encode('utf-8')).hexdigest()
+
+    def save(self, *args, **kwargs):
+        self.endpoint_hash = self.digest_endpoint(self.endpoint)
+        return super().save(*args, **kwargs)
+
+
 class GamificationNotification(Notification):
     """Admin-only proxy used to keep automatic game events separate."""
 

@@ -110,6 +110,7 @@ ADMIN_NAVIGATION = (
             _item("Условия за ползване", "/admin/blog/termsofservice/", "gavel", *_permissions("blog", "termsofservice")),
             _item("Записи на съгласие за бисквитки", "/admin/blog/consentrecord/", "cookie", *_permissions("blog", "consentrecord")),
             _item("История на почистването", "/admin/blog/personaldatacleanuprun/", "cleaning_services", *_permissions("blog", "personaldatacleanuprun")),
+            _item("Push абонаменти", "/admin/blog/pushsubscription/", "notifications_active", *_permissions("blog", "pushsubscription")),
             _item("Журнал на действията", "/admin/admin/logentry/", "history", *_permissions("admin", "logentry", ("view",))),
         ),
     },

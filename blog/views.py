@@ -29,7 +29,8 @@ from rest_framework.exceptions import (
 )
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.utils.html import escape
+from django.utils.html import escape, strip_tags
+from django.utils.text import Truncator
 from datetime import datetime, timedelta
 import re
 from urllib.parse import urljoin
@@ -38,7 +39,7 @@ from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile, Badge, PointTransaction, UserBadge, UserDigitalReward, NotificationPreference, NotificationReadState, PageView
+from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile, Badge, PointTransaction, UserBadge, UserDigitalReward, NotificationPreference, NotificationReadState, PageView, PushSubscription
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
@@ -46,7 +47,7 @@ from .serializer import (
     PostSerializer, RegisterSerializer, CommentSerializer,
     PollQuestionSerializer, UserPollStatusSerializer, PollAnswerSerializer,
     PollStatisticsSerializer, ContactSubmissionSerializer, NotificationSerializer,
-    NotificationPreferenceSerializer, PageViewCreateSerializer,
+    NotificationPreferenceSerializer, PushSubscriptionSerializer, PageViewCreateSerializer,
     EventSerializer, TermsOfServiceSerializer, BellSongSuggestionSerializer,
     PrivacyPolicySerializer, MemeOfWeekSerializer, ConsentRecordSerializer, SiteSettingsSerializer,
     ChangelogSerializer, PasswordChangeSerializer, UsernameChangeSerializer, ScheduleEntrySerializer, BlogLoginSessionSerializer,
@@ -2078,6 +2079,141 @@ class NotificationPreferenceView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class PushConfigView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        enabled = bool(settings.WEB_PUSH_ENABLED and settings.VAPID_PUBLIC_KEY)
+        return Response({
+            'enabled': enabled,
+            'public_key': settings.VAPID_PUBLIC_KEY if enabled else '',
+        })
+
+
+class PushSubscriptionView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_scope = 'push_subscription'
+
+    def get(self, request):
+        endpoint = str(request.query_params.get('endpoint', '')).strip()
+        if not endpoint:
+            return Response({'subscribed': False})
+        if len(endpoint) > 2048:
+            raise RestValidationError({'endpoint': 'Push endpoint-ът е прекалено дълъг.'})
+        return Response({
+            'subscribed': PushSubscription.objects.filter(
+                user=request.user,
+                endpoint_hash=PushSubscription.digest_endpoint(endpoint),
+                active=True,
+            ).exists(),
+        })
+
+    def post(self, request):
+        serializer = PushSubscriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        subscription, created = PushSubscription.objects.update_or_create(
+            endpoint_hash=PushSubscription.digest_endpoint(values['endpoint']),
+            defaults={
+                'endpoint': values['endpoint'],
+                'user': request.user,
+                'p256dh': values['p256dh'],
+                'auth': values['auth'],
+                'user_agent': request.headers.get('User-Agent', '')[:255],
+                'active': True,
+                'failure_count': 0,
+            },
+        )
+        return Response(
+            {'subscribed': True},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def delete(self, request):
+        endpoint = str(request.data.get('endpoint', '')).strip()
+        if not endpoint:
+            raise RestValidationError({'endpoint': 'Полето endpoint е задължително.'})
+        deleted, _ = PushSubscription.objects.filter(
+            user=request.user,
+            endpoint_hash=PushSubscription.digest_endpoint(endpoint),
+        ).delete()
+        return Response({'subscribed': False, 'removed': bool(deleted)})
+
+
+class GlobalSearchView(APIView):
+    permission_classes = [SiteIsAvailable, AllowAny]
+    throttle_scope = 'search'
+
+    def get(self, request):
+        query = str(request.query_params.get('q', '')).strip()[:100]
+        if len(query) < 2:
+            return Response({'query': query, 'results': []})
+
+        results = []
+        posts = _public_posts_queryset().filter(
+            Q(title__icontains=query)
+            | Q(hook__icontains=query)
+            | Q(content__icontains=query)
+            | Q(category__full_name__icontains=query)
+        ).select_related('category')[:6]
+        for post in posts:
+            results.append({
+                'kind': 'post',
+                'id': post.pk,
+                'title': post.title,
+                'description': Truncator(strip_tags(post.hook or post.content)).chars(140),
+                'url': f'/post/{post.pk}',
+                'image_url': post.banner.url if post.banner else '',
+                'meta': post.category.full_name,
+            })
+
+        events = Event.objects.filter(published=True).filter(
+            Q(title__icontains=query)
+            | Q(description__icontains=query)
+            | Q(location__icontains=query)
+            | Q(category__icontains=query)
+            | Q(attendees_text__icontains=query)
+        ).order_by('start_datetime')[:5]
+        for event in events:
+            results.append({
+                'kind': 'event',
+                'id': event.pk,
+                'title': event.title,
+                'description': Truncator(strip_tags(event.description)).chars(140),
+                'url': f'/events?event={event.pk}',
+                'image_url': '',
+                'meta': f'{event.location} · {event.start_datetime.isoformat()}',
+            })
+
+        songs = BellSongSuggestion.objects.filter(status='approved').filter(
+            Q(title__icontains=query) | Q(note__icontains=query)
+        ).order_by('-submitted_at')[:4]
+        for song in songs:
+            results.append({
+                'kind': 'song',
+                'id': song.pk,
+                'title': song.title,
+                'description': Truncator(strip_tags(song.note or 'Одобрено предложение за училищния звънец.')).chars(140),
+                'url': '/bell-suggest#approved-songs',
+                'image_url': '',
+                'meta': song.get_slot_display(),
+            })
+
+        memes = MemeOfWeek.objects.filter(status='approved', title__icontains=query).order_by('-created_at')[:4]
+        for meme in memes:
+            results.append({
+                'kind': 'meme',
+                'id': meme.pk,
+                'title': meme.title or 'Меме на седмицата',
+                'description': 'Одобрено меме от училищната общност.',
+                'url': '/meme-of-the-week',
+                'image_url': '',
+                'meta': 'Меме',
+            })
+
+        return Response({'query': query, 'results': results})
 
 
 class PageViewCreateView(generics.CreateAPIView):

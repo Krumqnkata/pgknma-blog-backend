@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
     validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge, UserDigitalReward, \
-    NotificationPreference, PageView
+    NotificationPreference, PageView, PushSubscription
 from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
 from django.conf import settings
 from django.contrib.auth.models import User, update_last_login
@@ -678,6 +678,22 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             'updated_at',
         )
         read_only_fields = ('updated_at',)
+
+
+class PushSubscriptionSerializer(serializers.ModelSerializer):
+    endpoint = serializers.URLField(max_length=2048)
+
+    class Meta:
+        model = PushSubscription
+        fields = ('endpoint', 'p256dh', 'auth')
+
+    def validate_endpoint(self, value):
+        endpoint = value.strip()
+        if not endpoint.startswith('https://') and not (
+            settings.DEBUG and endpoint.startswith('http://localhost')
+        ):
+            raise serializers.ValidationError('Push endpoint-ът трябва да използва HTTPS.')
+        return endpoint
 
 
 class PageViewCreateSerializer(serializers.ModelSerializer):

@@ -535,7 +535,38 @@ Google снимката се взема само при първия подхо�
 поверителност и Общите условия с целта на обработването, видимостта,
 възможността за премахване и правилата за допустимо съдържание.
 
-## 11. Git история
+## 11. Web Push известия
+
+Push известията са изключени по подразбиране. След инсталиране на обновените
+зависимости генерирай VAPID ключовете еднократно на сървъра:
+
+```bash
+cd /var/www/blog/cms/cms
+source ../venv/bin/activate
+vapid --gen
+chmod 600 private_key.pem
+vapid --applicationServerKey --private-key private_key.pem
+```
+
+Последната команда отпечатва публичния application server key. Добави го и
+абсолютния път до частния ключ в production `.env`:
+
+```dotenv
+WEB_PUSH_ENABLED=True
+VAPID_PUBLIC_KEY=публичният_application_server_key
+VAPID_PRIVATE_KEY=/var/www/blog/cms/cms/private_key.pem
+VAPID_SUBJECT=mailto:support@pgknma.space
+THROTTLE_PUSH_SUBSCRIPTION=30/hour
+THROTTLE_SEARCH=60/minute
+```
+
+Не публикувай и не копирай `private_key.pem` във frontend-а. Направи
+`python manage.py migrate`, рестартирай backend услугата и качи новия frontend
+build. След това включи известията от `Профил → Настройки за известия` и
+създай официално известие от админ панела. Браузърният prompt трябва да се
+показва само след натискане на бутона от потребителя.
+
+## 12. Git история
 
 Първо задължително се сменят credentials. След това Git историята може да
 бъде пренаписана, но това изисква координиран force-push и нов clone от всеки

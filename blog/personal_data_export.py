@@ -13,6 +13,7 @@ from .models import (
     PageView,
     PollAnswer,
     Posts,
+    PushSubscription,
     UserProfile,
 )
 
@@ -250,6 +251,21 @@ def build_personal_data_export(user):
             'pk',
         )
     ]
+    push_subscriptions = [
+        {
+            'endpoint': subscription.endpoint,
+            'browser': subscription.user_agent,
+            'active': subscription.active,
+            'failure_count': subscription.failure_count,
+            'created_at': _iso(subscription.created_at),
+            'updated_at': _iso(subscription.updated_at),
+            'last_success_at': _iso(subscription.last_success_at),
+        }
+        for subscription in PushSubscription.objects.filter(user=user).order_by(
+            'created_at',
+            'pk',
+        )
+    ]
     page_views = [
         {
             'path': page_view.path,
@@ -309,11 +325,13 @@ def build_personal_data_export(user):
             'login_sessions': login_sessions,
             'notification_preferences': notification_preferences,
             'notification_reads': notification_reads,
+            'push_subscriptions': push_subscriptions,
         },
         'excluded_for_security': [
             'password and password hash',
             'JWT access and refresh tokens',
             'session refresh identifiers',
+            'browser Push encryption keys',
         ],
         'notes': [
             'The Valentine platform uses a separate profile system and is not linked automatically to this blog account.',

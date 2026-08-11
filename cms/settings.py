@@ -151,6 +151,17 @@ FRONTEND_URL = os.getenv(
     "FRONTEND_URL",
     "http://127.0.0.1:5173" if DEBUG else "https://pgknma.space",
 ).strip().rstrip("/")
+WEB_PUSH_ENABLED = env_bool("WEB_PUSH_ENABLED", False)
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
+VAPID_SUBJECT = os.getenv(
+    "VAPID_SUBJECT",
+    "mailto:support@pgknma.space",
+).strip()
+if WEB_PUSH_ENABLED and not all((VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT)):
+    raise ImproperlyConfigured(
+        "WEB_PUSH_ENABLED requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT."
+    )
 _production_frontend_index = BASE_DIR.parent.parent / "dist" / "index.html"
 _local_frontend_index = BASE_DIR.parent.parent / "Frontend" / "dist" / "index.html"
 FRONTEND_INDEX_PATH = Path(os.getenv(
@@ -396,6 +407,8 @@ REST_FRAMEWORK = {
             "THROTTLE_PERSONAL_DATA_EXPORT",
             "3/day",
         ),
+        'search': os.getenv("THROTTLE_SEARCH", "60/minute"),
+        'push_subscription': os.getenv("THROTTLE_PUSH_SUBSCRIPTION", "30/hour"),
         'profile_avatar': os.getenv(
             "THROTTLE_PROFILE_AVATAR",
             "10/hour",
