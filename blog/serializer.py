@@ -55,6 +55,9 @@ def _digital_reward_payload(row):
 def _user_equipped_rewards(user):
     if not user:
         return []
+    prefetched_rewards = getattr(user, 'prefetched_equipped_rewards', None)
+    if prefetched_rewards is not None:
+        return [_digital_reward_payload(row) for row in prefetched_rewards]
     return [
         _digital_reward_payload(row)
         for row in UserDigitalReward.objects.filter(
@@ -230,6 +233,7 @@ class PostSerializer(serializers.ModelSerializer):
     gallery = PostImageSerializer(source='images', many=True, read_only=True)
     documents = serializers.SerializerMethodField()
     banner = serializers.SerializerMethodField()
+    views_this_month = serializers.SerializerMethodField()
 
     class Meta:
         model = Posts
@@ -252,7 +256,8 @@ class PostSerializer(serializers.ModelSerializer):
             'allowed',
             'images',
             'gallery',
-            'documents' # Add documents here
+            'documents',
+            'views_this_month',
         )
 
     def get_banner(self, obj):
@@ -280,6 +285,9 @@ class PostSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         documents = obj.documents.all()
         return [PostDocumentSerializer(doc, context={'request': request}).data for doc in documents]
+
+    def get_views_this_month(self, obj) -> int:
+        return int(getattr(obj, 'views_this_month', 0) or 0)
 
 class RegisterSerializer(serializers.ModelSerializer):
     username = serializers.CharField(

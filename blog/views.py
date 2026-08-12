@@ -35,7 +35,7 @@ from django.utils.text import Truncator
 from datetime import datetime, timedelta
 import re
 from urllib.parse import urljoin
-from django.db.models import BooleanField, Count, DateTimeField, Exists, F, OuterRef, Q, Subquery, Sum, Value
+from django.db.models import BooleanField, Count, DateTimeField, Exists, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
@@ -110,6 +110,7 @@ from .push import (
     cancel_notification_deliveries_for_user,
     cancel_read_deliveries_for_subscription,
 )
+from .post_analytics import with_current_month_views
 
 
 def _public_posts_queryset():
@@ -235,10 +236,22 @@ class PostViewSet(viewsets.ModelViewSet):
     http_method_names = ['get', 'head', 'options']
 
     def get_queryset(self):
-        return (
+        equipped_rewards = UserDigitalReward.objects.filter(
+            selected=True,
+            reward__active=True,
+        ).select_related('reward')
+        return with_current_month_views(
             _public_posts_queryset()
             .select_related('author', 'author__userprofile', 'category')
-            .prefetch_related('images', 'documents')
+            .prefetch_related(
+                'images',
+                'documents',
+                Prefetch(
+                    'author__digital_rewards',
+                    queryset=equipped_rewards,
+                    to_attr='prefetched_equipped_rewards',
+                ),
+            )
         )
 
     @action(
