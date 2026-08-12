@@ -17,6 +17,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.templatetags.static import static
 from datetime import timedelta
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 
 
 def env_bool(name, default=False):
@@ -154,6 +155,8 @@ FRONTEND_URL = os.getenv(
 WEB_PUSH_ENABLED = env_bool("WEB_PUSH_ENABLED", False)
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
+WEB_PUSH_MAX_PUBLIC_PER_HOUR = env_int("WEB_PUSH_MAX_PUBLIC_PER_HOUR", 10)
+WEB_PUSH_EVENT_REMINDER_HOURS = env_int("WEB_PUSH_EVENT_REMINDER_HOURS", 24)
 VAPID_SUBJECT = os.getenv(
     "VAPID_SUBJECT",
     "mailto:support@pgknma.space",
@@ -230,6 +233,11 @@ CORS_ALLOWED_ORIGINS = env_list(
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", False)
 CORS_URLS_REGEX = r"^/api/.*$"
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "x-push-management-token",
+    "x-blog-device-id",
+)
 
 CSRF_TRUSTED_ORIGINS = env_list(
     "CSRF_TRUSTED_ORIGINS",

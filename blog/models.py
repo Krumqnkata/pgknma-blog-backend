@@ -1,4 +1,5 @@
 import hashlib
+import secrets
 import uuid
 from datetime import timedelta
 from django.conf import settings
@@ -197,6 +198,12 @@ class Posts(models.Model):
         help_text="Включете, за да бъде публикацията публикувана веднага или на зададената дата.",
     )
     allowed = models.BooleanField(default=False, help_text="Отбележете, за да одобрите публикацията за показване (за публикации, изискващи одобрение).")
+    publication_notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Известие за публикуване изпратено на",
+    )
 
     class Meta:
         permissions = [
@@ -697,6 +704,12 @@ class Mission(models.Model):
         verbose_name='Изисквания',
         help_text='Списък с key, action, label и target за всяка цел.',
     )
+    availability_notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name='Известие за мисията изпратено на',
+    )
 
     class Meta:
         verbose_name = 'Мисия'
@@ -922,6 +935,12 @@ class PollQuestion(models.Model):
     start_date = models.DateTimeField(verbose_name="Начална дата", default=timezone.now, help_text="Дата и час, от които анкетата е активна. Формат: YYYY-MM-DD HH:MM:SS.")
     end_date = models.DateTimeField(verbose_name="Крайна дата", default=default_poll_end_date, help_text="Дата и час, до които анкетата е активна. Формат: YYYY-MM-DD HH:MM:SS.")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създаден на", help_text="Дата и час на създаване на анкетата. Формат: YYYY-MM-DD HH:MM:SS.")
+    activation_notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Известие за активиране изпратено на",
+    )
 
     def __str__(self):
         return self.title
@@ -1041,6 +1060,10 @@ class ContactSubmission(models.Model):
 
 
 class Notification(models.Model):
+    class Audience(models.TextChoices):
+        PUBLIC = 'public', 'Всички посетители'
+        AUTHENTICATED = 'authenticated', 'Само регистрирани потребители'
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -1054,6 +1077,21 @@ class Notification(models.Model):
     enabled = models.BooleanField(default=True, verbose_name="Активирано", help_text="Отбележете, за да активирате и покажете известието на сайта.")
     category = models.CharField(max_length=30, blank=True, default='general')
     action_url = models.CharField(max_length=255, blank=True, default='')
+    audience = models.CharField(
+        max_length=20,
+        choices=Audience.choices,
+        default=Audience.PUBLIC,
+        verbose_name='Аудитория',
+        help_text='Използва се само когато няма избран конкретен получател.',
+    )
+    deduplication_key = models.CharField(
+        max_length=160,
+        unique=True,
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name='Ключ срещу повторно изпращане',
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата и час на създаване на известието. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
@@ -1132,6 +1170,13 @@ class NotificationPreference(models.Model):
         default=True,
         verbose_name='Дигитални награди',
     )
+    posts_enabled = models.BooleanField(default=True, verbose_name='Нови публикации')
+    events_enabled = models.BooleanField(default=True, verbose_name='Събития и напомняния')
+    polls_enabled = models.BooleanField(default=True, verbose_name='Нови анкети')
+    comment_replies_enabled = models.BooleanField(default=True, verbose_name='Отговори на коментари')
+    submissions_enabled = models.BooleanField(default=True, verbose_name='Решения за предложения')
+    mission_available_enabled = models.BooleanField(default=True, verbose_name='Нови мисии')
+    security_enabled = models.BooleanField(default=True, verbose_name='Сигурност на профила')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновени на')
 
     class Meta:
@@ -1143,13 +1188,15 @@ class NotificationPreference(models.Model):
 
 
 class PushSubscription(models.Model):
-    """A browser push endpoint owned by one authenticated user."""
+    """A browser push endpoint, optionally linked to an authenticated user."""
 
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='push_subscriptions',
         verbose_name='Потребител',
+        null=True,
+        blank=True,
     )
     # Browser endpoints can be much longer than MySQL's safe indexed varchar
     # length under utf8mb4. Store the full value unindexed and index its digest.
@@ -1160,10 +1207,20 @@ class PushSubscription(models.Model):
         editable=False,
         verbose_name='SHA-256 на Push endpoint-а',
     )
+    management_token_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        editable=False,
+        verbose_name='SHA-256 на токена за управление',
+    )
     p256dh = models.CharField(max_length=255, verbose_name='Публичен ключ на браузъра')
     auth = models.CharField(max_length=255, verbose_name='Auth ключ на браузъра')
     user_agent = models.CharField(max_length=255, blank=True, verbose_name='Браузър')
     active = models.BooleanField(default=True, verbose_name='Активен')
+    general_enabled = models.BooleanField(default=True, verbose_name='Официални известия')
+    posts_enabled = models.BooleanField(default=True, verbose_name='Нови публикации')
+    events_enabled = models.BooleanField(default=True, verbose_name='Събития и напомняния')
+    polls_enabled = models.BooleanField(default=True, verbose_name='Нови анкети')
     failure_count = models.PositiveSmallIntegerField(default=0, verbose_name='Поредни грешки')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създаден на')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновен на')
@@ -1178,15 +1235,74 @@ class PushSubscription(models.Model):
         ]
 
     def __str__(self):
-        return f'{self.user} — {self.endpoint[:60]}'
+        owner = self.user or 'Анонимно устройство'
+        return f'{owner} — {self.endpoint[:60]}'
 
     @staticmethod
     def digest_endpoint(endpoint):
         return hashlib.sha256(endpoint.encode('utf-8')).hexdigest()
 
+    @staticmethod
+    def digest_management_token(token):
+        return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+    def management_token_matches(self, token):
+        if not token or not self.management_token_hash:
+            return False
+        return secrets.compare_digest(
+            self.management_token_hash,
+            self.digest_management_token(token),
+        )
+
     def save(self, *args, **kwargs):
         self.endpoint_hash = self.digest_endpoint(self.endpoint)
         return super().save(*args, **kwargs)
+
+
+class PushDelivery(models.Model):
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Изчаква'
+        SENT = 'sent', 'Изпратено'
+        FAILED = 'failed', 'Неуспешно'
+
+    subscription = models.ForeignKey(
+        PushSubscription,
+        on_delete=models.CASCADE,
+        related_name='deliveries',
+        verbose_name='Push абонамент',
+    )
+    notification = models.ForeignKey(
+        Notification,
+        on_delete=models.CASCADE,
+        related_name='push_deliveries',
+        verbose_name='Известие',
+    )
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name='Статус',
+    )
+    attempts = models.PositiveSmallIntegerField(default=0, verbose_name='Опити')
+    last_attempt_at = models.DateTimeField(null=True, blank=True, verbose_name='Последен опит')
+    sent_at = models.DateTimeField(null=True, blank=True, verbose_name='Изпратено на')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създадено на')
+
+    class Meta:
+        verbose_name = 'Push доставка'
+        verbose_name_plural = 'Push доставки'
+        constraints = [
+            models.UniqueConstraint(
+                fields=('subscription', 'notification'),
+                name='blog_unique_push_delivery',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=('status', 'created_at'), name='push_delivery_status_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.notification_id} → {self.subscription_id} ({self.status})'
 
 
 class GamificationNotification(Notification):
@@ -1355,6 +1471,18 @@ class Event(models.Model):
     attendees_text = models.CharField(max_length=255, verbose_name="Участници (текст)", help_text="Кой може да присъства (напр. 'Всички ученици', '8-12 клас').")
     published = models.BooleanField(default=True, verbose_name="Публикувано", help_text="Отбележете, за да се показва събитието на сайта.")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата на създаване на записа за събитието. Формат: YYYY-MM-DD HH:MM:SS.")
+    publication_notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Известие за публикуване изпратено на",
+    )
+    reminder_notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Напомняне изпратено на",
+    )
 
     def __str__(self):
         return self.title
@@ -1617,6 +1745,13 @@ class BlogLoginSession(models.Model):
         blank=True,
         default='',
         verbose_name='Устройство',
+    )
+    device_identifier_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        editable=False,
+        verbose_name='Хеш на идентификатора на устройството',
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Вход на')
     last_seen_at = models.DateTimeField(verbose_name='Последна активност')

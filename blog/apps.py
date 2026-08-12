@@ -8,6 +8,7 @@ class BlogConfig(AppConfig):
     def ready(self):
         from .gamification import signals  # noqa: F401
         from . import push_signals  # noqa: F401
+        from . import notification_event_signals  # noqa: F401
         from .admin_roles import sync_admin_roles_after_migrate
 
         post_migrate.connect(

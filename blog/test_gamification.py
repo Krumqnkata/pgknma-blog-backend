@@ -440,6 +440,7 @@ class GamificationTestCase(TestCase):
         self.assertTrue(response.data['recent_transactions'])
 
     def test_private_notifications_are_not_leaked(self):
+        Notification.objects.all().delete()
         other = User.objects.create_user(username='other-game-user')
         Notification.objects.create(user=self.user, text='Лична награда')
         Notification.objects.create(user=other, text='Чужда награда')
@@ -456,6 +457,7 @@ class GamificationTestCase(TestCase):
         self.assertNotIn('Чужда награда', user_texts)
 
     def test_gamification_notifications_have_a_separate_channel(self):
+        Notification.objects.all().delete()
         Notification.objects.create(text='Общо съобщение', category='general')
         Notification.objects.create(
             user=self.user,
@@ -483,6 +485,7 @@ class GamificationTestCase(TestCase):
         self.assertTrue(all(item['is_gamification'] for item in achievements.data))
 
     def test_admin_keeps_official_and_gamification_notifications_separate(self):
+        Notification.objects.all().delete()
         Notification.objects.create(text='Официално', category='general')
         Notification.objects.create(
             user=self.user,

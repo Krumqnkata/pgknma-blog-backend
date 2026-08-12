@@ -117,10 +117,54 @@ class PushSubscriptionApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(PushSubscription.objects.exists())
 
-    def test_anonymous_user_cannot_register_subscription(self):
+    def test_anonymous_user_can_manage_public_subscription_with_device_token(self):
         self.client.force_authenticate(None)
         response = self.client.post('/api/push/subscription/', self.payload, format='json')
-        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 201)
+        token = response.data['management_token']
+        subscription = PushSubscription.objects.get()
+        self.assertIsNone(subscription.user)
+
+        response = self.client.get(
+            '/api/push/subscription/',
+            {'endpoint': self.payload['endpoint']},
+            HTTP_X_PUSH_MANAGEMENT_TOKEN=token,
+        )
+        self.assertTrue(response.data['subscribed'])
+
+        updated_payload = {
+            **self.payload,
+            'management_token': token,
+            'events_enabled': False,
+        }
+        response = self.client.post('/api/push/subscription/', updated_payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        subscription.refresh_from_db()
+        self.assertFalse(subscription.events_enabled)
+
+        response = self.client.delete(
+            '/api/push/subscription/',
+            {'endpoint': self.payload['endpoint']},
+            format='json',
+            HTTP_X_PUSH_MANAGEMENT_TOKEN=token,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(PushSubscription.objects.exists())
+
+    def test_login_attaches_existing_anonymous_device_to_account(self):
+        self.client.force_authenticate(None)
+        response = self.client.post('/api/push/subscription/', self.payload, format='json')
+        token = response.data['management_token']
+
+        self.client.force_authenticate(self.user)
+        response = self.client.post(
+            '/api/push/subscription/',
+            {**self.payload, 'management_token': token},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PushSubscription.objects.get().user, self.user)
 
 
 @override_settings(
@@ -178,3 +222,38 @@ class PushDeliveryTests(APITestCase):
 
         self.assertEqual(result['sent'], 0)
         webpush_mock.assert_not_called()
+
+    @patch('blog.push.webpush')
+    def test_anonymous_device_receives_only_enabled_public_topics(self, webpush_mock):
+        PushSubscription.objects.all().delete()
+        PushSubscription.objects.create(
+            endpoint='https://push.example.test/subscription/anonymous',
+            p256dh='anonymous-public-key',
+            auth='anonymous-auth-key',
+            posts_enabled=True,
+            events_enabled=False,
+        )
+        post_notification = Notification.objects.create(
+            text='Нова публикация',
+            category='content_post',
+            enabled=False,
+        )
+        event_notification = Notification.objects.create(
+            text='Ново събитие',
+            category='content_event',
+            enabled=False,
+        )
+        personal_notification = Notification.objects.create(
+            text='Нова мисия',
+            category='mission_available',
+            audience=Notification.Audience.AUTHENTICATED,
+            enabled=False,
+        )
+        Notification.objects.filter(
+            pk__in=(post_notification.pk, event_notification.pk, personal_notification.pk),
+        ).update(enabled=True)
+
+        self.assertEqual(send_notification_push(post_notification.pk)['sent'], 1)
+        self.assertEqual(send_notification_push(event_notification.pk)['sent'], 0)
+        self.assertEqual(send_notification_push(personal_notification.pk)['sent'], 0)
+        self.assertEqual(webpush_mock.call_count, 1)

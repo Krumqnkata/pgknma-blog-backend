@@ -1,3 +1,5 @@
+import hashlib
+import re
 from datetime import datetime, timedelta, timezone as datetime_timezone
 
 from django.conf import settings
@@ -14,6 +16,8 @@ from rest_framework_simplejwt.token_blacklist.models import (
 )
 
 from .models import BlogLoginSession
+from .automatic_notifications import create_notification_once
+from .notification_categories import SECURITY_LOGIN
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
 
@@ -68,6 +72,25 @@ def issue_session_tokens(user, request, auth_method):
     network_operator, network_asn = lookup_network_operator(ip_address)
     fallback_expiry = now + settings.SIMPLE_JWT['REFRESH_TOKEN_LIFETIME']
 
+    device_label = build_device_label(request.META.get('HTTP_USER_AGENT', ''))
+    raw_device_id = str(request.META.get('HTTP_X_BLOG_DEVICE_ID', '')).strip()
+    if not re.fullmatch(r'[A-Za-z0-9._:-]{16,160}', raw_device_id):
+        raw_device_id = ''
+    device_identifier_hash = (
+        hashlib.sha256(raw_device_id.encode('utf-8')).hexdigest()
+        if raw_device_id
+        else ''
+    )
+    previous_sessions = BlogLoginSession.objects.filter(user=user)
+    known_device_filter = (
+        {'device_identifier_hash': device_identifier_hash}
+        if device_identifier_hash
+        else {'device_label': device_label}
+    )
+    is_new_device = previous_sessions.exists() and not previous_sessions.filter(
+        **known_device_filter
+    ).exists()
+
     with transaction.atomic():
         login_session = BlogLoginSession.objects.create(
             user=user,
@@ -75,9 +98,8 @@ def issue_session_tokens(user, request, auth_method):
             ip_address=ip_address,
             network_operator=network_operator,
             network_asn=network_asn,
-            device_label=build_device_label(
-                request.META.get('HTTP_USER_AGENT', '')
-            ),
+            device_label=device_label,
+            device_identifier_hash=device_identifier_hash,
             last_seen_at=now,
             expires_at=fallback_expiry,
         )
@@ -86,6 +108,14 @@ def issue_session_tokens(user, request, auth_method):
         login_session.refresh_jti = str(refresh['jti'])
         login_session.expires_at = _token_expiry(refresh)
         login_session.save(update_fields=('refresh_jti', 'expires_at'))
+        if is_new_device:
+            create_notification_once(
+                key=f'new-login-device:{login_session.pk}',
+                text=f'Нов вход в профила от {device_label}. Ако не сте Вие, сменете паролата си.',
+                category=SECURITY_LOGIN,
+                action_url='/profile?tab=sessions',
+                user=user,
+            )
 
     return login_session, refresh
 

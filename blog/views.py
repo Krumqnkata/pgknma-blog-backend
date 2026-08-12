@@ -1,5 +1,6 @@
 import mimetypes
 import json
+import secrets
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -90,6 +91,19 @@ from .session_auth import (
     revoke_login_session,
 )
 from .site_roles import get_site_role
+from .notification_categories import (
+    CONTENT_EVENT,
+    CONTENT_POLL,
+    CONTENT_POST,
+    EVENT_REMINDER,
+    COMMENT_REPLY,
+    MISSION_AVAILABLE,
+    SECURITY_ACCOUNT,
+    SECURITY_LOGIN,
+    SUBMISSION_STATUS,
+    PUBLIC_PUSH_CATEGORIES,
+)
+from .automatic_notifications import create_notification_once
 
 
 def _public_posts_queryset():
@@ -1052,6 +1066,13 @@ class PasswordChangeView(generics.UpdateAPIView):
                         login_session,
                         BlogLoginSession.REVOKED_PASSWORD_CHANGE,
                     )
+                create_notification_once(
+                    key=f'password-changed:{self.object.pk}:{timezone.now().isoformat()}',
+                    text='Паролата на профила Ви беше променена.',
+                    category=SECURITY_ACCOUNT,
+                    action_url='/profile?tab=settings',
+                    user=self.object,
+                )
             return Response({"status": "Паролата е сменена успешно"}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -1094,8 +1115,16 @@ class UsernameChangeView(generics.UpdateAPIView):
                             },
                             status=status.HTTP_400_BAD_REQUEST,
                         )
+                    old_username = self.object.username
                     self.object.username = new_username
                     self.object.save(update_fields=['username'])
+                    create_notification_once(
+                        key=f'username-changed:{self.object.pk}:{timezone.now().isoformat()}',
+                        text=f'Потребителското име беше променено от „{old_username}“ на „{new_username}“.',
+                        category=SECURITY_ACCOUNT,
+                        action_url='/profile?tab=settings',
+                        user=self.object,
+                    )
             except IntegrityError:
                 return Response(
                     {
@@ -1132,6 +1161,13 @@ class AccountDeactivateView(APIView):
                     login_session,
                     BlogLoginSession.REVOKED_ACCOUNT_DEACTIVATED,
                 )
+            create_notification_once(
+                key=f'account-deactivated:{instance.pk}:{timezone.now().isoformat()}',
+                text='Профилът Ви беше деактивиран.',
+                category=SECURITY_ACCOUNT,
+                action_url='/',
+                user=instance,
+            )
         return Response({"status": "Профилът е деактивиран успешно"}, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
@@ -1943,31 +1979,54 @@ class ContactFormSubmitView(APIView):
             return Response({"detail": "Съобщението е изпратено успешно!"}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 NOTIFICATION_PREFERENCE_CATEGORIES = {
-    'points_enabled': 'gamification_points',
-    'levels_enabled': 'gamification_level',
-    'badges_enabled': 'gamification_badge',
-    'missions_enabled': 'gamification_mission',
-    'rewards_enabled': 'gamification_reward',
+    'posts_enabled': (CONTENT_POST,),
+    'events_enabled': (CONTENT_EVENT, EVENT_REMINDER),
+    'polls_enabled': (CONTENT_POLL,),
+    'comment_replies_enabled': (COMMENT_REPLY,),
+    'submissions_enabled': (SUBMISSION_STATUS,),
+    'mission_available_enabled': (MISSION_AVAILABLE,),
+    'security_enabled': (SECURITY_LOGIN, SECURITY_ACCOUNT),
+    'points_enabled': ('gamification_points',),
+    'levels_enabled': ('gamification_level',),
+    'badges_enabled': ('gamification_badge',),
+    'missions_enabled': ('gamification_mission',),
+    'rewards_enabled': ('gamification_reward',),
 }
 
 
 def _visible_notification_queryset(user, *, apply_preferences=True):
     queryset = Notification.objects.filter(enabled=True)
     if not user.is_authenticated:
-        return queryset.filter(user__isnull=True).exclude(
-            category__startswith='gamification_',
+        return queryset.filter(
+            user__isnull=True,
+            audience=Notification.Audience.PUBLIC,
+            category__in=PUBLIC_PUSH_CATEGORIES,
         )
 
-    queryset = queryset.filter(Q(user__isnull=True) | Q(user=user))
+    queryset = queryset.filter(
+        Q(user=user)
+        | Q(
+            user__isnull=True,
+            audience__in=(
+                Notification.Audience.PUBLIC,
+                Notification.Audience.AUTHENTICATED,
+            ),
+        )
+    )
     if not apply_preferences:
         return queryset
 
     preferences, _ = NotificationPreference.objects.get_or_create(user=user)
     if not preferences.general_enabled:
-        queryset = queryset.filter(category__startswith='gamification_')
-    for field_name, category in NOTIFICATION_PREFERENCE_CATEGORIES.items():
+        known_non_general = {
+            category
+            for categories in NOTIFICATION_PREFERENCE_CATEGORIES.values()
+            for category in categories
+        }
+        queryset = queryset.filter(category__in=known_non_general)
+    for field_name, categories in NOTIFICATION_PREFERENCE_CATEGORIES.items():
         if not getattr(preferences, field_name):
-            queryset = queryset.exclude(category=category)
+            queryset = queryset.exclude(category__in=categories)
     return queryset
 
 
@@ -2093,8 +2152,40 @@ class PushConfigView(APIView):
 
 
 class PushSubscriptionView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
     throttle_scope = 'push_subscription'
+
+    preference_fields = (
+        'general_enabled',
+        'posts_enabled',
+        'events_enabled',
+        'polls_enabled',
+    )
+
+    def _management_token(self, request):
+        return str(
+            request.headers.get('X-Push-Management-Token')
+            or request.data.get('management_token', '')
+        ).strip()
+
+    def _can_manage(self, request, subscription, token):
+        return bool(
+            (request.user.is_authenticated and subscription.user_id == request.user.pk)
+            or subscription.management_token_matches(token)
+        )
+
+    def _response_data(self, subscription, *, management_token=''):
+        data = {
+            'subscribed': bool(subscription.active),
+            'linked_to_account': bool(subscription.user_id),
+            'preferences': {
+                field: getattr(subscription, field)
+                for field in self.preference_fields
+            },
+        }
+        if management_token:
+            data['management_token'] = management_token
+        return data
 
     def get(self, request):
         endpoint = str(request.query_params.get('endpoint', '')).strip()
@@ -2102,44 +2193,103 @@ class PushSubscriptionView(APIView):
             return Response({'subscribed': False})
         if len(endpoint) > 2048:
             raise RestValidationError({'endpoint': 'Push endpoint-ът е прекалено дълъг.'})
-        return Response({
-            'subscribed': PushSubscription.objects.filter(
-                user=request.user,
-                endpoint_hash=PushSubscription.digest_endpoint(endpoint),
-                active=True,
-            ).exists(),
-        })
+        subscription = PushSubscription.objects.filter(
+            endpoint_hash=PushSubscription.digest_endpoint(endpoint),
+            active=True,
+        ).first()
+        if subscription is None or not self._can_manage(
+            request,
+            subscription,
+            self._management_token(request),
+        ):
+            return Response({'subscribed': False})
+        return Response(self._response_data(subscription))
 
     def post(self, request):
+        if request.data.get('detach') is True:
+            return self._detach(request)
+
         serializer = PushSubscriptionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        values = serializer.validated_data
-        subscription, created = PushSubscription.objects.update_or_create(
-            endpoint_hash=PushSubscription.digest_endpoint(values['endpoint']),
-            defaults={
-                'endpoint': values['endpoint'],
-                'user': request.user,
-                'p256dh': values['p256dh'],
-                'auth': values['auth'],
-                'user_agent': request.headers.get('User-Agent', '')[:255],
-                'active': True,
-                'failure_count': 0,
-            },
-        )
+        values = dict(serializer.validated_data)
+        supplied_token = values.pop('management_token', '')
+        endpoint_hash = PushSubscription.digest_endpoint(values['endpoint'])
+        subscription = PushSubscription.objects.filter(endpoint_hash=endpoint_hash).first()
+        created = subscription is None
+        if subscription is None:
+            subscription = PushSubscription(endpoint_hash=endpoint_hash)
+        elif not request.user.is_authenticated and not subscription.management_token_matches(
+            supplied_token
+        ):
+            # The browser encryption keys prove control of an existing local
+            # subscription and allow recovery after cleared localStorage.
+            owns_local_subscription = bool(
+                subscription.p256dh == values['p256dh']
+                and subscription.auth == values['auth']
+            )
+            if not owns_local_subscription:
+                raise PermissionDenied('Този push абонамент не може да бъде управляван без валиден токен.')
+            subscription.management_token_hash = ''
+
+        management_token = supplied_token
+        if not subscription.management_token_hash:
+            management_token = secrets.token_urlsafe(32)
+            subscription.management_token_hash = PushSubscription.digest_management_token(
+                management_token
+            )
+
+        subscription.endpoint = values['endpoint']
+        subscription.p256dh = values['p256dh']
+        subscription.auth = values['auth']
+        subscription.user_agent = request.headers.get('User-Agent', '')[:255]
+        subscription.active = True
+        subscription.failure_count = 0
+        if request.user.is_authenticated:
+            subscription.user = request.user
+        for field in self.preference_fields:
+            if field in values:
+                setattr(subscription, field, values[field])
+        subscription.save()
         return Response(
-            {'subscribed': True},
+            self._response_data(subscription, management_token=management_token),
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+    def _detach(self, request):
+        endpoint = str(request.data.get('endpoint', '')).strip()
+        if not endpoint:
+            raise RestValidationError({'endpoint': 'Полето endpoint е задължително.'})
+        subscription = PushSubscription.objects.filter(
+            endpoint_hash=PushSubscription.digest_endpoint(endpoint),
+        ).first()
+        if subscription is None:
+            return Response({'subscribed': False, 'detached': False})
+        supplied_token = self._management_token(request)
+        if not self._can_manage(request, subscription, supplied_token):
+            raise PermissionDenied('Този push абонамент не може да бъде откачен без валиден токен.')
+        management_token = supplied_token or secrets.token_urlsafe(32)
+        subscription.management_token_hash = PushSubscription.digest_management_token(
+            management_token
+        )
+        subscription.user = None
+        subscription.save(update_fields=('user', 'management_token_hash', 'updated_at'))
+        data = self._response_data(subscription, management_token=management_token)
+        data['detached'] = True
+        return Response(data)
 
     def delete(self, request):
         endpoint = str(request.data.get('endpoint', '')).strip()
         if not endpoint:
             raise RestValidationError({'endpoint': 'Полето endpoint е задължително.'})
-        deleted, _ = PushSubscription.objects.filter(
-            user=request.user,
+        subscription = PushSubscription.objects.filter(
             endpoint_hash=PushSubscription.digest_endpoint(endpoint),
-        ).delete()
-        return Response({'subscribed': False, 'removed': bool(deleted)})
+        ).first()
+        if subscription is None:
+            return Response({'subscribed': False, 'removed': False})
+        if not self._can_manage(request, subscription, self._management_token(request)):
+            raise PermissionDenied('Този push абонамент не може да бъде премахнат без валиден токен.')
+        subscription.delete()
+        return Response({'subscribed': False, 'removed': True})
 
 
 class GlobalSearchView(APIView):

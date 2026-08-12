@@ -675,6 +675,13 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             'badges_enabled',
             'missions_enabled',
             'rewards_enabled',
+            'posts_enabled',
+            'events_enabled',
+            'polls_enabled',
+            'comment_replies_enabled',
+            'submissions_enabled',
+            'mission_available_enabled',
+            'security_enabled',
             'updated_at',
         )
         read_only_fields = ('updated_at',)
@@ -682,10 +689,25 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
 
 class PushSubscriptionSerializer(serializers.ModelSerializer):
     endpoint = serializers.URLField(max_length=2048)
+    management_token = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        write_only=True,
+        max_length=200,
+    )
 
     class Meta:
         model = PushSubscription
-        fields = ('endpoint', 'p256dh', 'auth')
+        fields = (
+            'endpoint',
+            'p256dh',
+            'auth',
+            'management_token',
+            'general_enabled',
+            'posts_enabled',
+            'events_enabled',
+            'polls_enabled',
+        )
 
     def validate_endpoint(self, value):
         endpoint = value.strip()
