@@ -1117,6 +1117,11 @@ class NotificationReadState(models.Model):
         verbose_name='Известие',
     )
     read_at = models.DateTimeField(auto_now=True, verbose_name='Прочетено на')
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Архивирано на',
+    )
 
     class Meta:
         verbose_name = 'Прочетено известие'
@@ -1132,6 +1137,10 @@ class NotificationReadState(models.Model):
             models.Index(
                 fields=('user', 'read_at'),
                 name='notification_read_user_idx',
+            ),
+            models.Index(
+                fields=('user', 'archived_at'),
+                name='notification_archive_user_idx',
             ),
         ]
 
@@ -1264,6 +1273,7 @@ class PushDelivery(models.Model):
         PENDING = 'pending', 'Изчаква'
         SENT = 'sent', 'Изпратено'
         FAILED = 'failed', 'Неуспешно'
+        CANCELLED = 'cancelled', 'Отказано'
 
     subscription = models.ForeignKey(
         PushSubscription,
@@ -1286,6 +1296,7 @@ class PushDelivery(models.Model):
     attempts = models.PositiveSmallIntegerField(default=0, verbose_name='Опити')
     last_attempt_at = models.DateTimeField(null=True, blank=True, verbose_name='Последен опит')
     sent_at = models.DateTimeField(null=True, blank=True, verbose_name='Изпратено на')
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name='Отказано на')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създадено на')
 
     class Meta:

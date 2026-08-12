@@ -168,6 +168,16 @@ urlpatterns = [
         name='notification-read-all',
     ),
     path(
+        'notifications/<int:pk>/archive/',
+        blog_views.NotificationArchiveView.as_view(),
+        name='notification-archive',
+    ),
+    path(
+        'notifications/archive-read/',
+        blog_views.NotificationArchiveReadView.as_view(),
+        name='notification-archive-read',
+    ),
+    path(
         'notifications/preferences/',
         blog_views.NotificationPreferenceView.as_view(),
         name='notification-preferences',

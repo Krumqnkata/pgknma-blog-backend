@@ -14,9 +14,14 @@ from .models import (
     Notification,
     NotificationPreference,
     Posts,
+    PushDelivery,
     PushSubscription,
 )
-from .push import send_notification_push
+from .push import (
+    retry_pending_push_notifications,
+    send_notification_push,
+    snapshot_notification_deliveries,
+)
 
 
 class GlobalSearchApiTests(APITestCase):
@@ -202,6 +207,7 @@ class PushDeliveryTests(APITestCase):
             enabled=False,
         )
         Notification.objects.filter(pk=notification.pk).update(enabled=True)
+        snapshot_notification_deliveries(notification.pk)
 
         result = send_notification_push(notification.pk)
 
@@ -217,6 +223,7 @@ class PushDeliveryTests(APITestCase):
             enabled=False,
         )
         Notification.objects.filter(pk=notification.pk).update(enabled=True)
+        snapshot_notification_deliveries(notification.pk)
 
         result = send_notification_push(notification.pk)
 
@@ -252,8 +259,46 @@ class PushDeliveryTests(APITestCase):
         Notification.objects.filter(
             pk__in=(post_notification.pk, event_notification.pk, personal_notification.pk),
         ).update(enabled=True)
+        snapshot_notification_deliveries(post_notification.pk)
+        snapshot_notification_deliveries(event_notification.pk)
+        snapshot_notification_deliveries(personal_notification.pk)
 
         self.assertEqual(send_notification_push(post_notification.pk)['sent'], 1)
         self.assertEqual(send_notification_push(event_notification.pk)['sent'], 0)
         self.assertEqual(send_notification_push(personal_notification.pk)['sent'], 0)
+        self.assertEqual(webpush_mock.call_count, 1)
+
+    @patch('blog.push.webpush')
+    def test_retry_does_not_send_old_notification_to_new_device(self, webpush_mock):
+        notification = Notification.objects.create(
+            user=self.user,
+            text='Известие преди новото устройство',
+            enabled=True,
+        )
+        original_subscription = PushSubscription.objects.get(
+            endpoint='https://push.example.test/subscription/two',
+        )
+        new_subscription = PushSubscription.objects.create(
+            user=self.user,
+            endpoint='https://push.example.test/subscription/new-device',
+            p256dh='new-public-key',
+            auth='new-auth-key',
+        )
+
+        result = retry_pending_push_notifications()
+
+        self.assertEqual(result['sent'], 1)
+        self.assertTrue(
+            PushDelivery.objects.filter(
+                notification=notification,
+                subscription=original_subscription,
+                status=PushDelivery.Status.SENT,
+            ).exists(),
+        )
+        self.assertFalse(
+            PushDelivery.objects.filter(
+                notification=notification,
+                subscription=new_subscription,
+            ).exists(),
+        )
         self.assertEqual(webpush_mock.call_count, 1)

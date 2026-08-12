@@ -16,6 +16,8 @@ from blog.models import (
     PageView,
     PointTransaction,
     Posts,
+    PushDelivery,
+    PushSubscription,
     UserBadge,
     UserMissionProgress,
     UserProfile,
@@ -116,6 +118,93 @@ class NotificationSyncApiTests(APITestCase):
             reverse('notification-read', args=(private_notification.pk,)),
         )
         self.assertEqual(response.status_code, 404)
+
+    def test_archived_notification_moves_out_of_bell_and_can_be_restored(self):
+        archived = self.first_device.post(
+            reverse('notification-archive', args=(self.general.pk,)),
+        )
+        self.assertEqual(archived.status_code, 200)
+        self.assertTrue(archived.data['is_archived'])
+
+        active_ids = {
+            row['id']
+            for row in self.second_device.get(reverse('notification-list')).data
+        }
+        self.assertNotIn(self.general.pk, active_ids)
+
+        archived_response = self.second_device.get(
+            reverse('notification-list'),
+            {'archived': 'true'},
+        )
+        archived_rows = {row['id']: row for row in archived_response.data}
+        self.assertTrue(archived_rows[self.general.pk]['is_archived'])
+        self.assertIsNotNone(archived_rows[self.general.pk]['archived_at'])
+
+        restored = self.second_device.delete(
+            reverse('notification-archive', args=(self.general.pk,)),
+        )
+        self.assertEqual(restored.status_code, 200)
+        self.assertFalse(restored.data['is_archived'])
+        self.assertIn(
+            self.general.pk,
+            {row['id'] for row in self.first_device.get(reverse('notification-list')).data},
+        )
+
+    def test_archive_read_archives_only_read_notifications_in_channel(self):
+        self.first_device.post(reverse('notification-read', args=(self.general.pk,)))
+
+        response = self.first_device.post(
+            reverse('notification-archive-read'),
+            {'channel': 'general'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['archived'], 1)
+        self.assertIsNotNone(
+            NotificationReadState.objects.get(
+                user=self.user,
+                notification=self.general,
+            ).archived_at,
+        )
+        self.assertFalse(
+            NotificationReadState.objects.filter(
+                user=self.user,
+                notification=self.badge,
+                archived_at__isnull=False,
+            ).exists(),
+        )
+
+    def test_reading_notification_cancels_pending_push_on_other_devices(self):
+        first_subscription = PushSubscription.objects.create(
+            user=self.user,
+            endpoint='https://push.example.test/first',
+            p256dh='key-one',
+            auth='auth-one',
+        )
+        second_subscription = PushSubscription.objects.create(
+            user=self.user,
+            endpoint='https://push.example.test/second',
+            p256dh='key-two',
+            auth='auth-two',
+        )
+        PushDelivery.objects.bulk_create([
+            PushDelivery(subscription=first_subscription, notification=self.general),
+            PushDelivery(subscription=second_subscription, notification=self.general),
+        ])
+
+        response = self.first_device.post(
+            reverse('notification-read', args=(self.general.pk,)),
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            PushDelivery.objects.filter(
+                notification=self.general,
+                status=PushDelivery.Status.CANCELLED,
+            ).count(),
+            2,
+        )
 
 
 class PageViewAndAdminDashboardTests(TestCase):

@@ -1308,10 +1308,10 @@ class NotificationPreferenceAdmin(ModelAdmin):
 
 @admin.register(NotificationReadState)
 class NotificationReadStateAdmin(ModelAdmin):
-    list_display = ('user', 'notification', 'read_at')
-    list_filter = ('read_at',)
+    list_display = ('user', 'notification', 'read_at', 'archived_at')
+    list_filter = ('read_at', 'archived_at')
     search_fields = ('user__username', 'notification__text')
-    readonly_fields = ('user', 'notification', 'read_at')
+    readonly_fields = ('user', 'notification', 'read_at', 'archived_at')
 
     def has_add_permission(self, request):
         return False
@@ -1352,12 +1352,12 @@ class PushSubscriptionAdmin(ModelAdmin):
 
 @admin.register(PushDelivery)
 class PushDeliveryAdmin(ModelAdmin):
-    list_display = ('notification', 'subscription', 'status', 'attempts', 'last_attempt_at', 'sent_at')
-    list_filter = ('status', 'last_attempt_at', 'sent_at')
+    list_display = ('notification', 'subscription', 'status', 'attempts', 'last_attempt_at', 'sent_at', 'cancelled_at')
+    list_filter = ('status', 'last_attempt_at', 'sent_at', 'cancelled_at')
     search_fields = ('notification__text', 'subscription__user__username', 'subscription__endpoint')
     readonly_fields = (
         'subscription', 'notification', 'status', 'attempts',
-        'last_attempt_at', 'sent_at', 'created_at',
+        'last_attempt_at', 'sent_at', 'cancelled_at', 'created_at',
     )
     fields = readonly_fields
 

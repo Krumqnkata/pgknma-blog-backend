@@ -104,6 +104,10 @@ from .notification_categories import (
     PUBLIC_PUSH_CATEGORIES,
 )
 from .automatic_notifications import create_notification_once
+from .push import (
+    cancel_notification_deliveries_for_user,
+    cancel_read_deliveries_for_subscription,
+)
 
 
 def _public_posts_queryset():
@@ -2046,7 +2050,13 @@ class NotificationListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = _visible_notification_queryset(user)
+        show_archived = str(
+            self.request.query_params.get('archived', '')
+        ).lower() in ('1', 'true', 'yes')
+        queryset = _visible_notification_queryset(
+            user,
+            apply_preferences=not show_archived,
+        )
         queryset = _filter_notification_channel(
             queryset,
             self.request.query_params.get('channel'),
@@ -2062,11 +2072,21 @@ class NotificationListView(generics.ListAPIView):
                     read_state.values('read_at')[:1],
                     output_field=DateTimeField(),
                 ),
+                _archived_at=Subquery(
+                    read_state.values('archived_at')[:1],
+                    output_field=DateTimeField(),
+                ),
+            )
+            queryset = queryset.filter(
+                _archived_at__isnull=not show_archived,
             )
         else:
             queryset = queryset.annotate(
                 _read_at=Value(None, output_field=DateTimeField()),
+                _archived_at=Value(None, output_field=DateTimeField()),
             )
+            if show_archived:
+                return queryset.none()
         return queryset.order_by('-created_at')
 
 
@@ -2082,6 +2102,10 @@ class NotificationReadView(APIView):
             user=request.user,
             notification=notification,
             defaults={'read_at': timezone.now()},
+        )
+        cancel_notification_deliveries_for_user(
+            request.user.pk,
+            (notification.pk,),
         )
         return Response({'id': notification.pk, 'read_at': state.read_at})
 
@@ -2099,11 +2123,12 @@ class NotificationReadAllView(APIView):
             channel,
             authenticated=True,
         )
-        existing_ids = NotificationReadState.objects.filter(
+        notification_ids = list(queryset.values_list('pk', flat=True))
+        existing_ids = set(NotificationReadState.objects.filter(
             user=request.user,
-            notification_id__in=queryset.values('pk'),
-        ).values_list('notification_id', flat=True)
-        unread_ids = queryset.exclude(pk__in=existing_ids).values_list('pk', flat=True)
+            notification_id__in=notification_ids,
+        ).values_list('notification_id', flat=True))
+        unread_ids = [pk for pk in notification_ids if pk not in existing_ids]
         read_at = timezone.now()
         states = [
             NotificationReadState(
@@ -2114,7 +2139,83 @@ class NotificationReadAllView(APIView):
             for pk in unread_ids
         ]
         NotificationReadState.objects.bulk_create(states, ignore_conflicts=True)
+        cancel_notification_deliveries_for_user(
+            request.user.pk,
+            notification_ids,
+        )
         return Response({'marked_read': len(states)})
+
+
+class NotificationArchiveView(APIView):
+    permission_classes = [SiteIsAvailable, IsAuthenticated]
+
+    def post(self, request, pk):
+        notification = get_object_or_404(
+            _visible_notification_queryset(request.user, apply_preferences=False),
+            pk=pk,
+        )
+        archived_at = timezone.now()
+        state, _ = NotificationReadState.objects.update_or_create(
+            user=request.user,
+            notification=notification,
+            defaults={
+                'read_at': archived_at,
+                'archived_at': archived_at,
+            },
+        )
+        cancel_notification_deliveries_for_user(
+            request.user.pk,
+            (notification.pk,),
+        )
+        return Response({
+            'id': notification.pk,
+            'is_archived': True,
+            'archived_at': state.archived_at,
+        })
+
+    def delete(self, request, pk):
+        notification = get_object_or_404(
+            _visible_notification_queryset(request.user, apply_preferences=False),
+            pk=pk,
+        )
+        NotificationReadState.objects.filter(
+            user=request.user,
+            notification=notification,
+        ).update(archived_at=None)
+        return Response({
+            'id': notification.pk,
+            'is_archived': False,
+            'archived_at': None,
+        })
+
+
+class NotificationArchiveReadView(APIView):
+    permission_classes = [SiteIsAvailable, IsAuthenticated]
+
+    def post(self, request):
+        channel = request.data.get('channel')
+        if channel not in (None, '', 'general', 'gamification'):
+            raise RestValidationError({'channel': 'Невалиден канал за известия.'})
+
+        queryset = _filter_notification_channel(
+            _visible_notification_queryset(request.user),
+            channel,
+            authenticated=True,
+        )
+        notification_ids = list(queryset.values_list('pk', flat=True))
+        states = NotificationReadState.objects.filter(
+            user=request.user,
+            notification_id__in=notification_ids,
+            archived_at__isnull=True,
+        )
+        archived_ids = list(states.values_list('notification_id', flat=True))
+        archived_at = timezone.now()
+        states.update(archived_at=archived_at)
+        cancel_notification_deliveries_for_user(
+            request.user.pk,
+            archived_ids,
+        )
+        return Response({'archived': len(archived_ids)})
 
 
 class NotificationPreferenceView(APIView):
@@ -2250,6 +2351,8 @@ class PushSubscriptionView(APIView):
             if field in values:
                 setattr(subscription, field, values[field])
         subscription.save()
+        if request.user.is_authenticated:
+            cancel_read_deliveries_for_subscription(subscription)
         return Response(
             self._response_data(subscription, management_token=management_token),
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,

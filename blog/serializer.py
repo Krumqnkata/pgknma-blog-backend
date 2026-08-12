@@ -640,6 +640,8 @@ class NotificationSerializer(serializers.ModelSerializer):
     is_gamification = serializers.SerializerMethodField()
     is_read = serializers.SerializerMethodField()
     read_at = serializers.SerializerMethodField()
+    is_archived = serializers.SerializerMethodField()
+    archived_at = serializers.SerializerMethodField()
 
     class Meta:
         model = Notification
@@ -647,6 +649,7 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id', 'text', 'enabled', 'created_at', 'html_text',
             'category', 'action_url',
             'is_gamification', 'is_read', 'read_at',
+            'is_archived', 'archived_at',
         ]
         read_only_fields = fields
 
@@ -663,6 +666,12 @@ class NotificationSerializer(serializers.ModelSerializer):
 
     def get_read_at(self, obj):
         return getattr(obj, '_read_at', None)
+
+    def get_is_archived(self, obj) -> bool:
+        return getattr(obj, '_archived_at', None) is not None
+
+    def get_archived_at(self, obj):
+        return getattr(obj, '_archived_at', None)
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):
