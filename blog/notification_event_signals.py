@@ -1,4 +1,4 @@
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
 from .automatic_notifications import (
@@ -16,34 +16,41 @@ from .models import (
     Event,
     MemeOfWeek,
     Mission,
+    Notification,
     PollQuestion,
     Posts,
 )
 from .notification_categories import COMMENT_REPLY, SUBMISSION_STATUS
+from .notification_sources import sync_notifications_for_source
 
 
 @receiver(post_save, sender=Posts, dispatch_uid='blog.notify_first_post_publication')
 def notify_first_post_publication(sender, instance, **kwargs):
+    sync_notifications_for_source(instance)
     notify_post_if_due(instance.pk)
 
 
 @receiver(post_save, sender=Event, dispatch_uid='blog.notify_first_event_publication')
 def notify_first_event_publication(sender, instance, **kwargs):
+    sync_notifications_for_source(instance)
     notify_event_if_published(instance.pk)
 
 
 @receiver(post_save, sender=PollQuestion, dispatch_uid='blog.notify_first_poll_activation')
 def notify_first_poll_activation(sender, instance, **kwargs):
+    sync_notifications_for_source(instance)
     notify_poll_if_active(instance.pk)
 
 
 @receiver(post_save, sender=Mission, dispatch_uid='blog.notify_first_mission_availability')
 def notify_first_mission_availability(sender, instance, **kwargs):
+    sync_notifications_for_source(instance)
     notify_mission_if_available(instance.pk)
 
 
 @receiver(post_save, sender=Changelog, dispatch_uid='blog.notify_first_changelog_publication')
 def notify_first_changelog_publication(sender, instance, **kwargs):
+    sync_notifications_for_source(instance)
     notify_changelog_if_active(instance.pk)
 
 
@@ -58,8 +65,10 @@ def notify_comment_reply(sender, instance, created, **kwargs):
         key=f'comment-reply:{instance.pk}',
         text=f'{author} отговори на Ваш коментар.',
         category=COMMENT_REPLY,
-        action_url=f'/post/{instance.post_id}#comment-{instance.parent_id}',
+        action_url=f'/post/{instance.post_id}#comment-{instance.pk}',
         user=instance.parent.user,
+        source=instance,
+        source_policy=Notification.SourcePolicy.DETACH,
     )
 
 
@@ -96,6 +105,8 @@ def _notify_submission_status(instance, *, kind, action_url):
         category=SUBMISSION_STATUS,
         action_url=action_url,
         user=instance.user,
+        source=instance,
+        source_policy=Notification.SourcePolicy.DETACH,
     )
 
 
@@ -107,3 +118,15 @@ def notify_song_status(sender, instance, **kwargs):
 @receiver(post_save, sender=MemeOfWeek, dispatch_uid='blog.notify_meme_status')
 def notify_meme_status(sender, instance, **kwargs):
     _notify_submission_status(instance, kind='меме', action_url='/profile?tab=memes')
+
+
+@receiver(post_delete, sender=Posts, dispatch_uid='blog.unlink_post_notifications')
+@receiver(post_delete, sender=Event, dispatch_uid='blog.unlink_event_notifications')
+@receiver(post_delete, sender=PollQuestion, dispatch_uid='blog.unlink_poll_notifications')
+@receiver(post_delete, sender=Mission, dispatch_uid='blog.unlink_mission_notifications')
+@receiver(post_delete, sender=Changelog, dispatch_uid='blog.unlink_changelog_notifications')
+@receiver(post_delete, sender=Comments, dispatch_uid='blog.unlink_comment_notifications')
+@receiver(post_delete, sender=BellSongSuggestion, dispatch_uid='blog.unlink_song_notifications')
+@receiver(post_delete, sender=MemeOfWeek, dispatch_uid='blog.unlink_meme_notifications')
+def unlink_notifications_for_deleted_source(sender, instance, **kwargs):
+    sync_notifications_for_source(instance, deleted=True)

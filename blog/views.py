@@ -105,6 +105,7 @@ from .notification_categories import (
     PUBLIC_PUSH_CATEGORIES,
 )
 from .automatic_notifications import create_notification_once
+from .notification_sources import notification_target_is_available
 from .push import (
     cancel_notification_deliveries_for_user,
     cancel_read_deliveries_for_subscription,
@@ -2000,8 +2001,8 @@ NOTIFICATION_PREFERENCE_CATEGORIES = {
 }
 
 
-def _visible_notification_queryset(user, *, apply_preferences=True):
-    queryset = Notification.objects.filter(enabled=True)
+def _accessible_notification_queryset(user):
+    queryset = Notification.objects.all()
     if not user.is_authenticated:
         return queryset.filter(
             user__isnull=True,
@@ -2019,6 +2020,13 @@ def _visible_notification_queryset(user, *, apply_preferences=True):
             ),
         )
     )
+    return queryset
+
+
+def _visible_notification_queryset(user, *, apply_preferences=True):
+    queryset = _accessible_notification_queryset(user).filter(enabled=True)
+    if not user.is_authenticated:
+        return queryset
     if not apply_preferences:
         return queryset
 
@@ -2097,6 +2105,37 @@ class NotificationListView(generics.ListAPIView):
             if show_archived:
                 return queryset.none()
         return queryset.order_by('-created_at')
+
+
+class NotificationTargetView(APIView):
+    """Resolve a push destination only while its source still exists."""
+
+    permission_classes = [SiteIsAvailable, AllowAny]
+
+    def get(self, request, pk):
+        notification = get_object_or_404(
+            _accessible_notification_queryset(request.user),
+            pk=pk,
+        )
+        action_url = notification.action_url or ''
+        is_safe_url = (
+            (action_url.startswith('/') and not action_url.startswith('//'))
+            or action_url.lower().startswith('https://')
+        )
+        if not is_safe_url or not notification_target_is_available(notification):
+            return Response(
+                {
+                    'available': False,
+                    'action_url': '',
+                    'detail': 'Това съдържание вече не е налично.',
+                },
+                status=status.HTTP_410_GONE,
+            )
+        return Response({
+            'available': True,
+            'action_url': action_url,
+            'detail': '',
+        })
 
 
 class NotificationReadView(APIView):

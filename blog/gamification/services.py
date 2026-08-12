@@ -11,6 +11,7 @@ from blog.models import (
     MissionActivity,
     Notification,
     PointTransaction,
+    Posts,
     UserBadge,
     UserDigitalReward,
     UserMissionProgress,
@@ -59,13 +60,18 @@ def _notification(
     text,
     category,
     action_url='/profile?tab=progress',
+    source=None,
 ):
-    Notification.objects.create(
+    notification = Notification(
         user=user,
         text=text,
         category=category,
         action_url=action_url,
     )
+    if source is not None:
+        notification.source_object = source
+        notification.source_policy = Notification.SourcePolicy.DETACH
+    notification.save()
 
 
 def change_points(
@@ -124,16 +130,20 @@ def change_points(
 
         new_level = level_state(new_balance).current
         if applied_points > 0:
+            notification_source = None
             notification_url = (
                 f'/post/{reference_id}'
                 if reference_type == 'blog.posts' and reference_id
                 else '/profile?tab=progress'
             )
+            if reference_type == Posts._meta.label_lower and reference_id:
+                notification_source = Posts.objects.filter(pk=reference_id).first()
             _notification(
                 user,
                 f'⭐ +{applied_points} точки — {description}.',
                 'gamification_points',
                 notification_url,
+                source=notification_source,
             )
         if old_level and new_level and old_level.pk != new_level.pk:
             _notification(

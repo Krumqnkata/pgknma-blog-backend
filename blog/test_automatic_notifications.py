@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.test import RequestFactory
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -18,6 +19,8 @@ from .models import (
     Notification,
     PollQuestion,
     Posts,
+    PushDelivery,
+    PushSubscription,
 )
 from .notification_categories import (
     COMMENT_REPLY,
@@ -32,6 +35,7 @@ from .notification_categories import (
     SUBMISSION_STATUS,
 )
 from .session_auth import issue_session_tokens
+from .gamification.services import change_points
 
 
 class AutomaticContentNotificationTests(APITestCase):
@@ -236,3 +240,178 @@ class PersonalAutomaticNotificationTests(APITestCase):
             user=self.user,
             category=SECURITY_ACCOUNT,
         ).exists())
+
+
+class NotificationSourceLifecycleTests(APITestCase):
+    def setUp(self):
+        self.now = timezone.now()
+        self.user = User.objects.create_user(username='source-owner')
+        self.other = User.objects.create_user(username='source-replier')
+        self.category = Category.objects.create(
+            full_name='Източници на известия',
+            short_name='notification-sources',
+        )
+
+    def create_public_post(self):
+        return Posts.objects.create(
+            title='Публикация с известие',
+            category=self.category,
+            hook='Кратко описание',
+            content='Съдържание',
+            published=True,
+            allowed=True,
+        )
+
+    def test_deleting_public_content_hides_notice_and_cancels_pending_push(self):
+        post = self.create_public_post()
+        notification = Notification.objects.get(category=CONTENT_POST)
+        self.assertEqual(notification.source_object, post)
+        self.assertEqual(
+            notification.source_policy,
+            Notification.SourcePolicy.DEACTIVATE,
+        )
+        subscription = PushSubscription.objects.create(
+            endpoint='https://push.example.test/deleted-source',
+            p256dh='public-key',
+            auth='auth-key',
+        )
+        delivery = PushDelivery.objects.create(
+            subscription=subscription,
+            notification=notification,
+        )
+
+        post.delete()
+
+        notification.refresh_from_db()
+        delivery.refresh_from_db()
+        self.assertFalse(notification.enabled)
+        self.assertIsNotNone(notification.source_unavailable_at)
+        self.assertEqual(delivery.status, PushDelivery.Status.CANCELLED)
+        self.assertEqual(
+            self.client.get(
+                reverse('notification-target', args=(notification.pk,)),
+            ).status_code,
+            410,
+        )
+        listed_ids = {
+            row['id'] for row in self.client.get(reverse('notification-list')).data
+        }
+        self.assertNotIn(notification.pk, listed_ids)
+
+    def test_hiding_and_republishing_content_updates_existing_notice(self):
+        post = self.create_public_post()
+        notification = Notification.objects.get(category=CONTENT_POST)
+
+        post.published = False
+        post.save(update_fields=('published',))
+        notification.refresh_from_db()
+        self.assertFalse(notification.enabled)
+        self.assertIsNotNone(notification.source_unavailable_at)
+
+        post.published = True
+        post.save(update_fields=('published',))
+        notification.refresh_from_db()
+        self.assertTrue(notification.enabled)
+        self.assertIsNone(notification.source_unavailable_at)
+        self.assertEqual(Notification.objects.filter(category=CONTENT_POST).count(), 1)
+        response = self.client.get(
+            reverse('notification-target', args=(notification.pk,)),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['action_url'], f'/post/{post.pk}')
+
+    def test_deleted_reply_keeps_history_but_removes_invalid_action(self):
+        post = self.create_public_post()
+        parent = Comments.objects.create(
+            content='Начален коментар',
+            user=self.user,
+            post=post,
+        )
+        reply = Comments.objects.create(
+            content='Отговор',
+            user=self.other,
+            post=post,
+            parent=parent,
+        )
+        notification = Notification.objects.get(category=COMMENT_REPLY)
+        self.assertEqual(notification.source_object, reply)
+        self.assertIn(f'#comment-{reply.pk}', notification.action_url)
+
+        reply.delete()
+
+        notification.refresh_from_db()
+        self.assertTrue(notification.enabled)
+        self.assertEqual(notification.action_url, '')
+        self.assertIsNotNone(notification.source_unavailable_at)
+        self.client.force_authenticate(self.user)
+        listed_ids = {
+            row['id'] for row in self.client.get(reverse('notification-list')).data
+        }
+        self.assertIn(notification.pk, listed_ids)
+        self.assertEqual(
+            self.client.get(
+                reverse('notification-target', args=(notification.pk,)),
+            ).status_code,
+            410,
+        )
+
+    def test_periodic_command_hides_expired_poll_notification(self):
+        poll = PollQuestion.objects.create(
+            title='Кратка анкета',
+            start_date=self.now - timedelta(hours=1),
+            end_date=self.now + timedelta(hours=1),
+        )
+        notification = Notification.objects.get(category=CONTENT_POLL)
+        PollQuestion.objects.filter(pk=poll.pk).update(
+            end_date=self.now - timedelta(minutes=1),
+        )
+
+        call_command('dispatch_scheduled_notifications')
+
+        notification.refresh_from_db()
+        self.assertFalse(notification.enabled)
+        self.assertIsNotNone(notification.source_unavailable_at)
+
+    def test_post_points_notice_keeps_history_without_deleted_post_link(self):
+        post = self.create_public_post()
+        change_points(
+            user=self.user,
+            points=3,
+            action='post_read',
+            description='Прочетена публикация',
+            reference_type=Posts._meta.label_lower,
+            reference_id=post.pk,
+            evaluate_badges=False,
+        )
+        notification = Notification.objects.get(category='gamification_points')
+        self.assertEqual(notification.source_object, post)
+
+        post.delete()
+
+        notification.refresh_from_db()
+        self.assertTrue(notification.enabled)
+        self.assertEqual(notification.action_url, '')
+        self.assertIsNotNone(notification.source_unavailable_at)
+
+    def test_repair_command_links_and_cleans_legacy_notice(self):
+        draft = Posts.objects.create(
+            title='Скрита стара публикация',
+            category=self.category,
+            hook='Кратко описание',
+            content='Съдържание',
+            published=False,
+            allowed=False,
+        )
+        legacy = Notification.objects.create(
+            text='Старо автоматично известие',
+            category=CONTENT_POST,
+            action_url=f'/post/{draft.pk}',
+            deduplication_key=f'post-published:{draft.pk}',
+        )
+
+        call_command('repair_notification_sources')
+
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.source_object, draft)
+        self.assertFalse(legacy.enabled)
+        self.assertIsNotNone(legacy.source_unavailable_at)

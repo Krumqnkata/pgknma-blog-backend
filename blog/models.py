@@ -4,6 +4,8 @@ import uuid
 from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from django.db import models, transaction
 from django.db.models import BooleanField
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete
@@ -1064,6 +1066,10 @@ class Notification(models.Model):
         PUBLIC = 'public', 'Всички посетители'
         AUTHENTICATED = 'authenticated', 'Само регистрирани потребители'
 
+    class SourcePolicy(models.TextChoices):
+        DEACTIVATE = 'deactivate', 'Скрий при недостъпен източник'
+        DETACH = 'detach', 'Запази историята без връзка'
+
     user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -1092,6 +1098,41 @@ class Notification(models.Model):
         editable=False,
         verbose_name='Ключ срещу повторно изпращане',
     )
+    source_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+        editable=False,
+        verbose_name='Тип на източника',
+    )
+    source_object_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name='ID на източника',
+    )
+    source_object = GenericForeignKey(
+        'source_content_type',
+        'source_object_id',
+        for_concrete_model=False,
+    )
+    source_policy = models.CharField(
+        max_length=12,
+        choices=SourcePolicy.choices,
+        blank=True,
+        default='',
+        editable=False,
+        verbose_name='Поведение при недостъпен източник',
+    )
+    source_unavailable_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name='Източникът е недостъпен от',
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата и час на създаване на известието. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
@@ -1101,6 +1142,12 @@ class Notification(models.Model):
         verbose_name = "Известие"
         verbose_name_plural = "Известия"
         ordering = ['-created_at']
+        indexes = [
+            models.Index(
+                fields=('source_content_type', 'source_object_id'),
+                name='notification_source_idx',
+            ),
+        ]
 
 
 class NotificationReadState(models.Model):

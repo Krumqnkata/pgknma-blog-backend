@@ -158,6 +158,11 @@ urlpatterns = [
     # Път за известия
     path('notifications/', blog_views.NotificationListView.as_view(), name='notification-list'),
     path(
+        'notifications/<int:pk>/target/',
+        blog_views.NotificationTargetView.as_view(),
+        name='notification-target',
+    ),
+    path(
         'notifications/<int:pk>/read/',
         blog_views.NotificationReadView.as_view(),
         name='notification-read',

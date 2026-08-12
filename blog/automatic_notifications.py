@@ -12,9 +12,20 @@ from .notification_categories import (
     EVENT_REMINDER,
     MISSION_AVAILABLE,
 )
+from .notification_sources import notification_source_defaults
 
 
-def create_notification_once(*, key, text, category, action_url, user=None, audience=None):
+def create_notification_once(
+    *,
+    key,
+    text,
+    category,
+    action_url,
+    user=None,
+    audience=None,
+    source=None,
+    source_policy=Notification.SourcePolicy.DETACH,
+):
     defaults = {
         'text': text,
         'category': category,
@@ -23,10 +34,16 @@ def create_notification_once(*, key, text, category, action_url, user=None, audi
         'audience': audience or Notification.Audience.PUBLIC,
         'enabled': True,
     }
+    defaults.update(notification_source_defaults(source, source_policy))
     notification, created = Notification.objects.get_or_create(
         deduplication_key=key,
         defaults=defaults,
     )
+    if not created and source is not None and notification.source_content_type_id is None:
+        source_fields = notification_source_defaults(source, source_policy)
+        for field_name, value in source_fields.items():
+            setattr(notification, field_name, value)
+        notification.save(update_fields=tuple(source_fields))
     return notification, created
 
 
@@ -47,6 +64,8 @@ def notify_post_if_due(post_id, *, now=None):
             text=f'Нова публикация: {post.title}',
             category=CONTENT_POST,
             action_url=f'/post/{post.pk}',
+            source=post,
+            source_policy=Notification.SourcePolicy.DEACTIVATE,
         )
         Posts.objects.filter(pk=post.pk).update(publication_notified_at=now)
         return notification
@@ -62,7 +81,9 @@ def notify_event_if_published(event_id, *, now=None):
             key=f'event-published:{event.pk}',
             text=f'Ново събитие: {event.title}',
             category=CONTENT_EVENT,
-            action_url='/events',
+            action_url=f'/events?event={event.pk}',
+            source=event,
+            source_policy=Notification.SourcePolicy.DEACTIVATE,
         )
         Event.objects.filter(pk=event.pk).update(publication_notified_at=now)
         return notification
@@ -89,7 +110,9 @@ def notify_event_reminder_if_due(event_id, *, now=None, reminder_hours=24):
             key=f'event-reminder:{event.pk}',
             text=f'Напомняне: „{event.title}“ започва скоро.',
             category=EVENT_REMINDER,
-            action_url='/events',
+            action_url=f'/events?event={event.pk}',
+            source=event,
+            source_policy=Notification.SourcePolicy.DEACTIVATE,
         )
         Event.objects.filter(pk=event.pk).update(reminder_notified_at=now)
         return notification
@@ -111,6 +134,8 @@ def notify_poll_if_active(poll_id, *, now=None):
             text=f'Нова активна анкета: {poll.title}',
             category=CONTENT_POLL,
             action_url='/weekly-poll',
+            source=poll,
+            source_policy=Notification.SourcePolicy.DEACTIVATE,
         )
         PollQuestion.objects.filter(pk=poll.pk).update(activation_notified_at=now)
         return notification
@@ -131,6 +156,8 @@ def notify_changelog_if_active(changelog_id, *, now=None):
             text='Публикувани са нови промени по сайта.',
             category=CONTENT_CHANGELOG,
             action_url='/changelog',
+            source=changelog,
+            source_policy=Notification.SourcePolicy.DEACTIVATE,
         )
         Changelog.objects.filter(pk=changelog.pk).update(notification_notified_at=now)
         return notification
@@ -154,6 +181,8 @@ def notify_mission_if_available(mission_id, *, now=None):
             category=MISSION_AVAILABLE,
             action_url='/profile?tab=progress',
             audience=Notification.Audience.AUTHENTICATED,
+            source=mission,
+            source_policy=Notification.SourcePolicy.DEACTIVATE,
         )
         Mission.objects.filter(pk=mission.pk).update(availability_notified_at=now)
         return notification

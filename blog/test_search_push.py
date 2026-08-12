@@ -1,5 +1,6 @@
 from unittest.mock import patch
 from datetime import timedelta
+import json
 
 from django.contrib.auth.models import User
 from django.test import override_settings
@@ -204,6 +205,7 @@ class PushDeliveryTests(APITestCase):
         notification = Notification.objects.create(
             user=self.user,
             text='Ново важно известие',
+            action_url='/profile',
             enabled=False,
         )
         Notification.objects.filter(pk=notification.pk).update(enabled=True)
@@ -213,6 +215,8 @@ class PushDeliveryTests(APITestCase):
 
         self.assertEqual(result['sent'], 1)
         webpush_mock.assert_called_once()
+        payload = json.loads(webpush_mock.call_args.kwargs['data'])
+        self.assertEqual(payload['url'], f'/notification/{notification.pk}')
 
     @patch('blog.push.webpush')
     def test_disabled_category_preference_prevents_delivery(self, webpush_mock):

@@ -99,6 +99,21 @@ def cancel_notification_deliveries_for_user(user_id, notification_ids):
     )
 
 
+def cancel_notification_deliveries(notification_ids):
+    """Cancel every unsent delivery for notifications with a dead target."""
+
+    notification_ids = list(notification_ids)
+    if not notification_ids:
+        return 0
+    return PushDelivery.objects.filter(
+        notification_id__in=notification_ids,
+        status__in=(PushDelivery.Status.PENDING, PushDelivery.Status.FAILED),
+    ).update(
+        status=PushDelivery.Status.CANCELLED,
+        cancelled_at=timezone.now(),
+    )
+
+
 def cancel_read_deliveries_for_subscription(subscription):
     """Cancel old queued pushes when an anonymous device is linked to an account."""
 
@@ -131,7 +146,10 @@ def send_notification_push(notification_id):
     payload = json.dumps({
         'title': 'ПГКНМА Блог',
         'body': body,
-        'url': notification.action_url or '/',
+        # Resolve the destination when the user opens the push. A delivered
+        # operating-system notification cannot be recalled, but this route can
+        # still prevent it from opening content deleted in the meantime.
+        'url': f'/notification/{notification.pk}' if notification.action_url else '/',
         'icon': '/icon-192.png',
         'badge': '/icon-192.png',
         'tag': f'notification-{notification.pk}',
