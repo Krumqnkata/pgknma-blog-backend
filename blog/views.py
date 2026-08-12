@@ -92,6 +92,7 @@ from .session_auth import (
 )
 from .site_roles import get_site_role
 from .notification_categories import (
+    CONTENT_CHANGELOG,
     CONTENT_EVENT,
     CONTENT_POLL,
     CONTENT_POST,
@@ -1983,6 +1984,7 @@ class ContactFormSubmitView(APIView):
             return Response({"detail": "Съобщението е изпратено успешно!"}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 NOTIFICATION_PREFERENCE_CATEGORIES = {
+    'changelog_enabled': (CONTENT_CHANGELOG,),
     'posts_enabled': (CONTENT_POST,),
     'events_enabled': (CONTENT_EVENT, EVENT_REMINDER),
     'polls_enabled': (CONTENT_POLL,),
@@ -2039,7 +2041,14 @@ def _filter_notification_channel(queryset, channel, *, authenticated):
         if not authenticated:
             return queryset.none()
         return queryset.filter(category__startswith='gamification_')
+    if channel == 'official':
+        return queryset.filter(category='general')
+    if channel == 'updates':
+        return queryset.exclude(category='general').exclude(
+            category__startswith='gamification_',
+        )
     if channel == 'general':
+        # Backwards compatibility for clients deployed before the three-tab UI.
         return queryset.exclude(category__startswith='gamification_')
     return queryset
 
@@ -2115,7 +2124,7 @@ class NotificationReadAllView(APIView):
 
     def post(self, request):
         channel = request.data.get('channel')
-        if channel not in (None, '', 'general', 'gamification'):
+        if channel not in (None, '', 'official', 'updates', 'general', 'gamification'):
             raise RestValidationError({'channel': 'Невалиден канал за известия.'})
 
         queryset = _filter_notification_channel(
@@ -2194,7 +2203,7 @@ class NotificationArchiveReadView(APIView):
 
     def post(self, request):
         channel = request.data.get('channel')
-        if channel not in (None, '', 'general', 'gamification'):
+        if channel not in (None, '', 'official', 'updates', 'general', 'gamification'):
             raise RestValidationError({'channel': 'Невалиден канал за известия.'})
 
         queryset = _filter_notification_channel(
@@ -2261,6 +2270,7 @@ class PushSubscriptionView(APIView):
         'posts_enabled',
         'events_enabled',
         'polls_enabled',
+        'changelog_enabled',
     )
 
     def _management_token(self, request):

@@ -3,6 +3,7 @@ from django.dispatch import receiver
 
 from .automatic_notifications import (
     create_notification_once,
+    notify_changelog_if_active,
     notify_event_if_published,
     notify_mission_if_available,
     notify_poll_if_active,
@@ -10,6 +11,7 @@ from .automatic_notifications import (
 )
 from .models import (
     BellSongSuggestion,
+    Changelog,
     Comments,
     Event,
     MemeOfWeek,
@@ -38,6 +40,11 @@ def notify_first_poll_activation(sender, instance, **kwargs):
 @receiver(post_save, sender=Mission, dispatch_uid='blog.notify_first_mission_availability')
 def notify_first_mission_availability(sender, instance, **kwargs):
     notify_mission_if_available(instance.pk)
+
+
+@receiver(post_save, sender=Changelog, dispatch_uid='blog.notify_first_changelog_publication')
+def notify_first_changelog_publication(sender, instance, **kwargs):
+    notify_changelog_if_active(instance.pk)
 
 
 @receiver(post_save, sender=Comments, dispatch_uid='blog.notify_comment_reply')

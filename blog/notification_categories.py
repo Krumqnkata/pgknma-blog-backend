@@ -3,6 +3,7 @@ CONTENT_POST = 'content_post'
 CONTENT_EVENT = 'content_event'
 EVENT_REMINDER = 'event_reminder'
 CONTENT_POLL = 'content_poll'
+CONTENT_CHANGELOG = 'content_changelog'
 COMMENT_REPLY = 'comment_reply'
 SUBMISSION_STATUS = 'submission_status'
 MISSION_AVAILABLE = 'mission_available'
@@ -16,6 +17,7 @@ USER_PREFERENCE_FIELD_BY_CATEGORY = {
     CONTENT_EVENT: 'events_enabled',
     EVENT_REMINDER: 'events_enabled',
     CONTENT_POLL: 'polls_enabled',
+    CONTENT_CHANGELOG: 'changelog_enabled',
     COMMENT_REPLY: 'comment_replies_enabled',
     SUBMISSION_STATUS: 'submissions_enabled',
     MISSION_AVAILABLE: 'mission_available_enabled',
@@ -34,6 +36,7 @@ DEVICE_PREFERENCE_FIELD_BY_CATEGORY = {
     CONTENT_EVENT: 'events_enabled',
     EVENT_REMINDER: 'events_enabled',
     CONTENT_POLL: 'polls_enabled',
+    CONTENT_CHANGELOG: 'changelog_enabled',
 }
 
 PUBLIC_PUSH_CATEGORIES = frozenset(DEVICE_PREFERENCE_FIELD_BY_CATEGORY)

@@ -687,6 +687,7 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             'posts_enabled',
             'events_enabled',
             'polls_enabled',
+            'changelog_enabled',
             'comment_replies_enabled',
             'submissions_enabled',
             'mission_available_enabled',
@@ -716,6 +717,7 @@ class PushSubscriptionSerializer(serializers.ModelSerializer):
             'posts_enabled',
             'events_enabled',
             'polls_enabled',
+            'changelog_enabled',
         )
 
     def validate_endpoint(self, value):

@@ -38,6 +38,7 @@ from .session_auth import revoke_login_session
 from .avatars import reset_profile_avatar
 from .gamification.services import award_badge, change_points, evaluate_badge_for_all_users
 from .admin_roles import ADMIN_ROLE_BY_NAME
+from .notification_categories import GENERAL
 
 try:
     admin.site.unregister(Group)
@@ -1187,12 +1188,13 @@ class NotificationAdmin(ModelAdmin):
     fields = ('text', 'user', 'audience', 'action_url', 'enabled', 'created_at')
 
     def get_queryset(self, request):
-        return super().get_queryset(request).exclude(
-            category__startswith='gamification_',
-        )
+        # This admin section is intentionally reserved for messages created by
+        # an administrator. Automatic content, security, submission and game
+        # events remain in the database but do not clutter "Official notices".
+        return super().get_queryset(request).filter(category=GENERAL)
 
     def save_model(self, request, obj, form, change):
-        obj.category = 'general'
+        obj.category = GENERAL
         super().save_model(request, obj, form, change)
 
     @admin.display(description='Получател', ordering='user__username')
@@ -1289,6 +1291,7 @@ class NotificationPreferenceAdmin(ModelAdmin):
         'posts_enabled',
         'events_enabled',
         'polls_enabled',
+        'changelog_enabled',
         'updated_at',
     )
     list_filter = (
@@ -1298,6 +1301,7 @@ class NotificationPreferenceAdmin(ModelAdmin):
         'posts_enabled',
         'events_enabled',
         'polls_enabled',
+        'changelog_enabled',
         'badges_enabled',
         'missions_enabled',
         'rewards_enabled',
@@ -1325,12 +1329,12 @@ class NotificationReadStateAdmin(ModelAdmin):
 
 @admin.register(PushSubscription)
 class PushSubscriptionAdmin(ModelAdmin):
-    list_display = ('owner_display', 'browser_display', 'active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'failure_count', 'last_success_at', 'updated_at')
-    list_filter = ('active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'updated_at', 'last_success_at')
+    list_display = ('owner_display', 'browser_display', 'active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'changelog_enabled', 'failure_count', 'last_success_at', 'updated_at')
+    list_filter = ('active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'changelog_enabled', 'updated_at', 'last_success_at')
     search_fields = ('user__username', 'user__email', 'endpoint', 'user_agent')
     readonly_fields = (
         'user', 'endpoint', 'endpoint_hash', 'management_token_hash', 'p256dh', 'auth', 'user_agent', 'active',
-        'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled',
+        'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'changelog_enabled',
         'failure_count', 'created_at', 'updated_at', 'last_success_at',
     )
     fields = readonly_fields

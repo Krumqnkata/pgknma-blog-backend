@@ -10,6 +10,7 @@ from rest_framework.test import APITestCase
 from .models import (
     BellSongSuggestion,
     Category,
+    Changelog,
     Comments,
     Event,
     MemeOfWeek,
@@ -20,6 +21,7 @@ from .models import (
 )
 from .notification_categories import (
     COMMENT_REPLY,
+    CONTENT_CHANGELOG,
     CONTENT_EVENT,
     CONTENT_POLL,
     CONTENT_POST,
@@ -107,6 +109,36 @@ class AutomaticContentNotificationTests(APITestCase):
         self.assertEqual(Notification.objects.filter(category=CONTENT_POLL).count(), 1)
         mission_notification = Notification.objects.get(category=MISSION_AVAILABLE)
         self.assertEqual(mission_notification.audience, Notification.Audience.AUTHENTICATED)
+
+    def test_active_changelog_entry_notifies_once_and_links_to_changelog(self):
+        entry = Changelog.objects.create(
+            content='1. Добавени са нови функции.',
+            is_active=True,
+        )
+
+        notification = Notification.objects.get(category=CONTENT_CHANGELOG)
+        self.assertEqual(notification.action_url, '/changelog')
+        self.assertEqual(notification.audience, Notification.Audience.PUBLIC)
+        entry.refresh_from_db()
+        self.assertIsNotNone(entry.notification_notified_at)
+
+        entry.content = '1. Редактиран текст на същия запис.'
+        entry.save()
+        self.assertEqual(Notification.objects.filter(category=CONTENT_CHANGELOG).count(), 1)
+
+    def test_inactive_changelog_notifies_only_after_first_activation(self):
+        entry = Changelog.objects.create(content='Скрити промени', is_active=False)
+        self.assertFalse(Notification.objects.filter(category=CONTENT_CHANGELOG).exists())
+
+        entry.is_active = True
+        entry.save()
+        self.assertEqual(Notification.objects.filter(category=CONTENT_CHANGELOG).count(), 1)
+
+        entry.is_active = False
+        entry.save()
+        entry.is_active = True
+        entry.save()
+        self.assertEqual(Notification.objects.filter(category=CONTENT_CHANGELOG).count(), 1)
 
 
 class PersonalAutomaticNotificationTests(APITestCase):

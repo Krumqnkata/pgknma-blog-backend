@@ -112,6 +112,39 @@ class NotificationSyncApiTests(APITestCase):
             ).exists(),
         )
 
+    def test_official_updates_and_gamification_channels_are_separate(self):
+        update = Notification.objects.create(
+            text='Публикувани са нови промени по сайта.',
+            category='content_changelog',
+            action_url='/changelog',
+        )
+
+        official_ids = {
+            row['id'] for row in self.first_device.get(
+                reverse('notification-list'),
+                {'channel': 'official'},
+            ).data
+        }
+        update_ids = {
+            row['id'] for row in self.first_device.get(
+                reverse('notification-list'),
+                {'channel': 'updates'},
+            ).data
+        }
+        game_ids = {
+            row['id'] for row in self.first_device.get(
+                reverse('notification-list'),
+                {'channel': 'gamification'},
+            ).data
+        }
+
+        self.assertIn(self.general.pk, official_ids)
+        self.assertNotIn(update.pk, official_ids)
+        self.assertIn(update.pk, update_ids)
+        self.assertNotIn(self.general.pk, update_ids)
+        self.assertIn(self.badge.pk, game_ids)
+        self.assertNotIn(update.pk, game_ids)
+
     def test_user_cannot_mark_another_users_notification(self):
         private_notification = Notification.objects.get(text='Чуждо известие')
         response = self.first_device.post(

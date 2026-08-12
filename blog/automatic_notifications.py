@@ -3,8 +3,9 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Event, Mission, Notification, PollQuestion, Posts
+from .models import Changelog, Event, Mission, Notification, PollQuestion, Posts
 from .notification_categories import (
+    CONTENT_CHANGELOG,
     CONTENT_EVENT,
     CONTENT_POLL,
     CONTENT_POST,
@@ -112,6 +113,26 @@ def notify_poll_if_active(poll_id, *, now=None):
             action_url='/weekly-poll',
         )
         PollQuestion.objects.filter(pk=poll.pk).update(activation_notified_at=now)
+        return notification
+
+
+def notify_changelog_if_active(changelog_id, *, now=None):
+    now = now or timezone.now()
+    with transaction.atomic():
+        changelog = Changelog.objects.select_for_update().filter(pk=changelog_id).first()
+        if (
+            changelog is None
+            or changelog.notification_notified_at
+            or not changelog.is_active
+        ):
+            return None
+        notification, _ = create_notification_once(
+            key=f'changelog-published:{changelog.pk}',
+            text='Публикувани са нови промени по сайта.',
+            category=CONTENT_CHANGELOG,
+            action_url='/changelog',
+        )
+        Changelog.objects.filter(pk=changelog.pk).update(notification_notified_at=now)
         return notification
 
 

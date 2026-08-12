@@ -489,6 +489,15 @@ class GamificationTestCase(TestCase):
         Notification.objects.create(text='Официално', category='general')
         Notification.objects.create(
             user=self.user,
+            text='Нов вход в профила от Firefox · Windows.',
+            category='security_login',
+        )
+        Notification.objects.create(
+            text='Автоматична новина',
+            category='content_post',
+        )
+        Notification.objects.create(
+            user=self.user,
             text='Получени точки',
             category='gamification_points',
         )

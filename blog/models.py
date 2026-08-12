@@ -1182,6 +1182,7 @@ class NotificationPreference(models.Model):
     posts_enabled = models.BooleanField(default=True, verbose_name='Нови публикации')
     events_enabled = models.BooleanField(default=True, verbose_name='Събития и напомняния')
     polls_enabled = models.BooleanField(default=True, verbose_name='Нови анкети')
+    changelog_enabled = models.BooleanField(default=True, verbose_name='Промени по сайта')
     comment_replies_enabled = models.BooleanField(default=True, verbose_name='Отговори на коментари')
     submissions_enabled = models.BooleanField(default=True, verbose_name='Решения за предложения')
     mission_available_enabled = models.BooleanField(default=True, verbose_name='Нови мисии')
@@ -1230,6 +1231,7 @@ class PushSubscription(models.Model):
     posts_enabled = models.BooleanField(default=True, verbose_name='Нови публикации')
     events_enabled = models.BooleanField(default=True, verbose_name='Събития и напомняния')
     polls_enabled = models.BooleanField(default=True, verbose_name='Нови анкети')
+    changelog_enabled = models.BooleanField(default=True, verbose_name='Промени по сайта')
     failure_count = models.PositiveSmallIntegerField(default=0, verbose_name='Поредни грешки')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създаден на')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновен на')
@@ -1619,6 +1621,12 @@ class Changelog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, help_text="Дата на създаване.")
     updated_at = models.DateTimeField(auto_now=True, help_text="Дата на последна редакция.")
     is_active = models.BooleanField(default=True, help_text="Отбележете, за да се вземе предвид този запис.")
+    notification_notified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        help_text='Кога е изпратено автоматичното известие за този запис.',
+    )
 
     class Meta:
         verbose_name = "Запис в дневника на промените"
