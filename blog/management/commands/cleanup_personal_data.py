@@ -10,7 +10,7 @@ from blog.models import PersonalDataCleanupRun
 
 
 class Command(BaseCommand):
-    help = 'Deletes security and network metadata outside the retention window.'
+    help = 'Deletes expired metadata and archived notifications outside the retention window.'
 
     def add_arguments(self, parser):
         parser.add_argument(

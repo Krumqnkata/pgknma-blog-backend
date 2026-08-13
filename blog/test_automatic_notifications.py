@@ -62,6 +62,12 @@ class AutomaticContentNotificationTests(APITestCase):
         call_command('dispatch_scheduled_notifications')
 
         self.assertEqual(Notification.objects.filter(category=CONTENT_POST).count(), 1)
+        post_notification = Notification.objects.get(category=CONTENT_POST)
+        self.assertAlmostEqual(
+            (post_notification.expires_at - timezone.now()).total_seconds(),
+            timedelta(days=7).total_seconds(),
+            delta=5,
+        )
         post.refresh_from_db()
         self.assertIsNotNone(post.publication_notified_at)
         post.title = 'Редактирано заглавие'
@@ -78,15 +84,31 @@ class AutomaticContentNotificationTests(APITestCase):
             attendees_text='Всички',
             published=True,
         )
-        self.assertEqual(Notification.objects.filter(category=CONTENT_EVENT).count(), 1)
+        event_notification = Notification.objects.get(category=CONTENT_EVENT)
+        self.assertEqual(
+            event_notification.expires_at,
+            event.start_datetime + timedelta(days=2),
+        )
 
         Event.objects.filter(pk=event.pk).update(
             publication_notified_at=self.now - timedelta(hours=2),
         )
         call_command('dispatch_scheduled_notifications', reminder_hours=24)
-        self.assertEqual(Notification.objects.filter(category=EVENT_REMINDER).count(), 1)
+        reminder_notification = Notification.objects.get(category=EVENT_REMINDER)
+        self.assertEqual(
+            reminder_notification.expires_at,
+            event.start_datetime + timedelta(days=2),
+        )
         call_command('dispatch_scheduled_notifications', reminder_hours=24)
         self.assertEqual(Notification.objects.filter(category=EVENT_REMINDER).count(), 1)
+
+        event.end_datetime = self.now + timedelta(hours=5)
+        event.save()
+        event_notification.refresh_from_db()
+        reminder_notification.refresh_from_db()
+        expected_expiry = event.end_datetime + timedelta(days=2)
+        self.assertEqual(event_notification.expires_at, expected_expiry)
+        self.assertEqual(reminder_notification.expires_at, expected_expiry)
 
     def test_future_poll_and_mission_notify_when_their_start_time_arrives(self):
         poll = PollQuestion.objects.create(

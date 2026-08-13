@@ -108,6 +108,11 @@ from .notification_categories import (
 )
 from .automatic_notifications import create_notification_once
 from .notification_sources import notification_target_is_available
+from .notification_retention import (
+    active_notification_q,
+    expired_notification_q,
+    notification_is_expired,
+)
 from .push import (
     cancel_notification_deliveries_for_user,
     cancel_read_deliveries_for_subscription,
@@ -2037,8 +2042,15 @@ def _accessible_notification_queryset(user):
     return queryset
 
 
-def _visible_notification_queryset(user, *, apply_preferences=True):
+def _visible_notification_queryset(
+    user,
+    *,
+    apply_preferences=True,
+    include_expired=False,
+):
     queryset = _accessible_notification_queryset(user).filter(enabled=True)
+    if not include_expired:
+        queryset = queryset.filter(active_notification_q())
     if not user.is_authenticated:
         return queryset
     if not apply_preferences:
@@ -2087,6 +2099,7 @@ class NotificationListView(generics.ListAPIView):
         queryset = _visible_notification_queryset(
             user,
             apply_preferences=not show_archived,
+            include_expired=show_archived,
         )
         queryset = _filter_notification_channel(
             queryset,
@@ -2108,9 +2121,13 @@ class NotificationListView(generics.ListAPIView):
                     output_field=DateTimeField(),
                 ),
             )
-            queryset = queryset.filter(
-                _archived_at__isnull=not show_archived,
-            )
+            if show_archived:
+                queryset = queryset.filter(
+                    Q(_archived_at__isnull=False)
+                    | expired_notification_q(),
+                )
+            else:
+                queryset = queryset.filter(_archived_at__isnull=True)
         else:
             queryset = queryset.annotate(
                 _read_at=Value(None, output_field=DateTimeField()),
@@ -2237,9 +2254,23 @@ class NotificationArchiveView(APIView):
 
     def delete(self, request, pk):
         notification = get_object_or_404(
-            _visible_notification_queryset(request.user, apply_preferences=False),
+            _visible_notification_queryset(
+                request.user,
+                apply_preferences=False,
+                include_expired=True,
+            ),
             pk=pk,
         )
+        if notification_is_expired(notification):
+            return Response(
+                {
+                    'detail': (
+                        'Срокът на това известие е изтекъл и то не може да '
+                        'бъде върнато в камбанката.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         NotificationReadState.objects.filter(
             user=request.user,
             notification=notification,

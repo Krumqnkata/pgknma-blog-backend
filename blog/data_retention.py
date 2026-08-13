@@ -8,7 +8,13 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 
 from valentine.models import Register, ValentineLoginAttempt
 
-from .models import BlogLoginSession, ConsentRecord, EmailVerificationToken, PageView
+from .models import (
+    BlogLoginSession,
+    ConsentRecord,
+    EmailVerificationToken,
+    Notification,
+    PageView,
+)
 
 
 def cleanup_personal_data(*, days, now=None, dry_run=False):
@@ -31,6 +37,10 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         Q(expires_at__lt=cutoff) | Q(used_at__lt=cutoff)
     )
     old_page_views = PageView.objects.filter(created_at__lt=cutoff)
+    old_expired_notifications = Notification.objects.filter(
+        important=False,
+        expires_at__lt=cutoff,
+    )
 
     counts = {
         'consent_records': old_consents.count(),
@@ -41,6 +51,7 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         'expired_jwt_tokens': expired_jwt_tokens.count(),
         'email_verification_tokens': old_email_verification_tokens.count(),
         'page_views': old_page_views.count(),
+        'expired_notifications': old_expired_notifications.count(),
     }
     if dry_run:
         return counts
@@ -56,5 +67,9 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         expired_jwt_tokens.delete()
         old_email_verification_tokens.delete()
         old_page_views.delete()
+        # Notification read states and queued push deliveries follow through
+        # their foreign keys, after the expired row has remained archived for
+        # the configured retention window.
+        old_expired_notifications.delete()
 
     return counts

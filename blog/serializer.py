@@ -25,6 +25,7 @@ from rest_framework import status
 from .network import get_client_ip
 from .session_auth import issue_session_tokens
 from .site_roles import get_site_role
+from .notification_retention import notification_is_expired
 
 
 def _user_profile(user):
@@ -650,6 +651,8 @@ class NotificationSerializer(serializers.ModelSerializer):
     read_at = serializers.SerializerMethodField()
     is_archived = serializers.SerializerMethodField()
     archived_at = serializers.SerializerMethodField()
+    is_auto_archived = serializers.SerializerMethodField()
+    can_restore = serializers.SerializerMethodField()
 
     class Meta:
         model = Notification
@@ -657,7 +660,8 @@ class NotificationSerializer(serializers.ModelSerializer):
             'id', 'text', 'enabled', 'created_at', 'html_text',
             'category', 'action_url',
             'is_gamification', 'is_read', 'read_at',
-            'is_archived', 'archived_at',
+            'important', 'expires_at',
+            'is_archived', 'archived_at', 'is_auto_archived', 'can_restore',
         ]
         read_only_fields = fields
 
@@ -676,10 +680,24 @@ class NotificationSerializer(serializers.ModelSerializer):
         return getattr(obj, '_read_at', None)
 
     def get_is_archived(self, obj) -> bool:
-        return getattr(obj, '_archived_at', None) is not None
+        return (
+            getattr(obj, '_archived_at', None) is not None
+            or notification_is_expired(obj)
+        )
 
     def get_archived_at(self, obj):
+        if notification_is_expired(obj):
+            return obj.expires_at
         return getattr(obj, '_archived_at', None)
+
+    def get_is_auto_archived(self, obj) -> bool:
+        return notification_is_expired(obj)
+
+    def get_can_restore(self, obj) -> bool:
+        return bool(
+            getattr(obj, '_archived_at', None) is not None
+            and not notification_is_expired(obj)
+        )
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

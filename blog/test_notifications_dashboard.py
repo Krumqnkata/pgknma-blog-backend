@@ -183,6 +183,51 @@ class NotificationSyncApiTests(APITestCase):
             {row['id'] for row in self.first_device.get(reverse('notification-list')).data},
         )
 
+    def test_expired_notification_is_auto_archived_and_cannot_be_restored(self):
+        expired = Notification.objects.create(
+            user=self.user,
+            text='Изтекла актуализация',
+            category='content_post',
+            expires_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        active_ids = {
+            row['id']
+            for row in self.first_device.get(reverse('notification-list')).data
+        }
+        self.assertNotIn(expired.pk, active_ids)
+
+        archived_response = self.first_device.get(
+            reverse('notification-list'),
+            {'archived': 'true'},
+        )
+        archived_rows = {row['id']: row for row in archived_response.data}
+        self.assertTrue(archived_rows[expired.pk]['is_archived'])
+        self.assertTrue(archived_rows[expired.pk]['is_auto_archived'])
+        self.assertFalse(archived_rows[expired.pk]['can_restore'])
+        self.assertIsNotNone(archived_rows[expired.pk]['archived_at'])
+
+        restored = self.first_device.delete(
+            reverse('notification-archive', args=(expired.pk,)),
+        )
+        self.assertEqual(restored.status_code, 400)
+
+    def test_important_notification_has_no_expiry_and_remains_active(self):
+        important = Notification.objects.create(
+            text='Важно съобщение без срок',
+            category='general',
+            important=True,
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+
+        important.refresh_from_db()
+        self.assertIsNone(important.expires_at)
+        active_ids = {
+            row['id']
+            for row in self.first_device.get(reverse('notification-list')).data
+        }
+        self.assertIn(important.pk, active_ids)
+
     def test_archive_read_archives_only_read_notifications_in_channel(self):
         self.first_device.post(reverse('notification-read', args=(self.general.pk,)))
 

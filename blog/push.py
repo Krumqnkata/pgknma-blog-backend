@@ -15,6 +15,10 @@ from .notification_categories import (
     PUBLIC_PUSH_CATEGORIES,
     user_preference_field,
 )
+from .notification_retention import (
+    active_notification_q,
+    expired_notification_q,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -71,7 +75,10 @@ def _response_status(error):
 def snapshot_notification_deliveries(notification_id):
     """Freeze the notification recipients at the moment it is created."""
 
-    notification = Notification.objects.filter(pk=notification_id, enabled=True).first()
+    notification = Notification.objects.filter(
+        pk=notification_id,
+        enabled=True,
+    ).filter(active_notification_q()).first()
     if notification is None:
         return 0
 
@@ -114,6 +121,16 @@ def cancel_notification_deliveries(notification_ids):
     )
 
 
+def cancel_expired_notification_deliveries(*, now=None):
+    """Cancel queued pushes as soon as their notification is auto-archived."""
+
+    now = now or timezone.now()
+    notification_ids = Notification.objects.filter(
+        expired_notification_q(now=now),
+    ).values_list('pk', flat=True)
+    return cancel_notification_deliveries(notification_ids)
+
+
 def cancel_read_deliveries_for_subscription(subscription):
     """Cancel old queued pushes when an anonymous device is linked to an account."""
 
@@ -138,7 +155,10 @@ def send_notification_push(notification_id):
     if not web_push_is_configured():
         return {'sent': 0, 'failed': 0, 'removed': 0, 'throttled': 0, 'skipped': 0}
 
-    notification = Notification.objects.filter(pk=notification_id, enabled=True).first()
+    notification = Notification.objects.filter(
+        pk=notification_id,
+        enabled=True,
+    ).filter(active_notification_q()).first()
     if notification is None:
         return {'sent': 0, 'failed': 0, 'removed': 0, 'throttled': 0, 'skipped': 0}
 
@@ -154,8 +174,14 @@ def send_notification_push(notification_id):
         'badge': '/icon-192.png',
         'tag': f'notification-{notification.pk}',
     }, ensure_ascii=False)
-    result = {'sent': 0, 'failed': 0, 'removed': 0, 'throttled': 0, 'skipped': 0}
     now = timezone.now()
+    result = {'sent': 0, 'failed': 0, 'removed': 0, 'throttled': 0, 'skipped': 0}
+    ttl = 86400
+    if not notification.important and notification.expires_at is not None:
+        ttl = max(0, min(ttl, int((notification.expires_at - now).total_seconds())))
+        if ttl == 0:
+            cancel_notification_deliveries((notification.pk,))
+            return result
 
     eligible_ids = set(_eligible_subscriptions(notification).values_list('pk', flat=True))
     deliveries = PushDelivery.objects.filter(
@@ -193,7 +219,7 @@ def send_notification_push(notification_id):
                 data=payload,
                 vapid_private_key=settings.VAPID_PRIVATE_KEY,
                 vapid_claims={'sub': settings.VAPID_SUBJECT},
-                ttl=86400,
+                ttl=ttl,
             )
         except WebPushException as exc:
             status_code = _response_status(exc)
@@ -239,6 +265,8 @@ def retry_pending_push_notifications(*, max_age_hours=24, limit=100):
         created_at__gte=cutoff,
         notification__enabled=True,
         subscription__active=True,
+    ).filter(
+        active_notification_q(prefix='notification__'),
     ).values('notification_id').annotate(
         first_queued_at=Min('created_at'),
     ).order_by('first_queued_at')[:limit]

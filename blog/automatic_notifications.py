@@ -13,6 +13,7 @@ from .notification_categories import (
     MISSION_AVAILABLE,
 )
 from .notification_sources import notification_source_defaults
+from .notification_retention import default_notification_expiry
 
 
 def create_notification_once(
@@ -33,6 +34,7 @@ def create_notification_once(
         'user': user,
         'audience': audience or Notification.Audience.PUBLIC,
         'enabled': True,
+        'expires_at': default_notification_expiry(category, source=source),
     }
     defaults.update(notification_source_defaults(source, source_policy))
     notification, created = Notification.objects.get_or_create(

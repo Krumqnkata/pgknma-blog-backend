@@ -18,6 +18,11 @@ from .models import (
     PollQuestion,
     Posts,
 )
+from .notification_categories import CONTENT_EVENT, EVENT_REMINDER
+from .notification_retention import (
+    default_notification_expiry,
+    notification_is_expired,
+)
 from .push import cancel_notification_deliveries
 
 
@@ -69,6 +74,18 @@ def _sync_reference(content_type, object_id, *, source=None, deleted=False, now=
     stats = {'deactivated': 0, 'restored': 0, 'detached': 0, 'cancelled': 0}
     if not queryset.exists():
         return stats
+
+    if isinstance(source, Event) and not deleted:
+        queryset.filter(
+            important=False,
+            category__in=(CONTENT_EVENT, EVENT_REMINDER),
+        ).update(
+            expires_at=default_notification_expiry(
+                CONTENT_EVENT,
+                source=source,
+                now=now,
+            )
+        )
 
     is_available = not deleted and source is not None and source_is_available(source, now=now)
     deactivate = queryset.filter(
@@ -210,7 +227,12 @@ def synchronize_all_notification_sources(*, now=None):
 def notification_target_is_available(notification, *, now=None):
     """Return whether a notification action is safe to open right now."""
 
-    if not notification.enabled or not notification.action_url:
+    now = now or timezone.now()
+    if (
+        not notification.enabled
+        or not notification.action_url
+        or notification_is_expired(notification, now=now)
+    ):
         return False
     if not notification.source_content_type_id or not notification.source_object_id:
         return True

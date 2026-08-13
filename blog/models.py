@@ -1174,10 +1174,48 @@ class Notification(models.Model):
         editable=False,
         verbose_name='Източникът е недостъпен от',
     )
+    important = models.BooleanField(
+        default=False,
+        verbose_name='Важно / без автоматично архивиране',
+        help_text=(
+            'Важните известия остават активни, докато не бъдат изключени '
+            'или архивирани ръчно.'
+        ),
+    )
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Автоматично архивиране на',
+        help_text=(
+            'След тази дата известието се скрива от камбанката и се премества '
+            'в архива. Оставете празно за автоматичен срок според категорията.'
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата и час на създаване на известието. Формат: YYYY-MM-DD HH:MM:SS.")
 
     def __str__(self):
         return self.text
+
+    def save(self, *args, **kwargs):
+        from .notification_retention import default_notification_expiry
+
+        expiry_changed = False
+        if self.important:
+            if self.expires_at is not None:
+                self.expires_at = None
+                expiry_changed = True
+        elif self.expires_at is None:
+            self.expires_at = default_notification_expiry(
+                self.category,
+                created_at=self.created_at,
+            )
+            expiry_changed = True
+
+        update_fields = kwargs.get('update_fields')
+        if expiry_changed and update_fields is not None:
+            kwargs['update_fields'] = tuple(set(update_fields) | {'expires_at'})
+        super().save(*args, **kwargs)
 
     class Meta:
         verbose_name = "Известие"

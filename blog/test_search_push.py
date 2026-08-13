@@ -219,6 +219,23 @@ class PushDeliveryTests(APITestCase):
         self.assertEqual(payload['url'], f'/notification/{notification.pk}')
 
     @patch('blog.push.webpush')
+    def test_expired_notification_does_not_create_or_send_pushes(self, webpush_mock):
+        notification = Notification.objects.create(
+            user=self.user,
+            text='Изтекло известие',
+            expires_at=timezone.now() - timedelta(minutes=1),
+            enabled=False,
+        )
+        Notification.objects.filter(pk=notification.pk).update(enabled=True)
+
+        self.assertEqual(snapshot_notification_deliveries(notification.pk), 0)
+        self.assertEqual(send_notification_push(notification.pk)['sent'], 0)
+        self.assertFalse(
+            PushDelivery.objects.filter(notification=notification).exists(),
+        )
+        webpush_mock.assert_not_called()
+
+    @patch('blog.push.webpush')
     def test_disabled_category_preference_prevents_delivery(self, webpush_mock):
         NotificationPreference.objects.create(user=self.user, general_enabled=False)
         notification = Notification.objects.create(

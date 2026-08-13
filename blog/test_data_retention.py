@@ -21,7 +21,12 @@ from valentine.models import (
     ValentineModerationEvent,
 )
 
-from .models import BlogLoginSession, ConsentRecord, PersonalDataCleanupRun
+from .models import (
+    BlogLoginSession,
+    ConsentRecord,
+    Notification,
+    PersonalDataCleanupRun,
+)
 
 
 @override_settings(PERSONAL_DATA_RETENTION_DAYS=90)
@@ -220,6 +225,35 @@ class PersonalDataRetentionTests(TestCase):
             PersonalDataCleanupRun.STATUS_SUCCEEDED,
         )
         self.assertEqual(cleanup_run.affected_records, 1)
+
+    def test_expired_notifications_remain_archived_for_the_retention_window(self):
+        old_expired = Notification.objects.create(
+            user=self.user,
+            text='Старо автоматично архивирано известие',
+            expires_at=self.old_time,
+        )
+        recently_expired = Notification.objects.create(
+            user=self.user,
+            text='Скорошно автоматично архивирано известие',
+            expires_at=self.now - timedelta(days=1),
+        )
+        important = Notification.objects.create(
+            user=self.user,
+            text='Важно известие без срок',
+            important=True,
+            expires_at=self.old_time,
+        )
+
+        output = io.StringIO()
+        call_command('cleanup_personal_data', days=90, stdout=output)
+        result = json.loads(output.getvalue())
+
+        self.assertEqual(result['expired_notifications'], 1)
+        self.assertFalse(Notification.objects.filter(pk=old_expired.pk).exists())
+        self.assertTrue(Notification.objects.filter(pk=recently_expired.pk).exists())
+        self.assertTrue(Notification.objects.filter(pk=important.pk).exists())
+        important.refresh_from_db()
+        self.assertIsNone(important.expires_at)
 
     def test_command_rejects_invalid_retention_period(self):
         with self.assertRaises(CommandError):

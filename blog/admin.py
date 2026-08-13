@@ -1182,11 +1182,27 @@ class BellSongSuggestionAdmin(ModelAdmin):
 
 @admin.register(Notification)
 class NotificationAdmin(ModelAdmin):
-    list_display = ('text', 'recipient_display', 'category', 'enabled', 'created_at')
-    list_filter = ('enabled', 'audience', 'category', 'created_at')
+    list_display = (
+        'text',
+        'recipient_display',
+        'enabled',
+        'important',
+        'expires_at',
+        'created_at',
+    )
+    list_filter = ('enabled', 'important', 'audience', 'created_at', 'expires_at')
     search_fields = ('text', 'user__username')
     readonly_fields = ('created_at',)
-    fields = ('text', 'user', 'audience', 'action_url', 'enabled', 'created_at')
+    fields = (
+        'text',
+        'user',
+        'audience',
+        'action_url',
+        'enabled',
+        'important',
+        'expires_at',
+        'created_at',
+    )
 
     def get_queryset(self, request):
         # This admin section is intentionally reserved for messages created by
