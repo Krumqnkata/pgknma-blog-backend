@@ -65,10 +65,12 @@ from .gamification.services import (
     active_missions_for_user,
     award_activity,
     award_tracked_activity,
+    DigitalRewardSelectionLimitError,
     level_state,
     record_mission_activity,
     select_digital_reward,
 )
+from .profile_stats import lifetime_activity_counts
 from .avatars import (
     avatar_options_payload,
     reset_profile_avatar,
@@ -629,6 +631,7 @@ class PublicUserProfileView(APIView):
             .select_related('reward')
             .order_by('-unlocked_at')
         )
+        lifetime_stats = lifetime_activity_counts(user.pk)
         state = level_state(profile.gamification_points)
         recent_comments = []
         if comments_visible:
@@ -687,14 +690,10 @@ class PublicUserProfileView(APIView):
                 for item in rewards
             ],
             'stats': {
-                'comments': public_comments.count() if comments_visible else 0,
-                'approved_memes': MemeOfWeek.objects.filter(
-                    user=user, status='approved'
-                ).count(),
-                'approved_songs': BellSongSuggestion.objects.filter(
-                    user=user, status='approved'
-                ).count(),
-                'poll_answers': PollAnswer.objects.filter(user=user).count(),
+                'comments': lifetime_stats['comment'] if comments_visible else 0,
+                'approved_memes': lifetime_stats['meme_approved'],
+                'approved_songs': lifetime_stats['song_approved'],
+                'poll_answers': lifetime_stats['poll_vote'],
                 'badges': len(earned_badges),
                 'rewards': len(rewards),
             },
@@ -838,6 +837,8 @@ class DigitalRewardSelectionView(APIView):
             )
         except UserDigitalReward.DoesNotExist:
             raise Http404
+        except DigitalRewardSelectionLimitError as exc:
+            raise RestValidationError({'detail': str(exc)}) from exc
         return Response({
             'key': row.reward.key,
             'title': row.reward.title,

@@ -6,6 +6,7 @@ from django.utils import timezone
 
 from blog.models import (
     Badge,
+    DigitalReward,
     GamificationLevel,
     Mission,
     MissionActivity,
@@ -19,6 +20,13 @@ from blog.models import (
 )
 
 from .config import ACTION_DESCRIPTIONS, daily_limit, point_value
+
+
+MAX_SELECTED_USER_TITLES = 3
+
+
+class DigitalRewardSelectionLimitError(ValueError):
+    pass
 
 
 @dataclass(frozen=True)
@@ -324,6 +332,8 @@ def sync_badge_rewards(badge, *, user=None):
 
 def select_digital_reward(user, reward_key, *, selected=True):
     with transaction.atomic():
+        UserProfile.objects.get_or_create(user=user)
+        UserProfile.objects.select_for_update().get(user=user)
         owned = (
             UserDigitalReward.objects.select_for_update()
             .select_related('reward')
@@ -333,7 +343,18 @@ def select_digital_reward(user, reward_key, *, selected=True):
             user=user,
             reward__kind=owned.reward.kind,
         )
-        same_kind.exclude(pk=owned.pk).update(selected=False)
+        if owned.reward.kind == DigitalReward.Kind.USER_TITLE:
+            if selected and not owned.selected:
+                selected_count = same_kind.filter(
+                    selected=True,
+                    reward__active=True,
+                ).exclude(pk=owned.pk).count()
+                if selected_count >= MAX_SELECTED_USER_TITLES:
+                    raise DigitalRewardSelectionLimitError(
+                        'Можете да използвате най-много 3 титли едновременно.'
+                    )
+        elif selected:
+            same_kind.exclude(pk=owned.pk).update(selected=False)
         if owned.selected != bool(selected):
             owned.selected = bool(selected)
             owned.save(update_fields=('selected',))

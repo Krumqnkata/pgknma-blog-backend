@@ -1,14 +1,22 @@
+from datetime import timedelta
+
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .gamification.services import award_badge, change_points
 from .models import (
     Badge,
+    BellSongSuggestion,
     Category,
     Comments,
     DigitalReward,
+    MemeOfWeek,
+    PollAnswer,
+    PollOption,
+    PollQuestion,
     Posts,
     UserDigitalReward,
 )
@@ -164,6 +172,57 @@ class PublicUserProfileTests(TestCase):
         self.assertFalse(response.data['comments_visible'])
         self.assertEqual(response.data['recent_comments'], [])
         self.assertEqual(response.data['stats']['comments'], 0)
+
+    def test_activity_stats_survive_content_cleanup(self):
+        comment = Comments.objects.create(
+            user=self.user,
+            post=self.public_post,
+            content='Коментар за пожизнената статистика',
+        )
+        question = PollQuestion.objects.create(
+            title='Архивирана анкета',
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=1),
+        )
+        option = PollOption.objects.create(
+            question=question,
+            text='Отговор',
+            key='a',
+        )
+        PollAnswer.objects.create(
+            user=self.user,
+            question=question,
+            selected_option=option,
+        )
+        song = BellSongSuggestion.objects.create(
+            user=self.user,
+            title='Архивирана песен',
+            link='https://example.com/lifetime-song',
+            status='approved',
+        )
+        meme = MemeOfWeek.objects.create(
+            user=self.user,
+            title='Архивирано меме',
+            status='approved',
+        )
+
+        before_cleanup = self.client.get(self.url)
+        self.assertEqual(before_cleanup.data['stats']['comments'], 1)
+        self.assertEqual(before_cleanup.data['stats']['poll_answers'], 1)
+        self.assertEqual(before_cleanup.data['stats']['approved_songs'], 1)
+        self.assertEqual(before_cleanup.data['stats']['approved_memes'], 1)
+
+        comment.delete()
+        question.delete()
+        song.delete()
+        meme.delete()
+
+        after_cleanup = self.client.get(self.url)
+        self.assertEqual(after_cleanup.data['stats']['comments'], 1)
+        self.assertEqual(after_cleanup.data['stats']['poll_answers'], 1)
+        self.assertEqual(after_cleanup.data['stats']['approved_songs'], 1)
+        self.assertEqual(after_cleanup.data['stats']['approved_memes'], 1)
+        self.assertEqual(after_cleanup.data['recent_comments'], [])
 
     def test_profile_contains_level_badges_and_digital_rewards(self):
         change_points(

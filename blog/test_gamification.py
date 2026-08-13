@@ -21,7 +21,12 @@ from .gamification.services import (
     record_mission_activity,
     remove_mission_activity,
 )
-from .forms import BadgeAdminForm, DigitalRewardAdminForm, MissionAdminForm
+from .forms import (
+    BadgeAdminForm,
+    DigitalRewardAdminForm,
+    MissionAdminForm,
+    UserDigitalRewardAdminForm,
+)
 from .models import (
     Badge,
     BellSongSuggestion,
@@ -30,6 +35,7 @@ from .models import (
     DigitalReward,
     GamificationPointRule,
     GamificationNotification,
+    LifetimeProfileActivity,
     MemeOfWeek,
     Notification,
     PointTransaction,
@@ -81,6 +87,37 @@ class GamificationAdminFormTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors.as_json())
         self.assertEqual(form.cleaned_data['config']['text'], 'Училищен посланик')
         self.assertEqual(form.cleaned_data['config']['style'], 'gradient')
+
+    def test_admin_form_rejects_a_fourth_selected_title(self):
+        user = User.objects.create_user(username='admin-title-limit')
+        rewards = [
+            DigitalReward.objects.create(
+                key=f'admin-title-{number}',
+                title=f'Админ титла {number}',
+                kind=DigitalReward.Kind.USER_TITLE,
+                config={'text': f'Админ титла {number}'},
+            )
+            for number in range(1, 5)
+        ]
+        for reward in rewards[:3]:
+            UserDigitalReward.objects.create(
+                user=user,
+                reward=reward,
+                selected=True,
+            )
+        fourth = UserDigitalReward.objects.create(user=user, reward=rewards[3])
+
+        form = UserDigitalRewardAdminForm(
+            data={
+                'user': user.pk,
+                'reward': rewards[3].pk,
+                'selected': True,
+            },
+            instance=fourth,
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn('selected', form.errors)
 
 
 class MissionAdminFormTests(TestCase):
@@ -209,6 +246,10 @@ class GamificationTestCase(TestCase):
 
         comment.delete()
         self.assertEqual(self.points(), 0)
+        self.assertTrue(LifetimeProfileActivity.objects.filter(
+            user=self.user,
+            activity=LifetimeProfileActivity.Activity.COMMENT,
+        ).exists())
         self.assertTrue(
             PointTransaction.objects.filter(
                 action='comment_reversed', points=-5
@@ -294,6 +335,10 @@ class GamificationTestCase(TestCase):
         question.delete()
 
         self.assertEqual(self.points(), 5)
+        self.assertTrue(LifetimeProfileActivity.objects.filter(
+            user=self.user,
+            activity=LifetimeProfileActivity.Activity.POLL_VOTE,
+        ).exists())
         progress.refresh_from_db()
         self.assertEqual(progress.progress['poll_vote'], 1)
         self.assertFalse(
@@ -319,10 +364,18 @@ class GamificationTestCase(TestCase):
         suggestion.status = 'rejected'
         suggestion.save(update_fields=('status',))
         self.assertEqual(self.points(), 0)
+        self.assertFalse(LifetimeProfileActivity.objects.filter(
+            user=self.user,
+            activity=LifetimeProfileActivity.Activity.SONG_APPROVED,
+        ).exists())
 
         suggestion.status = 'approved'
         suggestion.save(update_fields=('status',))
         self.assertEqual(self.points(), 20)
+        self.assertEqual(LifetimeProfileActivity.objects.filter(
+            user=self.user,
+            activity=LifetimeProfileActivity.Activity.SONG_APPROVED,
+        ).count(), 1)
         self.assertEqual(
             PointTransaction.objects.filter(
                 user=self.user, action='song_approved', points__gt=0
@@ -342,6 +395,10 @@ class GamificationTestCase(TestCase):
         suggestion.delete()
 
         self.assertEqual(self.points(), 20)
+        self.assertTrue(LifetimeProfileActivity.objects.filter(
+            user=self.user,
+            activity=LifetimeProfileActivity.Activity.SONG_APPROVED,
+        ).exists())
         self.assertFalse(
             PointTransaction.objects.filter(
                 user=self.user,
@@ -365,6 +422,10 @@ class GamificationTestCase(TestCase):
         meme.status = 'rejected'
         meme.save(update_fields=('status',))
         self.assertEqual(self.points(), 0)
+        self.assertFalse(LifetimeProfileActivity.objects.filter(
+            user=self.user,
+            activity=LifetimeProfileActivity.Activity.MEME_APPROVED,
+        ).exists())
 
     def test_deleting_approved_meme_during_cleanup_keeps_points(self):
         meme = MemeOfWeek.objects.create(
@@ -376,6 +437,10 @@ class GamificationTestCase(TestCase):
         meme.delete()
 
         self.assertEqual(self.points(), 20)
+        self.assertTrue(LifetimeProfileActivity.objects.filter(
+            user=self.user,
+            activity=LifetimeProfileActivity.Activity.MEME_APPROVED,
+        ).exists())
         self.assertFalse(
             PointTransaction.objects.filter(
                 user=self.user,
@@ -888,6 +953,59 @@ class GamificationTestCase(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_up_to_three_user_titles_can_be_selected(self):
+        titles = []
+        for number in range(1, 5):
+            reward = DigitalReward.objects.create(
+                key=f'title-{number}',
+                title=f'Титла {number}',
+                kind=DigitalReward.Kind.USER_TITLE,
+                config={'text': f'Титла {number}'},
+            )
+            UserDigitalReward.objects.create(user=self.user, reward=reward)
+            titles.append(reward)
+
+        client = APIClient()
+        client.force_authenticate(self.user)
+        for reward in titles[:3]:
+            response = client.patch(
+                reverse('gamification-reward-select', args=(reward.key,)),
+                {'selected': True},
+                format='json',
+            )
+            self.assertEqual(response.status_code, 200)
+
+        rejected = client.patch(
+            reverse('gamification-reward-select', args=(titles[3].key,)),
+            {'selected': True},
+            format='json',
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn('най-много 3 титли', str(rejected.data['detail']))
+        self.assertEqual(UserDigitalReward.objects.filter(
+            user=self.user,
+            reward__kind=DigitalReward.Kind.USER_TITLE,
+            selected=True,
+        ).count(), 3)
+
+        deselected = client.patch(
+            reverse('gamification-reward-select', args=(titles[0].key,)),
+            {'selected': False},
+            format='json',
+        )
+        selected_fourth = client.patch(
+            reverse('gamification-reward-select', args=(titles[3].key,)),
+            {'selected': True},
+            format='json',
+        )
+        self.assertEqual(deselected.status_code, 200)
+        self.assertEqual(selected_fourth.status_code, 200)
+        self.assertEqual(UserDigitalReward.objects.filter(
+            user=self.user,
+            reward__kind=DigitalReward.Kind.USER_TITLE,
+            selected=True,
+        ).count(), 3)
 
     def test_official_reward_seed_is_idempotent_and_can_link_badges(self):
         from seed_official_digital_rewards import OFFICIAL_REWARDS, seed_rewards

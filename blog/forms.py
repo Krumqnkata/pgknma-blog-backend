@@ -22,8 +22,10 @@ from .models import (
     PostDocument,
     Posts,
     ScheduleEntry,
+    UserDigitalReward,
     calculate_file_sha256,
 )
+from .gamification.services import MAX_SELECTED_USER_TITLES
 
 
 MAX_GALLERY_IMAGES = 10
@@ -172,6 +174,38 @@ class DigitalRewardAdminForm(forms.ModelForm):
             'icon': (cleaned.get('display_icon') or 'sparkles').strip(),
         }
         return cleaned
+
+
+class UserDigitalRewardAdminForm(forms.ModelForm):
+    class Meta:
+        model = UserDigitalReward
+        fields = '__all__'
+
+    def clean_selected(self):
+        selected = self.cleaned_data.get('selected', False)
+        if not selected:
+            return selected
+
+        user = self.cleaned_data.get('user') or getattr(self.instance, 'user', None)
+        reward = self.cleaned_data.get('reward') or getattr(self.instance, 'reward', None)
+        if not user or not reward:
+            return selected
+        if not reward.active:
+            raise ValidationError('Неактивна награда не може да бъде използвана.')
+        if reward.kind != DigitalReward.Kind.USER_TITLE:
+            return selected
+
+        selected_titles = UserDigitalReward.objects.filter(
+            user=user,
+            reward__kind=DigitalReward.Kind.USER_TITLE,
+            reward__active=True,
+            selected=True,
+        ).exclude(pk=self.instance.pk)
+        if selected_titles.count() >= MAX_SELECTED_USER_TITLES:
+            raise ValidationError(
+                'Потребителят вече използва максималните 3 титли.'
+            )
+        return selected
 
 
 class MissionRequirementsWidget(forms.Textarea):

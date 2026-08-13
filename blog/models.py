@@ -846,6 +846,47 @@ class UserDigitalReward(models.Model):
         ]
 
 
+class LifetimeProfileActivity(models.Model):
+    class Activity(models.TextChoices):
+        COMMENT = 'comment', 'Публикуван коментар'
+        POLL_VOTE = 'poll_vote', 'Участие в анкета'
+        MEME_APPROVED = 'meme_approved', 'Одобрено меме'
+        SONG_APPROVED = 'song_approved', 'Одобрена песен'
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='lifetime_profile_activities',
+        verbose_name='Потребител',
+    )
+    activity = models.CharField(
+        max_length=20,
+        choices=Activity.choices,
+        verbose_name='Активност',
+    )
+    reference_id = models.PositiveBigIntegerField(
+        verbose_name='Идентификатор на първоначалния запис',
+    )
+    recorded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Зачетена на',
+    )
+
+    class Meta:
+        verbose_name = 'Пожизнена профилна активност'
+        verbose_name_plural = 'Пожизнени профилни активности'
+        ordering = ('-recorded_at', '-pk')
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'activity', 'reference_id'),
+                name='blog_unique_lifetime_profile_activity',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user} — {self.get_activity_display()}'
+
+
 class EmailVerificationToken(models.Model):
     user = models.ForeignKey(
         User,

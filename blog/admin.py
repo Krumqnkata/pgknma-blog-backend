@@ -21,6 +21,7 @@ from .forms import (
     PostAdminForm,
     SongSuggestionSelectionForm,
     ScheduleCsvImportForm,
+    UserDigitalRewardAdminForm,
 )
 from unfold.admin import ModelAdmin, StackedInline, TabularInline
 from django.contrib.auth.models import User, Group
@@ -1742,6 +1743,7 @@ class DigitalRewardAdmin(ModelAdmin):
 
 @admin.register(UserDigitalReward)
 class UserDigitalRewardAdmin(ModelAdmin):
+    form = UserDigitalRewardAdminForm
     list_display = ('user', 'reward', 'unlocked_at', 'source_badge', 'selected')
     list_filter = ('reward__kind', 'selected', 'unlocked_at')
     search_fields = ('user__username', 'reward__title')
@@ -1755,7 +1757,7 @@ class UserDigitalRewardAdmin(ModelAdmin):
         return tuple(fields)
 
     def save_model(self, request, obj, form, change):
-        if obj.selected:
+        if obj.selected and obj.reward.kind != DigitalReward.Kind.USER_TITLE:
             UserDigitalReward.objects.filter(
                 user=obj.user,
                 reward__kind=obj.reward.kind,

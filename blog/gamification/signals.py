@@ -1,7 +1,17 @@
 from django.db.models.signals import m2m_changed, post_save, pre_delete, pre_save
 from django.dispatch import receiver
+from django.utils import timezone
 
-from blog.models import Badge, BellSongSuggestion, Comments, DigitalReward, MemeOfWeek, PollAnswer
+from blog.models import (
+    Badge,
+    BellSongSuggestion,
+    Comments,
+    DigitalReward,
+    LifetimeProfileActivity,
+    MemeOfWeek,
+    PollAnswer,
+)
+from blog.profile_stats import record_lifetime_activity, remove_lifetime_activity
 
 from .services import (
     award_activity,
@@ -15,6 +25,21 @@ from .services import (
 @receiver(post_save, sender=Comments)
 def reward_new_comment(sender, instance, created, raw=False, **kwargs):
     if created and not raw and instance.user_id:
+        post = instance.post
+        is_public = (
+            post.published
+            and post.allowed
+            and (
+                post.published_at is None
+                or post.published_at <= timezone.now()
+            )
+        )
+        if is_public:
+            record_lifetime_activity(
+                instance.user_id,
+                LifetimeProfileActivity.Activity.COMMENT,
+                instance.pk,
+            )
         award_activity(instance.user, 'comment', instance)
         record_mission_activity(instance.user, 'comment', instance.pk)
 
@@ -29,6 +54,11 @@ def reverse_deleted_comment(sender, instance, **kwargs):
 @receiver(post_save, sender=PollAnswer)
 def reward_poll_answer(sender, instance, created, raw=False, **kwargs):
     if created and not raw and instance.user_id:
+        record_lifetime_activity(
+            instance.user_id,
+            LifetimeProfileActivity.Activity.POLL_VOTE,
+            instance.pk,
+        )
         award_activity(instance.user, 'poll_vote', instance)
         record_mission_activity(instance.user, 'poll_vote', instance.question_id)
 
@@ -57,8 +87,18 @@ def sync_song_reward(sender, instance, raw=False, **kwargs):
         return
     previous = getattr(instance, '_gamification_previous_status', None)
     if instance.status == 'approved' and previous != 'approved':
+        record_lifetime_activity(
+            instance.user_id,
+            LifetimeProfileActivity.Activity.SONG_APPROVED,
+            instance.pk,
+        )
         award_activity(instance.user, 'song_approved', instance)
     elif previous == 'approved' and instance.status != 'approved':
+        remove_lifetime_activity(
+            instance.user_id,
+            LifetimeProfileActivity.Activity.SONG_APPROVED,
+            instance.pk,
+        )
         reverse_activity(instance, 'song_approved', 'Отменено одобрение на песен')
 
 
@@ -73,8 +113,18 @@ def sync_meme_reward(sender, instance, raw=False, **kwargs):
         return
     previous = getattr(instance, '_gamification_previous_status', None)
     if instance.status == 'approved' and previous != 'approved':
+        record_lifetime_activity(
+            instance.user_id,
+            LifetimeProfileActivity.Activity.MEME_APPROVED,
+            instance.pk,
+        )
         award_activity(instance.user, 'meme_approved', instance)
     elif previous == 'approved' and instance.status != 'approved':
+        remove_lifetime_activity(
+            instance.user_id,
+            LifetimeProfileActivity.Activity.MEME_APPROVED,
+            instance.pk,
+        )
         reverse_activity(instance, 'meme_approved', 'Отменено одобрение на меме')
 
 

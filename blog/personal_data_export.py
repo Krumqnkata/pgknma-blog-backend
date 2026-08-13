@@ -7,6 +7,7 @@ from .models import (
     ConsentRecord,
     ContactSubmission,
     GoogleIdentity,
+    LifetimeProfileActivity,
     MemeOfWeek,
     NotificationPreference,
     NotificationReadState,
@@ -291,6 +292,18 @@ def build_personal_data_export(user):
             'pk',
         )
     ]
+    lifetime_profile_activity = [
+        {
+            'activity': item.activity,
+            'activity_display': item.get_activity_display(),
+            'reference_id': item.reference_id,
+            'recorded_at': _iso(item.recorded_at),
+        }
+        for item in LifetimeProfileActivity.objects.filter(user=user).order_by(
+            'recorded_at',
+            'pk',
+        )
+    ]
 
     return {
         'format_version': '1.0',
@@ -333,6 +346,7 @@ def build_personal_data_export(user):
             'song_votes': song_votes,
             'meme_votes': meme_votes,
             'page_views': page_views,
+            'lifetime_profile_activity': lifetime_profile_activity,
         },
         'privacy_and_security': {
             'consent_records': consent_records,
