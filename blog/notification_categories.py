@@ -9,6 +9,7 @@ SUBMISSION_STATUS = 'submission_status'
 MISSION_AVAILABLE = 'mission_available'
 SECURITY_LOGIN = 'security_login'
 SECURITY_ACCOUNT = 'security_account'
+TEAM_CHAT_INVITE = 'team_chat_invite'
 
 
 USER_PREFERENCE_FIELD_BY_CATEGORY = {
@@ -23,6 +24,7 @@ USER_PREFERENCE_FIELD_BY_CATEGORY = {
     MISSION_AVAILABLE: 'mission_available_enabled',
     SECURITY_LOGIN: 'security_enabled',
     SECURITY_ACCOUNT: 'security_enabled',
+    TEAM_CHAT_INVITE: 'general_enabled',
     'gamification_points': 'points_enabled',
     'gamification_level': 'levels_enabled',
     'gamification_badge': 'badges_enabled',

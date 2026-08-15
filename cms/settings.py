@@ -442,6 +442,9 @@ SPECTACULAR_SETTINGS = {
 
 MEDIA_URL = '/files/'
 MEDIA_ROOT = BASE_DIR / 'files'
+# Team-chat uploads are intentionally outside MEDIA_ROOT. They are returned
+# only by permission-aware Django admin endpoints, never by Apache /files/.
+TEAM_CHAT_PROTECTED_ROOT = BASE_DIR / 'protected_team_chat'
 
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "").strip()
 if not JWT_SIGNING_KEY:
@@ -559,6 +562,10 @@ MAX_AVATAR_UPLOAD_SIZE = env_int(
     "MAX_AVATAR_UPLOAD_SIZE",
     5 * 1024 * 1024,
 )
+TEAM_CHAT_MAX_IMAGE_UPLOAD_SIZE = env_int(
+    "TEAM_CHAT_MAX_IMAGE_UPLOAD_SIZE",
+    5 * 1024 * 1024,
+)
 MAX_DOCUMENT_UPLOAD_SIZE = env_int(
     "MAX_DOCUMENT_UPLOAD_SIZE",
     25 * 1024 * 1024,
@@ -603,7 +610,11 @@ UNFOLD = {
     "SIDEBAR": {
         "navigation": "blog.admin_navigation.build_admin_navigation",
     },
-"STYLES": [
+    "SCRIPTS": [
+        lambda request: static("admin/js/team_chat_badge.js"),
+    ],
+    "STYLES": [
+        lambda request: static("admin/css/team_chat_floating.css"),
     lambda request: """
         /* 1. СТРАНИЧНО МЕНЮ (Твоите съществуващи стилове) */
         @media (min-width: 1024px) {

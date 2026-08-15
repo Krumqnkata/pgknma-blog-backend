@@ -1,6 +1,9 @@
 .venv/
 db.sqlite3
 db.sqlite3*.bak
+db.team-chat-local.sqlite3
+db.before-team-chat-*.sqlite3
+protected_team_chat/
 __pycache__/
 *.py[cod]
 .env

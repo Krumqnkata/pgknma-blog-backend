@@ -17,6 +17,7 @@ from .notification_categories import (
     SECURITY_ACCOUNT,
     SECURITY_LOGIN,
     SUBMISSION_STATUS,
+    TEAM_CHAT_INVITE,
 )
 
 
@@ -35,6 +36,7 @@ CATEGORY_RETENTION_DAYS = {
     MISSION_AVAILABLE: 7,
     SECURITY_LOGIN: 14,
     SECURITY_ACCOUNT: 14,
+    TEAM_CHAT_INVITE: 14,
 }
 
 

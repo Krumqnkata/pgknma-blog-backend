@@ -9,7 +9,10 @@ class BlogConfig(AppConfig):
         from .gamification import signals  # noqa: F401
         from . import push_signals  # noqa: F401
         from . import notification_event_signals  # noqa: F401
+        from .admin_chat import install_team_chat_admin_sharing
         from .admin_roles import sync_admin_roles_after_migrate
+
+        install_team_chat_admin_sharing()
 
         post_migrate.connect(
             sync_admin_roles_after_migrate,

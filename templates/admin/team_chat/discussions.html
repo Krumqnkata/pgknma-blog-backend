@@ -1,0 +1,74 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'admin/css/team_chat.css' %}">
+    <script defer src="{% static 'admin/js/team_chat_access.js' %}"></script>
+{% endblock %}
+
+{% block breadcrumbs %}
+    <div class="px-4 lg:px-8"><div class="container mb-6 mx-auto -my-3 lg:mb-8"><ul class="flex flex-wrap">
+        <li class="flex items-center text-xs"><a href="{% url 'admin:index' %}" class="text-primary-600 hover:underline dark:text-primary-500">Начало</a><span class="material-symbols-outlined mx-2 text-base-400 text-sm">chevron_right</span></li>
+        <li class="text-xs text-base-500">Екипни дискусии</li>
+    </ul></div></div>
+{% endblock %}
+
+{% block content %}
+    <div class="team-chat-shell team-discussions-shell">
+        <nav class="team-chat-tabs" aria-label="Раздели на екипната комуникация">
+            <a href="{% url 'team-chat-index' %}"><span class="material-symbols-outlined" aria-hidden="true">chat</span>Общ чат</a>
+            <a href="{% url 'team-chat-discussions' %}" class="is-active"><span class="material-symbols-outlined" aria-hidden="true">forum</span>Дискусии</a>
+        </nav>
+        <header class="team-chat-header">
+            <div class="team-chat-heading-row">
+                <span class="material-symbols-outlined team-chat-heading-icon" aria-hidden="true">forum</span>
+                <div><h1>Екипни дискусии</h1><p>{% if source %}Разговори за {{ source.label|lower }} „{{ source.title }}“.{% elif origin_message %}Нова отделна тема от съобщение в общия чат.{% else %}Подредени разговори по задачи и административни записи.{% endif %}</p></div>
+            </div>
+        </header>
+
+        <section class="team-discussions-layout">
+            <form method="post" class="team-discussion-create-card">
+                {% csrf_token %}
+                <input type="hidden" name="source" value="{{ source_token }}">
+                <input type="hidden" name="origin_message_id" value="{{ origin_message_id }}">
+                <div class="team-discussion-title-field">
+                    <label for="discussion-title">Нова дискусия{% if source %} за този запис{% elif origin_message %} от съобщението{% endif %}</label>
+                    <input id="discussion-title" name="title" maxlength="200" required value="{{ suggested_title }}" placeholder="Например: Подготовка за училищното събитие">
+                </div>
+                {% if origin_message %}
+                    <div class="team-chat-origin-card is-static">
+                        <span class="material-symbols-outlined" aria-hidden="true">subdirectory_arrow_right</span>
+                        <span><strong>{{ origin_message.author_name }}</strong>{{ origin_message.preview }}</span>
+                    </div>
+                {% endif %}
+                {% include "admin/team_chat/access_fields.html" %}
+                <div class="team-discussion-form-actions">
+                    {% if origin_message %}<a href="{% url 'team-chat-index' %}" class="team-chat-secondary-button">Отказ</a>{% endif %}
+                    <button type="submit" class="team-chat-primary-button"><span class="material-symbols-outlined" aria-hidden="true">add</span>Създай дискусия</button>
+                </div>
+            </form>
+
+            <div class="team-discussion-list">
+                {% for item in discussions %}
+                    <a href="{{ item.url }}" class="team-discussion-card">
+                        <div class="team-discussion-card-icon"><span class="material-symbols-outlined" aria-hidden="true">forum</span></div>
+                        <div class="team-discussion-card-body">
+                            <div class="team-discussion-card-heading">
+                                <strong>{{ item.title }}</strong>
+                                <span class="team-chat-status-pill is-{{ item.status }}">{{ item.status_label }}</span>
+                                <span class="team-chat-access-pill is-{{ item.visibility }}"><span class="material-symbols-outlined" aria-hidden="true">{% if item.visibility == 'private' %}lock{% elif item.visibility == 'groups' %}group_work{% else %}groups{% endif %}</span>{{ item.visibility_label }}</span>
+                            </div>
+                            <p>От {{ item.created_by_name }} · {{ item.message_count }} съобщения · {{ item.participants|length }} участници</p>
+                            {% if item.source %}<small>{{ item.source.label }}: {{ item.source.title }}</small>{% endif %}
+                        </div>
+                        {% if item.unread_count %}<span class="team-discussion-unread" aria-label="{{ item.unread_count }} непрочетени">{{ item.unread_count }}</span>{% endif %}
+                        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+                    </a>
+                {% empty %}
+                    <div class="team-discussion-empty"><span class="material-symbols-outlined" aria-hidden="true">forum</span><strong>Все още няма дискусии</strong><span>Създайте първата отделна тема за екипа.</span></div>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+{% endblock %}

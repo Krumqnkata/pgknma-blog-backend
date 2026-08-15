@@ -1,0 +1,30 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'admin/css/team_chat.css' %}">
+    <script defer src="{% static 'admin/js/team_chat.js' %}"></script>
+{% endblock %}
+
+{% block breadcrumbs %}
+    <div class="px-4 lg:px-8">
+        <div class="container mb-6 mx-auto -my-3 lg:mb-8">
+            <ul class="flex flex-wrap">
+                <li class="flex items-center text-xs">
+                    <a href="{% url 'admin:index' %}" class="text-primary-600 hover:underline dark:text-primary-500">Начало</a>
+                    <span class="material-symbols-outlined mx-2 text-base-400 text-sm">chevron_right</span>
+                </li>
+                <li class="flex items-center text-xs">
+                    <a href="{% url 'team-chat-discussions' %}" class="text-primary-600 hover:underline dark:text-primary-500">Дискусии</a>
+                    <span class="material-symbols-outlined mx-2 text-base-400 text-sm">chevron_right</span>
+                </li>
+                <li class="text-xs text-base-500">{{ discussion.title }}</li>
+            </ul>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    {% include "admin/team_chat/chat_panel.html" with chat_scope="discussion" chat_title=discussion.title chat_subtitle="Отделна екипна дискусия" %}
+{% endblock %}

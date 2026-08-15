@@ -1,0 +1,32 @@
+{% load team_chat %}
+
+{% team_chat_share_url request original as chat_share_url %}
+{% team_chat_share_to_discussion_url request original as discussion_share_url %}
+{% team_chat_discussion_url request original as chat_discussion_url %}
+{% if chat_share_url %}
+    <div class="flex flex-wrap justify-end gap-2 mb-4">
+        {% if chat_discussion_url %}
+            <a
+                href="{{ chat_discussion_url }}"
+                class="border border-base-300 dark:border-base-700 flex flex-row font-medium items-center gap-2 px-3 py-2 rounded-default text-sm hover:bg-base-50 dark:hover:bg-base-800"
+            >
+                <span class="material-symbols-outlined text-base" aria-hidden="true">forum</span>
+                Дискусии за записа
+            </a>
+        {% endif %}
+        <a
+            href="{{ discussion_share_url }}"
+            class="border border-primary-300 flex flex-row font-medium items-center gap-2 px-3 py-2 rounded-default text-sm text-primary-700 hover:bg-primary-50 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-950"
+        >
+            <span class="material-symbols-outlined text-base" aria-hidden="true">quick_phrases</span>
+            Сподели в дискусия
+        </a>
+        <a
+            href="{{ chat_share_url }}"
+            class="bg-primary-600 border border-transparent flex flex-row font-medium items-center gap-2 px-3 py-2 rounded-default text-sm text-white hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600"
+        >
+            <span class="material-symbols-outlined text-base" aria-hidden="true">send</span>
+            Сподели в екипния чат
+        </a>
+    </div>
+{% endif %}

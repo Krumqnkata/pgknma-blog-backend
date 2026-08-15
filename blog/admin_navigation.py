@@ -8,19 +8,29 @@ def _permissions(app_label, model_name, actions=("view", "add", "change", "delet
     return tuple(f"{app_label}.{action}_{model_name}" for action in actions)
 
 
-def _item(title, link, icon, *permissions):
-    return {
+def _item(title, link, icon, *permissions, **extra):
+    item = {
         "title": title,
         "link": link,
         "icon": icon,
         "_permissions": tuple(permissions),
     }
+    item.update(extra)
+    return item
 
 
 ADMIN_NAVIGATION = (
     {
         "items": (
             _item("Начало", "/admin/", "home"),
+            _item(
+                "Екипен чат",
+                "/admin/team-chat/",
+                "forum",
+                badge="blog.admin_chat.team_chat_unread_badge",
+                badge_style="solid",
+                badge_variant="danger",
+            ),
             _item(
                 "Статистика",
                 "/admin/#site-statistics",

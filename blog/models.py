@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import timedelta
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.db import models, transaction
@@ -23,6 +23,15 @@ from .avatars import (
     profile_avatar_upload_path,
     validate_avatar_upload_size,
 )
+from .team_chat_storage import team_chat_protected_storage
+
+
+def team_chat_attachment_upload_path(instance, filename):
+    return f'{instance.pk}/image.webp'
+
+
+def team_chat_attachment_thumbnail_upload_path(instance, filename):
+    return f'{instance.pk}/thumbnail.webp'
 
 
 def calculate_file_sha256(file_obj):
@@ -1272,6 +1281,548 @@ class NotificationReadState(models.Model):
 
     def __str__(self):
         return f'{self.user} — {self.notification_id}'
+
+
+class TeamChatMessage(models.Model):
+    author = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='team_chat_messages',
+        verbose_name='Автор',
+    )
+    author_name = models.CharField(
+        max_length=300,
+        verbose_name='Име на автора при изпращане',
+    )
+    text = models.TextField(
+        blank=True,
+        max_length=4000,
+        verbose_name='Съобщение',
+    )
+    reply_to = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='replies',
+        verbose_name='Отговор на',
+    )
+    mentions = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name='team_chat_mentions',
+        verbose_name='Споменати потребители',
+    )
+    discussion = models.ForeignKey(
+        'TeamChatDiscussion',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='messages',
+        verbose_name='Дискусия',
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name='Изпратено на',
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        db_index=True,
+        verbose_name='Обновено на',
+    )
+    edited_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Редактирано на',
+    )
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name='Изтрито на',
+    )
+    deleted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='deleted_team_chat_messages',
+        verbose_name='Изтрито от',
+    )
+    is_pinned = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name='Закачено',
+    )
+    pinned_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Закачено на',
+    )
+    pinned_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pinned_team_chat_messages',
+        verbose_name='Закачено от',
+    )
+
+    class Meta:
+        verbose_name = 'Съобщение в екипния чат'
+        verbose_name_plural = 'Съобщения в екипния чат'
+        ordering = ('created_at', 'pk')
+        default_permissions = ()
+
+    def __str__(self):
+        return f'{self.author_name}: {self.text[:80]}'
+
+
+class TeamChatSharedObject(models.Model):
+    message = models.ForeignKey(
+        TeamChatMessage,
+        on_delete=models.CASCADE,
+        related_name='shared_objects',
+        verbose_name='Съобщение',
+    )
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        related_name='+',
+        verbose_name='Тип на записа',
+    )
+    object_id = models.CharField(
+        max_length=64,
+        verbose_name='ID на записа',
+    )
+    content_object = GenericForeignKey(
+        'content_type',
+        'object_id',
+        for_concrete_model=False,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Споделен запис в екипния чат'
+        verbose_name_plural = 'Споделени записи в екипния чат'
+        default_permissions = ()
+        constraints = [
+            models.UniqueConstraint(
+                fields=('message', 'content_type', 'object_id'),
+                name='unique_team_chat_shared_obj',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=('content_type', 'object_id'),
+                name='team_chat_shared_obj_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.content_type_id}:{self.object_id}'
+
+
+class TeamChatReaction(models.Model):
+    class Emoji(models.TextChoices):
+        LIKE = '👍', 'Харесвам'
+        DONE = '✅', 'Готово'
+        SEEN = '👀', 'Прегледано'
+        IMPORTANT = '❗', 'Важно'
+
+    message = models.ForeignKey(
+        TeamChatMessage,
+        on_delete=models.CASCADE,
+        related_name='reactions',
+        verbose_name='Съобщение',
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='team_chat_reactions',
+        verbose_name='Потребител',
+    )
+    emoji = models.CharField(
+        max_length=8,
+        choices=Emoji.choices,
+        verbose_name='Реакция',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'Реакция в екипния чат'
+        verbose_name_plural = 'Реакции в екипния чат'
+        default_permissions = ()
+        constraints = [
+            models.UniqueConstraint(
+                fields=('message', 'user', 'emoji'),
+                name='unique_team_chat_reaction',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.message_id}:{self.user_id}:{self.emoji}'
+
+
+class TeamChatMessageRevision(models.Model):
+    class Event(models.TextChoices):
+        EDITED = 'edited', 'Редактирано'
+        DELETED = 'deleted', 'Изтрито'
+        PINNED = 'pinned', 'Закачено'
+        UNPINNED = 'unpinned', 'Откачено'
+
+    message = models.ForeignKey(
+        TeamChatMessage,
+        on_delete=models.CASCADE,
+        related_name='revisions',
+        verbose_name='Съобщение',
+    )
+    event = models.CharField(
+        max_length=12,
+        choices=Event.choices,
+        verbose_name='Действие',
+    )
+    previous_text = models.TextField(
+        blank=True,
+        verbose_name='Предишен текст',
+    )
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='team_chat_revision_actions',
+        verbose_name='Извършено от',
+    )
+    actor_name = models.CharField(
+        max_length=300,
+        verbose_name='Име при извършване',
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Извършено на',
+    )
+
+    class Meta:
+        verbose_name = 'Ревизия на съобщение в екипния чат'
+        verbose_name_plural = 'Ревизии на съобщенията в екипния чат'
+        ordering = ('-created_at', '-pk')
+        default_permissions = ()
+
+    def __str__(self):
+        return f'{self.get_event_display()} — {self.message_id}'
+
+
+class TeamChatReadState(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='team_chat_read_state',
+        verbose_name='Потребител',
+    )
+    last_read_message_id = models.PositiveBigIntegerField(
+        default=0,
+        verbose_name='Последно прочетено съобщение',
+    )
+    read_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Прочетено на',
+    )
+
+    class Meta:
+        verbose_name = 'Състояние на екипния чат'
+        verbose_name_plural = 'Състояния на екипния чат'
+        default_permissions = ()
+
+    def __str__(self):
+        return f'{self.user} — {self.last_read_message_id}'
+
+
+class TeamChatDiscussion(models.Model):
+    class Status(models.TextChoices):
+        OPEN = 'open', 'Отворена'
+        RESOLVED = 'resolved', 'Приключена'
+
+    class Visibility(models.TextChoices):
+        TEAM = 'team', 'Целият екип'
+        GROUPS = 'groups', 'Избрани роли'
+        PRIVATE = 'private', 'Конкретни хора'
+
+    title = models.CharField(
+        max_length=200,
+        verbose_name='Заглавие',
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='created_team_chat_discussions',
+        verbose_name='Създадена от',
+    )
+    created_by_name = models.CharField(
+        max_length=300,
+        verbose_name='Име на създателя',
+    )
+    participants = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name='team_chat_discussions',
+        verbose_name='Участници',
+    )
+    visibility = models.CharField(
+        max_length=12,
+        choices=Visibility.choices,
+        default=Visibility.TEAM,
+        db_index=True,
+        verbose_name='Достъп',
+    )
+    allowed_groups = models.ManyToManyField(
+        Group,
+        blank=True,
+        related_name='allowed_team_chat_discussions',
+        verbose_name='Роли с достъп',
+    )
+    allowed_users = models.ManyToManyField(
+        User,
+        blank=True,
+        related_name='allowed_team_chat_discussions',
+        verbose_name='Потребители с достъп',
+    )
+    origin_message = models.OneToOneField(
+        TeamChatMessage,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='origin_discussion',
+        verbose_name='Начално съобщение',
+    )
+    source_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='+',
+        verbose_name='Тип на административния запис',
+    )
+    source_object_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        verbose_name='ID на административния запис',
+    )
+    source_object = GenericForeignKey(
+        'source_content_type',
+        'source_object_id',
+        for_concrete_model=False,
+    )
+    status = models.CharField(
+        max_length=12,
+        choices=Status.choices,
+        default=Status.OPEN,
+        db_index=True,
+        verbose_name='Състояние',
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Създадена на',
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        db_index=True,
+        verbose_name='Обновена на',
+    )
+    resolved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Приключена на',
+    )
+    resolved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='resolved_team_chat_discussions',
+        verbose_name='Приключена от',
+    )
+    resolved_by_name = models.CharField(
+        max_length=300,
+        blank=True,
+        verbose_name='Име при приключване',
+    )
+
+    class Meta:
+        verbose_name = 'Дискусия в екипния чат'
+        verbose_name_plural = 'Дискусии в екипния чат'
+        ordering = ('-updated_at', '-pk')
+        default_permissions = ()
+        permissions = (
+            (
+                'manage_team_chat_discussion_access',
+                'Може да управлява достъпа до екипни дискусии',
+            ),
+        )
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        source_content_type__isnull=True,
+                        source_object_id__isnull=True,
+                    )
+                    | models.Q(
+                        source_content_type__isnull=False,
+                        source_object_id__isnull=False,
+                    )
+                ),
+                name='team_chat_discussion_source_pair',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(origin_message__isnull=True)
+                    | models.Q(source_content_type__isnull=True)
+                ),
+                name='team_discussion_single_origin',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=('status', 'updated_at'),
+                name='team_discussion_status_idx',
+            ),
+            models.Index(
+                fields=('source_content_type', 'source_object_id'),
+                name='team_discussion_source_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return self.title
+
+
+class TeamChatDiscussionReadState(models.Model):
+    discussion = models.ForeignKey(
+        TeamChatDiscussion,
+        on_delete=models.CASCADE,
+        related_name='read_states',
+        verbose_name='Дискусия',
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='team_chat_discussion_read_states',
+        verbose_name='Потребител',
+    )
+    last_read_message_id = models.PositiveBigIntegerField(
+        default=0,
+        verbose_name='Последно прочетено съобщение',
+    )
+    read_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Прочетено на',
+    )
+
+    class Meta:
+        verbose_name = 'Прочит на екипна дискусия'
+        verbose_name_plural = 'Прочити на екипни дискусии'
+        default_permissions = ()
+        constraints = [
+            models.UniqueConstraint(
+                fields=('discussion', 'user'),
+                name='unique_team_discussion_read',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.discussion_id}:{self.user_id}:{self.last_read_message_id}'
+
+
+class TeamChatAttachment(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+    message = models.ForeignKey(
+        TeamChatMessage,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+        verbose_name='Съобщение',
+    )
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='team_chat_attachments',
+        verbose_name='Качено от',
+    )
+    uploaded_by_name = models.CharField(
+        max_length=300,
+        verbose_name='Име на качилия',
+    )
+    image = models.ImageField(
+        storage=team_chat_protected_storage,
+        upload_to=team_chat_attachment_upload_path,
+        width_field='width',
+        height_field='height',
+        verbose_name='Изображение',
+    )
+    thumbnail = models.ImageField(
+        storage=team_chat_protected_storage,
+        upload_to=team_chat_attachment_thumbnail_upload_path,
+        verbose_name='Миниатюра',
+    )
+    original_name = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name='Оригинално име',
+    )
+    original_format = models.CharField(
+        max_length=12,
+        verbose_name='Оригинален формат',
+    )
+    content_type = models.CharField(
+        max_length=40,
+        default='image/webp',
+        verbose_name='MIME тип',
+    )
+    byte_size = models.PositiveIntegerField(
+        verbose_name='Размер в байтове',
+    )
+    width = models.PositiveIntegerField(verbose_name='Ширина')
+    height = models.PositiveIntegerField(verbose_name='Височина')
+    is_animated = models.BooleanField(
+        default=False,
+        verbose_name='Анимирано',
+    )
+    alt_text = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name='Алтернативен текст',
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True,
+        verbose_name='Качено на',
+    )
+
+    class Meta:
+        verbose_name = 'Изображение в екипния чат'
+        verbose_name_plural = 'Изображения в екипния чат'
+        ordering = ('created_at', 'pk')
+        default_permissions = ()
+        indexes = [
+            models.Index(
+                fields=('uploaded_by', 'created_at'),
+                name='team_attachment_rate_idx',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.message_id}: {self.original_name or self.pk}'
 
 
 class NotificationPreference(models.Model):

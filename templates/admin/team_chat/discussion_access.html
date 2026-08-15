@@ -1,0 +1,46 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'admin/css/team_chat.css' %}">
+    <script defer src="{% static 'admin/js/team_chat_access.js' %}"></script>
+{% endblock %}
+
+{% block breadcrumbs %}
+    <div class="px-4 lg:px-8">
+        <div class="container mb-6 mx-auto -my-3 lg:mb-8">
+            <ul class="flex flex-wrap">
+                <li class="flex items-center text-xs"><a href="{% url 'admin:index' %}" class="text-primary-600 hover:underline dark:text-primary-500">Начало</a><span class="material-symbols-outlined mx-2 text-base-400 text-sm">chevron_right</span></li>
+                <li class="flex items-center text-xs"><a href="{% url 'team-chat-discussions' %}" class="text-primary-600 hover:underline dark:text-primary-500">Дискусии</a><span class="material-symbols-outlined mx-2 text-base-400 text-sm">chevron_right</span></li>
+                <li class="flex items-center text-xs"><a href="{% url 'team-chat-discussion-detail' discussion.id %}" class="text-primary-600 hover:underline dark:text-primary-500">{{ discussion.title }}</a><span class="material-symbols-outlined mx-2 text-base-400 text-sm">chevron_right</span></li>
+                <li class="text-xs text-base-500">Достъп</li>
+            </ul>
+        </div>
+    </div>
+{% endblock %}
+
+{% block content %}
+    <div class="team-chat-shell team-discussion-access-shell">
+        <header class="team-chat-header">
+            <div class="team-chat-heading-row">
+                <span class="material-symbols-outlined team-chat-heading-icon" aria-hidden="true">admin_panel_settings</span>
+                <div>
+                    <h1>Достъп до „{{ discussion.title }}“</h1>
+                    <p>Променете кой може да вижда и използва тази екипна дискусия.</p>
+                </div>
+            </div>
+        </header>
+        <form method="post" class="team-discussion-access-card">
+            {% csrf_token %}
+            {% include "admin/team_chat/access_fields.html" %}
+            <div class="team-discussion-form-actions">
+                <a href="{% url 'team-chat-discussion-detail' discussion.id %}" class="team-chat-secondary-button">Отказ</a>
+                <button type="submit" class="team-chat-primary-button">
+                    <span class="material-symbols-outlined" aria-hidden="true">save</span>
+                    Запази достъпа
+                </button>
+            </div>
+        </form>
+    </div>
+{% endblock %}

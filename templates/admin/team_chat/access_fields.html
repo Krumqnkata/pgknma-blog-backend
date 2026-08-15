@@ -1,0 +1,70 @@
+<div class="team-chat-access-form" data-team-chat-access-form>
+    <fieldset class="team-chat-access-modes">
+        <legend>Кой има достъп</legend>
+        <div class="team-chat-access-mode-grid">
+            {% for mode in access_modes %}
+                <label class="team-chat-access-mode{% if mode.selected %} is-selected{% endif %}">
+                    <input type="radio" name="visibility" value="{{ mode.value }}"{% if mode.selected %} checked{% endif %}>
+                    <span class="material-symbols-outlined" aria-hidden="true">{{ mode.icon }}</span>
+                    <span>
+                        <strong>{{ mode.label }}</strong>
+                        <small>{{ mode.description }}</small>
+                    </span>
+                </label>
+            {% endfor %}
+        </div>
+    </fieldset>
+
+    <section class="team-chat-access-panel" data-team-chat-access-panel="groups"{% if access_visibility != 'groups' %} hidden{% endif %}>
+        <div class="team-chat-access-panel-heading">
+            <span class="material-symbols-outlined" aria-hidden="true">group_work</span>
+            <div>
+                <strong>Разрешени роли</strong>
+                <small>Всеки настоящ или бъдещ член на избраните роли ще има достъп.</small>
+            </div>
+        </div>
+        <div class="team-chat-access-checklist">
+            {% for group in access_groups %}
+                <label>
+                    <input type="checkbox" name="allowed_groups" value="{{ group.id }}"{% if group.selected %} checked{% endif %}>
+                    <span>{{ group.name }}</span>
+                </label>
+            {% empty %}
+                <p>Все още няма създадени роли в админ панела.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="team-chat-access-panel" data-team-chat-access-panel="private"{% if access_visibility != 'private' %} hidden{% endif %}>
+        <div class="team-chat-access-panel-heading">
+            <span class="material-symbols-outlined" aria-hidden="true">lock</span>
+            <div>
+                <strong>Разрешени служители</strong>
+                <small>Създателят и суперпотребителите имат достъп автоматично.</small>
+            </div>
+        </div>
+        <label class="team-chat-access-search">
+            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+            <span class="sr-only">Търсене на служител</span>
+            <input type="search" placeholder="Търсене по име или потребител…" data-team-chat-user-filter autocomplete="off">
+        </label>
+        <div class="team-chat-access-checklist is-users">
+            {% for person in access_users %}
+                <label data-team-chat-user-row data-search="{{ person.name }} {{ person.username }}">
+                    <input type="checkbox" name="allowed_users" value="{{ person.id }}"{% if person.selected %} checked{% endif %}>
+                    <span><strong>{{ person.name }}</strong><small>@{{ person.username }}</small></span>
+                </label>
+            {% empty %}
+                <p>Няма други активни потребители с достъп до админ панела.</p>
+            {% endfor %}
+        </div>
+        <p class="team-chat-access-no-results" data-team-chat-user-empty hidden>Няма намерен служител.</p>
+    </section>
+
+    {% if source or discussion.source %}
+        <p class="team-chat-access-warning">
+            <span class="material-symbols-outlined" aria-hidden="true">shield_lock</span>
+            Изборът тук не предоставя права над свързания административен запис. Потребителят трябва да има и съответното Django право за него.
+        </p>
+    {% endif %}
+</div>

@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest import mock
 
 from django.contrib.auth.models import User
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.sessions.models import Session as DjangoSession
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -26,6 +27,11 @@ from .models import (
     ConsentRecord,
     Notification,
     PersonalDataCleanupRun,
+    TeamChatMessage,
+    TeamChatMessageRevision,
+    TeamChatReaction,
+    TeamChatReadState,
+    TeamChatSharedObject,
 )
 
 
@@ -254,6 +260,59 @@ class PersonalDataRetentionTests(TestCase):
         self.assertTrue(Notification.objects.filter(pk=important.pk).exists())
         important.refresh_from_db()
         self.assertIsNone(important.expires_at)
+
+    def test_team_chat_messages_are_deleted_after_the_retention_window(self):
+        old_message = TeamChatMessage.objects.create(
+            author=self.user,
+            author_name=self.user.username,
+            text='Старо съобщение в екипния чат',
+        )
+        fresh_message = TeamChatMessage.objects.create(
+            author=self.user,
+            author_name=self.user.username,
+            text='Актуално съобщение в екипния чат',
+        )
+        TeamChatMessage.objects.filter(pk=old_message.pk).update(
+            created_at=self.old_time,
+            updated_at=self.old_time,
+        )
+        revision = TeamChatMessageRevision.objects.create(
+            message=old_message,
+            event=TeamChatMessageRevision.Event.EDITED,
+            previous_text='По-стар текст',
+            actor=self.user,
+            actor_name=self.user.username,
+        )
+        shared = TeamChatSharedObject.objects.create(
+            message=old_message,
+            content_type=ContentType.objects.get_for_model(Notification),
+            object_id='999999',
+        )
+        reaction = TeamChatReaction.objects.create(
+            message=old_message,
+            user=self.user,
+            emoji=TeamChatReaction.Emoji.DONE,
+        )
+        read_state = TeamChatReadState.objects.create(
+            user=self.user,
+            last_read_message_id=old_message.pk,
+        )
+
+        output = io.StringIO()
+        call_command('cleanup_personal_data', days=90, stdout=output)
+        result = json.loads(output.getvalue())
+
+        self.assertEqual(result['team_chat_messages'], 1)
+        self.assertFalse(TeamChatMessage.objects.filter(pk=old_message.pk).exists())
+        self.assertTrue(TeamChatMessage.objects.filter(pk=fresh_message.pk).exists())
+        self.assertFalse(
+            TeamChatMessageRevision.objects.filter(pk=revision.pk).exists()
+        )
+        self.assertFalse(TeamChatSharedObject.objects.filter(pk=shared.pk).exists())
+        self.assertFalse(TeamChatReaction.objects.filter(pk=reaction.pk).exists())
+        # The numeric read cursor is intentionally retained so deleting old
+        # history never makes already-seen messages unread again.
+        self.assertTrue(TeamChatReadState.objects.filter(pk=read_state.pk).exists())
 
     def test_command_rejects_invalid_retention_period(self):
         with self.assertRaises(CommandError):

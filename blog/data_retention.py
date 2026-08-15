@@ -14,6 +14,8 @@ from .models import (
     EmailVerificationToken,
     Notification,
     PageView,
+    TeamChatDiscussion,
+    TeamChatMessage,
 )
 
 
@@ -41,6 +43,10 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         important=False,
         expires_at__lt=cutoff,
     )
+    old_team_chat_messages = TeamChatMessage.objects.filter(created_at__lt=cutoff)
+    old_team_chat_discussions = TeamChatDiscussion.objects.filter(
+        updated_at__lt=cutoff,
+    ).exclude(messages__created_at__gte=cutoff)
 
     counts = {
         'consent_records': old_consents.count(),
@@ -52,6 +58,8 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         'email_verification_tokens': old_email_verification_tokens.count(),
         'page_views': old_page_views.count(),
         'expired_notifications': old_expired_notifications.count(),
+        'team_chat_messages': old_team_chat_messages.count(),
+        'team_chat_discussions': old_team_chat_discussions.count(),
     }
     if dry_run:
         return counts
@@ -71,5 +79,10 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         # their foreign keys, after the expired row has remained archived for
         # the configured retention window.
         old_expired_notifications.delete()
+        # Chat references, mentions and revision history are removed through
+        # cascading foreign keys after the shared 90-day retention window.
+        # django-cleanup also removes private image and thumbnail files.
+        old_team_chat_messages.delete()
+        old_team_chat_discussions.delete()
 
     return counts

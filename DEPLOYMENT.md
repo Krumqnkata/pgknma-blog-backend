@@ -130,7 +130,8 @@ CACHE_LOCATION=pgknma-single-worker-cache
    workers и background задачи, които могат да пишат в базата; не оставяй
    активни admin/API записи по време на backup и `migrate`;
 2. запиши текущия Git commit: `git rev-parse HEAD`;
-3. направи проверен backup на базата и директорията `files/`;
+3. направи проверен backup на базата, директорията `files/` и защитената
+   директория `protected_team_chat/`;
 4. запази копие на текущия `.env`, достъпно само за администратора;
 5. определи предишния работещ commit и командата за рестарт.
 
@@ -155,7 +156,8 @@ mysqldump -u django_prod -p --single-transaction --routines --triggers \
     pgknma_blog | gzip > \
     "/var/backups/pgknma/database-${DEPLOY_TAG}.sql.gz"
 tar -C /var/www/blog/cms/cms -czf \
-    "/var/backups/pgknma/files-${DEPLOY_TAG}.tar.gz" files
+    "/var/backups/pgknma/uploads-${DEPLOY_TAG}.tar.gz" \
+    files protected_team_chat
 ```
 
 Провери, че архивите не са празни и могат да бъдат прочетени. При rollback
@@ -173,6 +175,19 @@ python manage.py migrate --plan
 python manage.py migrate
 python manage.py collectstatic --noinput
 ```
+
+Изображенията от екипния чат не са в публичната `/files/` директория.
+Преди рестарт създай частната директория със service user-а на Django
+(замени `www-data`, ако услугата работи с друг потребител):
+
+```bash
+sudo install -d -o www-data -g www-data -m 700 \
+    /var/www/blog/cms/cms/protected_team_chat
+```
+
+Не добавяй Apache `Alias` или `ProxyPass` към тази директория. Файловете се
+сервират единствено през защитените `/admin/team-chat/attachments/.../`
+маршрути след проверка на staff и object-level правата.
 
 Ако `CACHE_BACKEND` е `django.core.cache.backends.db.DatabaseCache`, създай
 таблицата след миграциите:
@@ -442,6 +457,8 @@ python manage.py cleanup_personal_data --days 90 --dry-run
 - изтеклите Django сесии и SimpleJWT token записи;
 - прегледите на страници и автоматично архивираните известия, които са
   останали в архива повече от зададения срок (по подразбиране 90 дни).
+- съобщенията в екипния административен чат, техните споделени препратки и
+  одитни ревизии, когато са създадени преди зададения срок.
 
 Активните срокове на известията се задават автоматично: 7 дни за новини,
 анкети, промени и геймификация; 14 дни за лични известия и съобщения за

@@ -1,0 +1,169 @@
+<div
+    id="team-chat-app"
+    class="team-chat-shell"
+    data-scope="{{ chat_scope }}"
+    data-messages-url="{{ messages_url }}"
+    data-read-url="{{ read_url }}"
+    data-staff-url="{{ staff_url }}"
+    data-edit-url-template="{{ edit_url_template }}"
+    data-delete-url-template="{{ delete_url_template }}"
+    data-pin-url-template="{{ pin_url_template }}"
+    data-reaction-url-template="{{ reaction_url_template }}"
+    data-discussions-url="{{ discussions_url }}"
+    data-discussions-api-url="{{ discussions_api_url }}"
+    data-resolve-url="{{ resolve_url|default:'' }}"
+    data-current-user="{{ request.user.username }}"
+>
+    <nav class="team-chat-tabs" aria-label="Раздели на екипната комуникация">
+        <a href="{% url 'team-chat-index' %}" class="{% if chat_scope == 'general' %}is-active{% endif %}">
+            <span class="material-symbols-outlined" aria-hidden="true">chat</span>
+            Общ чат
+        </a>
+        <a href="{% url 'team-chat-discussions' %}" class="{% if chat_scope == 'discussion' %}is-active{% endif %}">
+            <span class="material-symbols-outlined" aria-hidden="true">forum</span>
+            Дискусии
+        </a>
+    </nav>
+
+    <header class="team-chat-header">
+        <div class="team-chat-heading-row">
+            <span class="material-symbols-outlined team-chat-heading-icon" aria-hidden="true">{% if discussion %}forum{% else %}groups{% endif %}</span>
+            <div>
+                <h1>{{ chat_title }}</h1>
+                <p>{{ chat_subtitle }}</p>
+                {% if discussion %}
+                    <div class="team-chat-discussion-meta">
+                        <span class="team-chat-status-pill is-{{ discussion.status }}">{{ discussion.status_label }}</span>
+                        <span class="team-chat-access-pill is-{{ discussion.visibility }}" title="{{ discussion.access_summary }}">
+                            <span class="material-symbols-outlined" aria-hidden="true">{% if discussion.visibility == 'private' %}lock{% elif discussion.visibility == 'groups' %}group_work{% else %}groups{% endif %}</span>
+                            {{ discussion.visibility_label }}
+                        </span>
+                        <span>{{ discussion.message_count }} съобщения</span>
+                        <span>{{ discussion.participants|length }} участници</span>
+                        {% if discussion.source %}
+                            <a href="{{ discussion.source.url }}">{{ discussion.source.label }}: {{ discussion.source.title }}</a>
+                        {% endif %}
+                    </div>
+                    {% if discussion.participants %}
+                        <div class="team-chat-participants" aria-label="Участници в дискусията">
+                            <strong>Участници:</strong>
+                            {% for participant in discussion.participants %}
+                                <span title="@{{ participant.username }}">{{ participant.name }}</span>{% if not forloop.last %}<span aria-hidden="true">·</span>{% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    {% if discussion.origin_message %}
+                        <a href="{{ discussion.origin_message.url }}" class="team-chat-origin-card">
+                            <span class="material-symbols-outlined" aria-hidden="true">subdirectory_arrow_right</span>
+                            <span><strong>{{ discussion.origin_message.author_name }}</strong>{{ discussion.origin_message.preview }}</span>
+                        </a>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+        <div class="team-chat-header-actions">
+            <span id="team-chat-header-status" class="team-chat-header-status" role="status" aria-live="polite"></span>
+            {% if discussion.can_manage %}
+                <a href="{{ access_url }}" class="team-chat-secondary-button">
+                    <span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span>
+                    <span>Достъп</span>
+                </a>
+                <button id="team-chat-resolve" type="button" class="team-chat-secondary-button" data-resolved="{% if discussion.status == 'resolved' %}true{% else %}false{% endif %}">
+                    <span class="material-symbols-outlined" aria-hidden="true">{% if discussion.status == 'resolved' %}lock_open{% else %}task_alt{% endif %}</span>
+                    <span>{% if discussion.status == 'resolved' %}Отвори отново{% else %}Приключи{% endif %}</span>
+                </button>
+            {% endif %}
+            <button id="team-chat-sound-toggle" type="button" class="team-chat-secondary-button" aria-pressed="false">
+                <span class="material-symbols-outlined" aria-hidden="true">volume_up</span>
+                <span>Звукът е включен</span>
+            </button>
+        </div>
+    </header>
+
+    <section class="team-chat-panel" aria-label="Съобщения в екипния чат">
+        <section id="team-chat-pinned" class="team-chat-pinned" aria-label="Закачени съобщения" hidden>
+            <div class="team-chat-pinned-heading">
+                <span class="material-symbols-outlined" aria-hidden="true">keep</span>
+                <strong>Закачени съобщения</strong>
+                <span id="team-chat-pinned-count"></span>
+            </div>
+            <div id="team-chat-pinned-list" class="team-chat-pinned-list"></div>
+        </section>
+
+        <div class="team-chat-history-toolbar">
+            <button id="team-chat-load-older" type="button" class="team-chat-secondary-button" hidden>
+                <span class="material-symbols-outlined" aria-hidden="true">history</span>
+                Зареди по-стари
+            </button>
+            <span id="team-chat-loading" class="team-chat-loading" role="status">Зареждане…</span>
+        </div>
+
+        <div id="team-chat-messages" class="team-chat-messages" aria-live="polite" aria-busy="true"></div>
+        <button id="team-chat-new-messages" type="button" class="team-chat-new-button" hidden>
+            Нови съобщения
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span>
+        </button>
+        <div id="team-chat-empty" class="team-chat-empty" hidden>
+            <span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>
+            <strong>Все още няма съобщения</strong>
+            <span>Напишете първото съобщение към екипа.</span>
+        </div>
+
+            <form id="team-chat-form" class="team-chat-composer" {% if discussion.status == 'resolved' %}hidden{% endif %}>
+                {% csrf_token %}
+                <div id="team-chat-mode" class="team-chat-mode" hidden>
+                    <div>
+                        <strong id="team-chat-mode-title"></strong>
+                        <span id="team-chat-mode-preview"></span>
+                    </div>
+                    <button id="team-chat-mode-cancel" type="button" aria-label="Откажи отговора или редакцията">
+                        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+                    </button>
+                </div>
+
+                <div id="team-chat-dropzone" class="team-chat-input-wrap">
+                    <label for="team-chat-text" class="sr-only">Съобщение</label>
+                    <textarea id="team-chat-text" rows="3" maxlength="4000" placeholder="Напишете съобщение… Използвайте @потребител за споменаване." autocomplete="off"></textarea>
+                    <div id="team-chat-mentions" class="team-chat-mentions" role="listbox" aria-label="Предложения за споменаване" hidden></div>
+                    <div class="team-chat-drop-hint" aria-hidden="true">
+                        <span class="material-symbols-outlined">add_photo_alternate</span>
+                        Пуснете изображенията тук
+                    </div>
+                </div>
+                <div id="team-chat-attachment-preview" class="team-chat-attachment-preview" aria-live="polite" hidden></div>
+
+                <div class="team-chat-composer-footer">
+                    <div class="team-chat-composer-info">
+                        <span id="team-chat-character-count">0 / 4000</span>
+                        <span>до 3 изображения · JPEG, PNG, WebP или GIF · 5 MB</span>
+                    </div>
+                    <div class="team-chat-composer-actions">
+                        <input id="team-chat-files" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden>
+                        <button id="team-chat-attach" type="button" class="team-chat-secondary-button">
+                            <span class="material-symbols-outlined" aria-hidden="true">attach_file</span>
+                            Снимки
+                        </button>
+                        <span id="team-chat-status" role="status" aria-live="polite"></span>
+                        <button id="team-chat-submit" type="submit" class="team-chat-primary-button">
+                            <span class="material-symbols-outlined" aria-hidden="true">send</span>
+                            <span id="team-chat-submit-label">Изпрати</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        {% if discussion.status == 'resolved' %}
+            <div class="team-chat-closed-notice">
+                <span class="material-symbols-outlined" aria-hidden="true">task_alt</span>
+                Тази дискусия е приключена. Може да бъде отворена отново от създателя или потребител с право за промяна на свързания запис.
+            </div>
+        {% endif %}
+    </section>
+
+    <dialog id="team-chat-lightbox" class="team-chat-lightbox">
+        <button id="team-chat-lightbox-close" type="button" aria-label="Затвори изображението">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+        <img id="team-chat-lightbox-image" alt="">
+        <p id="team-chat-lightbox-caption"></p>
+    </dialog>
+</div>
