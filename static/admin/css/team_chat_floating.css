@@ -1,8 +1,7 @@
 .team-chat-floating-root {
-    bottom: 1.25rem;
+    inset: 0;
     pointer-events: none;
     position: fixed;
-    right: 1.25rem;
     z-index: 1000;
 }
 
@@ -19,22 +18,28 @@
     align-items: center;
     background: rgb(37 99 235);
     border: 1px solid rgb(255 255 255 / .25);
-    border-radius: 999px;
+    border-radius: .85rem 0 0 .85rem;
     box-shadow: 0 12px 30px rgb(15 23 42 / .28);
     color: white;
     display: flex;
-    height: 3.5rem;
+    flex-direction: column;
+    gap: .45rem;
+    min-height: 8.5rem;
     justify-content: center;
     margin-left: auto;
-    position: relative;
+    padding: .8rem .45rem;
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
     transition: background-color .15s ease, box-shadow .15s ease, transform .15s ease;
-    width: 3.5rem;
+    width: 2.85rem;
 }
 
 .team-chat-floating-button:hover {
     background: rgb(29 78 216);
     box-shadow: 0 14px 34px rgb(37 99 235 / .34);
-    transform: translateY(-2px);
+    transform: translate(-3px, -50%);
 }
 
 .team-chat-floating-button:focus-visible,
@@ -48,7 +53,17 @@
 }
 
 .team-chat-floating-button .material-symbols-outlined {
-    font-size: 1.55rem;
+    font-size: 1.35rem;
+}
+
+.team-chat-floating-label {
+    font-size: .72rem;
+    font-weight: 800;
+    letter-spacing: .025em;
+    line-height: 1;
+    transform: rotate(180deg);
+    white-space: nowrap;
+    writing-mode: vertical-rl;
 }
 
 .team-chat-floating-count {
@@ -65,8 +80,8 @@
     min-width: 1.35rem;
     padding: 0 .2rem;
     position: absolute;
-    right: -.18rem;
-    top: -.18rem;
+    left: -.42rem;
+    top: .42rem;
 }
 
 .dark .team-chat-floating-count {
@@ -74,18 +89,33 @@
 }
 
 .team-chat-floating-panel {
+    animation: team-chat-panel-in .18s ease-out;
     background: white;
     border: 1px solid rgb(229 231 235);
     border-radius: .9rem;
-    bottom: 4.4rem;
     box-shadow: 0 22px 55px rgb(15 23 42 / .25);
     display: flex;
     flex-direction: column;
-    height: min(560px, calc(100svh - 7rem));
+    height: min(640px, calc(100vh - 2rem));
+    height: min(640px, calc(100svh - 2rem));
     overflow: hidden;
     position: absolute;
-    right: 0;
-    width: min(390px, calc(100vw - 2rem));
+    right: .75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: min(410px, calc(100vw - 3.5rem));
+}
+
+@keyframes team-chat-panel-in {
+    from {
+        opacity: 0;
+        transform: translate(1rem, -50%);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(0, -50%);
+    }
 }
 
 .dark .team-chat-floating-panel {
@@ -509,15 +539,36 @@ a.team-chat-floating-share:hover {
 }
 
 @media (max-width: 640px) {
-    .team-chat-floating-root {
-        bottom: .8rem;
-        right: .8rem;
+    .team-chat-floating-button {
+        min-height: 7rem;
+        padding-block: .65rem;
+        width: 2.65rem;
+    }
+
+    .team-chat-floating-label {
+        font-size: .67rem;
     }
 
     .team-chat-floating-panel {
-        bottom: 4.15rem;
-        height: min(520px, calc(100svh - 6rem));
-        width: calc(100vw - 1.6rem);
+        animation-name: team-chat-panel-in-mobile;
+        bottom: max(.5rem, env(safe-area-inset-bottom));
+        height: auto;
+        right: .5rem;
+        top: max(.5rem, env(safe-area-inset-top));
+        transform: none;
+        width: calc(100vw - 1rem);
+    }
+}
+
+@keyframes team-chat-panel-in-mobile {
+    from {
+        opacity: 0;
+        transform: translateX(1rem);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
     }
 }
 
@@ -525,6 +576,10 @@ a.team-chat-floating-share:hover {
     .team-chat-floating-button,
     .team-chat-floating-reaction {
         transition: none;
+    }
+
+    .team-chat-floating-panel {
+        animation: none;
     }
 }
 

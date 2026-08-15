@@ -621,6 +621,7 @@
         state.widgetOpen = true;
         state.panel.hidden = false;
         state.button.setAttribute("aria-expanded", "true");
+        state.button.hidden = true;
         if (state.activeTab === "chat") {
             void loadWidgetInitial().then(() => state.textarea.focus());
         } else {
@@ -631,6 +632,7 @@
     const closeWidget = () => {
         state.widgetOpen = false;
         state.panel.hidden = true;
+        state.button.hidden = false;
         state.button.setAttribute("aria-expanded", "false");
         state.button.focus();
     };
@@ -645,8 +647,12 @@
         state.button.setAttribute("aria-controls", "team-chat-floating-panel");
         state.button.setAttribute("aria-expanded", "false");
         state.button.setAttribute("aria-label", "Отвори екипния чат");
-        state.button.append(createElement("span", "material-symbols-outlined", "forum"));
+        const buttonIcon = createElement("span", "material-symbols-outlined", "forum");
+        buttonIcon.setAttribute("aria-hidden", "true");
+        state.button.append(buttonIcon);
+        state.button.append(createElement("span", "team-chat-floating-label", "Екипен чат"));
         state.buttonCount = createElement("span", "team-chat-floating-count");
+        state.buttonCount.setAttribute("aria-hidden", "true");
         state.buttonCount.hidden = true;
         state.button.append(state.buttonCount);
 
