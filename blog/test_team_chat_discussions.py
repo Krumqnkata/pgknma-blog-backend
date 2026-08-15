@@ -502,8 +502,9 @@ class TeamChatAttachmentTests(TeamChatPrivateStorageMixin, TestCase):
         self.assertFalse(TeamChatMessage.objects.exists())
 
     def test_hourly_rate_limit_rejects_the_eleventh_image(self):
+        first_message = None
         for batch_size in (3, 3, 3, 1):
-            create_message(
+            message = create_message(
                 author=self.staff,
                 text='',
                 uploaded_files=tuple(
@@ -511,6 +512,17 @@ class TeamChatAttachmentTests(TeamChatPrivateStorageMixin, TestCase):
                     for index in range(batch_size)
                 ),
             )
+            if first_message is None:
+                first_message = message
+
+        with self.captureOnCommitCallbacks(execute=True):
+            deleted = self.client.post(
+                reverse('team-chat-delete', args=(first_message.pk,)),
+                data='{}',
+                content_type='application/json',
+            )
+        self.assertEqual(deleted.status_code, 200)
+
         rejected = self.client.post(
             reverse('team-chat-messages'),
             {'images': [_image_upload('eleventh.jpg')]},
@@ -542,20 +554,30 @@ class TeamChatAttachmentTests(TeamChatPrivateStorageMixin, TestCase):
         self.assertFalse(image_path.exists())
         self.assertFalse(thumbnail_path.exists())
 
-    def test_soft_deleted_message_immediately_hides_its_attachment(self):
+    def test_soft_deleted_message_immediately_deletes_its_attachment_files(self):
         sent = self.client.post(
             reverse('team-chat-messages'),
             {'images': [_image_upload()]},
         ).json()
         message_id = sent['message']['id']
         attachment = TeamChatAttachment.objects.get()
-        deleted = self.client.post(
-            reverse('team-chat-delete', args=(message_id,)),
-            data='{}',
-            content_type='application/json',
-        )
+        image_path = Path(attachment.image.path)
+        thumbnail_path = Path(attachment.thumbnail.path)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            deleted = self.client.post(
+                reverse('team-chat-delete', args=(message_id,)),
+                data='{}',
+                content_type='application/json',
+            )
+
         self.assertEqual(deleted.status_code, 200)
         self.assertEqual(deleted.json()['message']['attachments'], [])
+        self.assertTrue(
+            TeamChatAttachment.objects.filter(pk=attachment.pk).exists()
+        )
+        self.assertFalse(image_path.exists())
+        self.assertFalse(thumbnail_path.exists())
         hidden = self.client.get(reverse('team-chat-attachment', args=(attachment.pk,)))
         self.assertEqual(hidden.status_code, 404)
 

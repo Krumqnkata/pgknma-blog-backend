@@ -794,6 +794,21 @@ def delete_message(*, message_id, actor, now=None):
         'updated_at',
     ))
     message.mentions.clear()
+    # Keep attachment metadata for the audit window and hourly upload limit,
+    # but remove the private image and thumbnail files immediately after this
+    # transaction commits successfully.
+    private_files = tuple(
+        (field_file.storage, field_file.name)
+        for attachment in message.attachments.only('image', 'thumbnail')
+        for field_file in (attachment.image, attachment.thumbnail)
+        if field_file and field_file.name
+    )
+    if private_files:
+        def delete_private_files():
+            for storage, file_name in private_files:
+                storage.delete(file_name)
+
+        transaction.on_commit(delete_private_files, robust=True)
     return message
 
 
