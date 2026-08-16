@@ -157,6 +157,17 @@ VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "").strip()
 WEB_PUSH_MAX_PUBLIC_PER_HOUR = env_int("WEB_PUSH_MAX_PUBLIC_PER_HOUR", 10)
 WEB_PUSH_EVENT_REMINDER_HOURS = env_int("WEB_PUSH_EVENT_REMINDER_HOURS", 24)
+WEB_PUSH_REQUEST_TIMEOUT_SECONDS = env_int("WEB_PUSH_REQUEST_TIMEOUT_SECONDS", 10)
+WEB_PUSH_ALLOWED_ENDPOINT_HOSTS = env_list(
+    "WEB_PUSH_ALLOWED_ENDPOINT_HOSTS",
+    (
+        "fcm.googleapis.com",
+        "android.googleapis.com",
+        "push.services.mozilla.com",
+        "push.apple.com",
+        "notify.windows.com",
+    ),
+)
 VAPID_SUBJECT = os.getenv(
     "VAPID_SUBJECT",
     "mailto:support@pgknma.space",
@@ -164,6 +175,10 @@ VAPID_SUBJECT = os.getenv(
 if WEB_PUSH_ENABLED and not all((VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT)):
     raise ImproperlyConfigured(
         "WEB_PUSH_ENABLED requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT."
+    )
+if not 1 <= WEB_PUSH_REQUEST_TIMEOUT_SECONDS <= 60:
+    raise ImproperlyConfigured(
+        "WEB_PUSH_REQUEST_TIMEOUT_SECONDS must be between 1 and 60."
     )
 _production_frontend_index = BASE_DIR.parent.parent / "dist" / "index.html"
 _local_frontend_index = BASE_DIR.parent.parent / "Frontend" / "dist" / "index.html"

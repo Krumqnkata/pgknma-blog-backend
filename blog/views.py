@@ -2413,13 +2413,14 @@ class PushSubscriptionView(APIView):
         created = subscription is None
         if subscription is None:
             subscription = PushSubscription(endpoint_hash=endpoint_hash)
-        elif not request.user.is_authenticated and not subscription.management_token_matches(
-            supplied_token
-        ):
+        elif not self._can_manage(request, subscription, supplied_token):
             # The browser encryption keys prove control of an existing local
-            # subscription and allow recovery after cleared localStorage.
+            # anonymous subscription and allow recovery after cleared
+            # localStorage. Authenticated users must be the current owner or
+            # present the device management token before linking it.
             owns_local_subscription = bool(
-                subscription.p256dh == values['p256dh']
+                not request.user.is_authenticated
+                and subscription.p256dh == values['p256dh']
                 and subscription.auth == values['auth']
             )
             if not owns_local_subscription:

@@ -19,6 +19,11 @@ from .notification_retention import (
     active_notification_q,
     expired_notification_q,
 )
+from .push_endpoints import (
+    NoRedirectWebPushSession,
+    UnsafePushEndpoint,
+    validate_web_push_endpoint,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -211,15 +216,38 @@ def send_notification_push(notification_id):
         delivery.attempts += 1
         delivery.last_attempt_at = now
         try:
-            webpush(
-                subscription_info={
-                    'endpoint': subscription.endpoint,
-                    'keys': {'p256dh': subscription.p256dh, 'auth': subscription.auth},
-                },
-                data=payload,
-                vapid_private_key=settings.VAPID_PRIVATE_KEY,
-                vapid_claims={'sub': settings.VAPID_SUBJECT},
-                ttl=ttl,
+            endpoint = validate_web_push_endpoint(
+                subscription.endpoint,
+                resolve_dns=True,
+            )
+            with NoRedirectWebPushSession() as requests_session:
+                webpush(
+                    subscription_info={
+                        'endpoint': endpoint,
+                        'keys': {'p256dh': subscription.p256dh, 'auth': subscription.auth},
+                    },
+                    data=payload,
+                    vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                    vapid_claims={'sub': settings.VAPID_SUBJECT},
+                    ttl=ttl,
+                    timeout=settings.WEB_PUSH_REQUEST_TIMEOUT_SECONDS,
+                    requests_session=requests_session,
+                )
+        except UnsafePushEndpoint:
+            delivery.status = PushDelivery.Status.CANCELLED
+            delivery.cancelled_at = now
+            delivery.save(update_fields=(
+                'status',
+                'attempts',
+                'last_attempt_at',
+                'cancelled_at',
+            ))
+            subscription.active = False
+            subscription.save(update_fields=('active', 'updated_at'))
+            result['skipped'] += 1
+            logger.warning(
+                'Disabled unsafe Web Push subscription %s.',
+                subscription.pk,
             )
         except WebPushException as exc:
             status_code = _response_status(exc)

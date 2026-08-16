@@ -26,6 +26,7 @@ from .network import get_client_ip
 from .session_auth import issue_session_tokens
 from .site_roles import get_site_role
 from .notification_retention import notification_is_expired
+from .push_endpoints import UnsafePushEndpoint, validate_web_push_endpoint
 
 
 def _user_profile(user):
@@ -747,12 +748,10 @@ class PushSubscriptionSerializer(serializers.ModelSerializer):
         )
 
     def validate_endpoint(self, value):
-        endpoint = value.strip()
-        if not endpoint.startswith('https://') and not (
-            settings.DEBUG and endpoint.startswith('http://localhost')
-        ):
-            raise serializers.ValidationError('Push endpoint-ът трябва да използва HTTPS.')
-        return endpoint
+        try:
+            return validate_web_push_endpoint(value)
+        except UnsafePushEndpoint as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
 
 class PageViewCreateSerializer(serializers.ModelSerializer):

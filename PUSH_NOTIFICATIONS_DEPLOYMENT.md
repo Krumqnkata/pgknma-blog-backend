@@ -10,7 +10,21 @@ python manage.py migrate
 python manage.py check
 ```
 
-## 2. Фонова команда
+## 2. Защитени Web Push endpoint-и
+
+Изпращането приема само HTTPS endpoint-и на познати browser push доставчици,
+не следва redirects и прекъсва бавна заявка след определения timeout. Стойностите
+имат безопасни defaults, но могат да бъдат записани изрично в production `.env`:
+
+```env
+WEB_PUSH_REQUEST_TIMEOUT_SECONDS=10
+WEB_PUSH_ALLOWED_ENDPOINT_HOSTS=fcm.googleapis.com,android.googleapis.com,push.services.mozilla.com,push.apple.com,notify.windows.com
+```
+
+Допълнителен host се добавя само след проверка, че е собственост на реално
+използвания push доставчик. Не добавяйте общи домейни, localhost или IP адреси.
+
+## 3. Фонова команда
 
 Командата публикува чакащите планирани известия, напомня за събития, отменя
 push доставките на вече изтекли известия и повтаря временно неуспешните
@@ -32,7 +46,7 @@ systemctl list-timers pgknma-notifications.timer
 
 Ако приложението е разположено в различна директория или работи с различен Linux потребител, първо се коригират `WorkingDirectory`, `ExecStart`, `User` и `Group` в service файла.
 
-## 3. Cloudflare
+## 4. Cloudflare
 
 Пътищата `/api/push/config/` и `/api/push/subscription/` трябва да връщат JSON и за посетител без вход. В Cloudflare не трябва да има Managed Challenge, JavaScript Challenge или кеширане за `/api/push/*`.
 
@@ -52,7 +66,7 @@ curl -i https://pgknma.space/api/push/config/
 
 Очаква се HTTP 200 и JSON, а не HTML страница „Just a moment…“.
 
-## 4. Apache
+## 5. Apache
 
 Съществуващото `ProxyPass /api/ http://127.0.0.1:8000/api/` вече обхваща Push API-то и не изисква отделен маршрут. След промяна на Apache конфигурация:
 

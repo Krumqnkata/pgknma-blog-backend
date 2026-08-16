@@ -3,7 +3,7 @@ from datetime import timedelta
 import json
 
 from django.contrib.auth.models import User
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
@@ -22,6 +22,11 @@ from .push import (
     retry_pending_push_notifications,
     send_notification_push,
     snapshot_notification_deliveries,
+)
+from .push_endpoints import (
+    NoRedirectWebPushSession,
+    UnsafePushEndpoint,
+    validate_web_push_endpoint,
 )
 
 
@@ -85,6 +90,7 @@ class GlobalSearchApiTests(APITestCase):
         self.assertEqual(response.data['results'], [])
 
 
+@override_settings(WEB_PUSH_ALLOWED_ENDPOINT_HOSTS=('push.example.test',))
 class PushSubscriptionApiTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='push-user', password='secret')
@@ -172,12 +178,133 @@ class PushSubscriptionApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(PushSubscription.objects.get().user, self.user)
 
+    def test_authenticated_user_cannot_take_over_another_users_subscription(self):
+        response = self.client.post('/api/push/subscription/', self.payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        subscription = PushSubscription.objects.get()
+
+        other_user = User.objects.create_user(username='other-push-user')
+        self.client.force_authenticate(other_user)
+        response = self.client.post(
+            '/api/push/subscription/',
+            {
+                **self.payload,
+                'p256dh': 'attacker-public-browser-key',
+                'auth': 'attacker-browser-auth-key',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.user, self.user)
+        self.assertEqual(subscription.p256dh, self.payload['p256dh'])
+        self.assertEqual(subscription.auth, self.payload['auth'])
+
+    def test_authenticated_user_can_transfer_subscription_with_device_token(self):
+        response = self.client.post('/api/push/subscription/', self.payload, format='json')
+        management_token = response.data['management_token']
+
+        other_user = User.objects.create_user(username='token-push-user')
+        self.client.force_authenticate(other_user)
+        response = self.client.post(
+            '/api/push/subscription/',
+            {**self.payload, 'management_token': management_token},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(PushSubscription.objects.get().user, other_user)
+
+    def test_arbitrary_https_endpoint_is_rejected(self):
+        self.payload['endpoint'] = 'https://attacker.example/push'
+
+        response = self.client.post('/api/push/subscription/', self.payload, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('endpoint', response.data)
+        self.assertFalse(PushSubscription.objects.exists())
+
+
+@override_settings(
+    DEBUG=False,
+    WEB_PUSH_ALLOWED_ENDPOINT_HOSTS=('push.example.test',),
+)
+class WebPushEndpointSecurityTests(SimpleTestCase):
+    def test_trusted_provider_endpoint_is_accepted(self):
+        endpoint = 'https://push.example.test/subscription/one?key=value'
+
+        self.assertEqual(validate_web_push_endpoint(endpoint), endpoint)
+
+    def test_endpoint_with_untrusted_host_is_rejected(self):
+        with self.assertRaises(UnsafePushEndpoint):
+            validate_web_push_endpoint('https://attacker.example/push')
+
+        with self.assertRaises(UnsafePushEndpoint):
+            validate_web_push_endpoint('https://push.example.test.attacker.example/push')
+
+    def test_endpoint_cannot_smuggle_host_or_custom_port(self):
+        unsafe_endpoints = (
+            'https://push.example.test@attacker.example/push',
+            'https://push.example.test:8443/push',
+            'https://push.example.test/push#attacker',
+        )
+
+        for endpoint in unsafe_endpoints:
+            with self.subTest(endpoint=endpoint), self.assertRaises(UnsafePushEndpoint):
+                validate_web_push_endpoint(endpoint)
+
+    @patch('blog.push_endpoints.socket.getaddrinfo')
+    def test_endpoint_resolving_to_private_network_is_rejected(self, getaddrinfo_mock):
+        getaddrinfo_mock.return_value = [
+            (2, 1, 6, '', ('127.0.0.1', 443)),
+        ]
+
+        with self.assertRaises(UnsafePushEndpoint):
+            validate_web_push_endpoint(
+                'https://push.example.test/subscription/one',
+                resolve_dns=True,
+            )
+
+    @patch('blog.push_endpoints.socket.getaddrinfo')
+    def test_endpoint_resolving_only_to_public_network_is_accepted(self, getaddrinfo_mock):
+        getaddrinfo_mock.return_value = [
+            (2, 1, 6, '', ('142.250.72.14', 443)),
+        ]
+        endpoint = 'https://push.example.test/subscription/one'
+
+        self.assertEqual(
+            validate_web_push_endpoint(endpoint, resolve_dns=True),
+            endpoint,
+        )
+
+    @override_settings(DEBUG=True)
+    def test_debug_localhost_exception_does_not_allow_similar_hosts(self):
+        self.assertEqual(
+            validate_web_push_endpoint('http://localhost:8080/push'),
+            'http://localhost:8080/push',
+        )
+        with self.assertRaises(UnsafePushEndpoint):
+            validate_web_push_endpoint('http://localhost.attacker.example/push')
+
+    @patch('requests.sessions.Session.request')
+    def test_push_http_session_disables_redirects_and_environment_proxies(
+        self,
+        request_mock,
+    ):
+        with NoRedirectWebPushSession() as session:
+            self.assertFalse(session.trust_env)
+            session.post('https://push.example.test/subscription/one', timeout=10)
+
+        self.assertFalse(request_mock.call_args.kwargs['allow_redirects'])
+
 
 @override_settings(
     WEB_PUSH_ENABLED=True,
     VAPID_PUBLIC_KEY='public-key',
     VAPID_PRIVATE_KEY='private-key',
     VAPID_SUBJECT='mailto:test@example.com',
+    WEB_PUSH_REQUEST_TIMEOUT_SECONDS=7,
 )
 class PushDeliveryTests(APITestCase):
     def setUp(self):
@@ -188,6 +315,12 @@ class PushDeliveryTests(APITestCase):
             p256dh='public-browser-key',
             auth='browser-auth-key',
         )
+        self.endpoint_validator_patcher = patch(
+            'blog.push.validate_web_push_endpoint',
+            side_effect=lambda endpoint, **kwargs: endpoint,
+        )
+        self.endpoint_validator = self.endpoint_validator_patcher.start()
+        self.addCleanup(self.endpoint_validator_patcher.stop)
 
     @patch('blog.push.webpush')
     def test_new_enabled_notification_is_sent_after_commit(self, webpush_mock):
@@ -215,8 +348,35 @@ class PushDeliveryTests(APITestCase):
 
         self.assertEqual(result['sent'], 1)
         webpush_mock.assert_called_once()
+        self.assertEqual(webpush_mock.call_args.kwargs['timeout'], 7)
+        requests_session = webpush_mock.call_args.kwargs['requests_session']
+        self.assertIsInstance(requests_session, NoRedirectWebPushSession)
+        self.assertFalse(requests_session.trust_env)
         payload = json.loads(webpush_mock.call_args.kwargs['data'])
         self.assertEqual(payload['url'], f'/notification/{notification.pk}')
+
+    @patch('blog.push.webpush')
+    def test_unsafe_stored_endpoint_is_cancelled_and_disabled(self, webpush_mock):
+        self.endpoint_validator.side_effect = UnsafePushEndpoint('unsafe endpoint')
+        subscription = PushSubscription.objects.get()
+        notification = Notification.objects.create(
+            user=self.user,
+            text='Не трябва да се изпрати',
+            enabled=False,
+        )
+        Notification.objects.filter(pk=notification.pk).update(enabled=True)
+        snapshot_notification_deliveries(notification.pk)
+
+        result = send_notification_push(notification.pk)
+
+        self.assertEqual(result['skipped'], 1)
+        webpush_mock.assert_not_called()
+        subscription.refresh_from_db()
+        self.assertFalse(subscription.active)
+        self.assertEqual(
+            PushDelivery.objects.get(notification=notification).status,
+            PushDelivery.Status.CANCELLED,
+        )
 
     @patch('blog.push.webpush')
     def test_expired_notification_does_not_create_or_send_pushes(self, webpush_mock):
