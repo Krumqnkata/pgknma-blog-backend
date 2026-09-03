@@ -2213,7 +2213,18 @@ class Event(models.Model):
     start_datetime = models.DateTimeField(verbose_name="Начална дата и час", help_text="Кога започва събитието. Формат: YYYY-MM-DD HH:MM:SS.")
     end_datetime = models.DateTimeField(blank=True, null=True, verbose_name="Крайна дата и час (по избор)", help_text="Кога приключва събитието (ако е приложимо). Формат: YYYY-MM-DD HH:MM:SS.")
     location = models.CharField(max_length=255, verbose_name="Местоположение", help_text="Къде ще се проведе събитието.")
-    category = models.CharField(max_length=100, verbose_name="Категория", help_text="Тип на събитието (напр. 'Училищно', 'Спортно').")
+    category = models.CharField(
+        max_length=100,
+        choices=[
+            ('Academic', 'Академично'),
+            ('Sports', 'Спортно'),
+            ('Arts', 'Изкуства'),
+            ('Community', 'Общностно'),
+            ('Holiday', 'Празник'),
+        ],
+        verbose_name="Категория",
+        help_text="Тип на събитието.",
+    )
     description = models.TextField(verbose_name="Описание", help_text="Подробно описание на събитието. Поддържа се Markdown.")
     attendees_text = models.CharField(max_length=255, verbose_name="Участници (текст)", help_text="Кой може да присъства (напр. 'Всички ученици', '8-12 клас').")
     published = models.BooleanField(default=True, verbose_name="Публикувано", help_text="Отбележете, за да се показва събитието на сайта.")
