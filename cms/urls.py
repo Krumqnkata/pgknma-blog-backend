@@ -22,6 +22,7 @@ from valentine import views
 from blog.serializer import MyTokenObtainPairView
 from blog.session_auth import SessionTokenRefreshSerializer
 from blog.views import blocked_meme_media, hqs, post_page
+from blog.admin_auth import admin_google_login, admin_google_login_callback
 from blog.admin_chat import (
     team_chat_attachment,
     team_chat_attachment_thumbnail,
@@ -154,6 +155,8 @@ urlpatterns = [
         admin.site.admin_view(team_chat_share_to_discussion),
         name='team-chat-share-to-discussion',
     ),
+    path("admin/google-login/", admin_google_login, name="admin_google_login"),
+    path("admin/google-login/callback/", admin_google_login_callback, name="admin_google_login_callback"),
     path('admin/', admin.site.urls),
 
     # Включване на всички пътища от приложението 'blog' под префикс 'api/'

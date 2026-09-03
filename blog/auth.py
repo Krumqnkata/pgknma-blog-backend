@@ -49,6 +49,119 @@ def _generate_available_username(email):
     raise RuntimeError("Unable to allocate a unique username")
 
 
+def verify_google_credential(credential):
+    if not getattr(settings, 'GOOGLE_CLIENT_ID', '').strip():
+        raise ValueError('Входът с Google временно не е достъпен.')
+
+    try:
+        id_info = id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
+    except ValueError:
+        raise
+    except Exception:
+        logger.exception("Google token verification failed unexpectedly")
+        raise ValueError('Входът с Google временно не е достъпен.')
+
+    issuer = id_info.get('iss')
+    subject = id_info.get('sub')
+    email = _verified_email(id_info)
+    if issuer not in VALID_GOOGLE_ISSUERS or not subject or not email:
+        raise ValueError('Невалиден Google token.')
+
+    try:
+        with transaction.atomic():
+            site_settings, _ = (
+                SiteSettings.objects.select_for_update()
+                .get_or_create(pk=1)
+            )
+            identity = (
+                GoogleIdentity.objects.select_for_update()
+                .select_related('user')
+                .filter(issuer=GOOGLE_ISSUER, subject=subject)
+                .first()
+            )
+
+            if identity:
+                user = identity.user
+                if not user.is_active:
+                    raise ValueError('Акаунтът не е достъпен.')
+                if identity.email_at_link_time != email:
+                    identity.email_at_link_time = email
+                    identity.save(update_fields=['email_at_link_time', 'updated_at'])
+            else:
+                email_matches = list(
+                    User.objects.select_for_update()
+                    .filter(email__iexact=email)
+                    .order_by('pk')[:2]
+                )
+                if (
+                    len(email_matches) == 1
+                    and email_matches[0].is_active
+                    and not email_matches[0].has_usable_password()
+                ):
+                    user = email_matches[0]
+                    user.email = email
+                    user.set_unusable_password()
+                    user.save(update_fields=['email', 'password'])
+                    UserProfile.objects.get_or_create(user=user)
+                    GoogleIdentity.objects.create(
+                        user=user,
+                        issuer=GOOGLE_ISSUER,
+                        subject=subject,
+                        email_at_link_time=email,
+                    )
+                elif email_matches:
+                    raise ValueError(
+                        'Вече съществува акаунт с този имейл. '
+                        'Влезте по обичайния начин, за да го свържете.'
+                    )
+                else:
+                    if site_settings.maintenance_mode:
+                        raise ValueError(
+                            'Сайтът временно е в режим на поддръжка.'
+                        )
+                    if not site_settings.enable_user_registration:
+                        raise ValueError(
+                            'Регистрацията временно е деактивирана.'
+                        )
+
+                    user = User(
+                        username=_generate_available_username(email),
+                        email=email,
+                        first_name=(
+                            id_info.get('given_name') or ''
+                        ).strip(),
+                        last_name=(
+                            id_info.get('family_name') or ''
+                        ).strip(),
+                        is_active=True,
+                    )
+                    user.set_unusable_password()
+                    user.save()
+                    UserProfile.objects.get_or_create(user=user)
+                    GoogleIdentity.objects.create(
+                        user=user,
+                        issuer=GOOGLE_ISSUER,
+                        subject=subject,
+                        email_at_link_time=email,
+                    )
+    except IntegrityError:
+        identity = (
+            GoogleIdentity.objects.select_related('user')
+            .filter(issuer=GOOGLE_ISSUER, subject=subject)
+            .first()
+        )
+        if not identity or not identity.user.is_active:
+            raise ValueError('Неуспешно създаване на акаунт.')
+        user = identity.user
+
+    mark_google_email_verified(user)
+    return user, id_info
+
+
 class GoogleAuthView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = 'google_auth'
@@ -60,164 +173,14 @@ class GoogleAuthView(APIView):
                 {'error': 'Липсва Google credential token.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if not getattr(settings, 'GOOGLE_CLIENT_ID', '').strip():
-            return Response(
-                {'error': 'Входът с Google временно не е достъпен.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
 
         try:
-            id_info = id_token.verify_oauth2_token(
-                token,
-                google_requests.Request(),
-                settings.GOOGLE_CLIENT_ID,
-            )
-        except ValueError:
+            user, id_info = verify_google_credential(token)
+        except ValueError as exc:
             return Response(
-                {'error': 'Невалиден Google token.'},
+                {'error': str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        except Exception:
-            logger.exception("Google token verification failed unexpectedly")
-            return Response(
-                {'error': 'Входът с Google временно не е достъпен.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        issuer = id_info.get('iss')
-        subject = id_info.get('sub')
-        email = _verified_email(id_info)
-        if issuer not in VALID_GOOGLE_ISSUERS or not subject or not email:
-            return Response(
-                {'error': 'Невалиден Google token.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        try:
-            with transaction.atomic():
-                site_settings, _ = (
-                    SiteSettings.objects.select_for_update()
-                    .get_or_create(pk=1)
-                )
-                identity = (
-                    GoogleIdentity.objects.select_for_update()
-                    .select_related('user')
-                    .filter(issuer=GOOGLE_ISSUER, subject=subject)
-                    .first()
-                )
-
-                if identity:
-                    user = identity.user
-                    if not user.is_active:
-                        return Response(
-                            {'error': 'Акаунтът не е достъпен.'},
-                            status=status.HTTP_403_FORBIDDEN,
-                        )
-                    if identity.email_at_link_time != email:
-                        identity.email_at_link_time = email
-                        identity.save(update_fields=['email_at_link_time', 'updated_at'])
-                else:
-                    # E-mail alone is not proof of ownership for linking. An
-                    # existing local account must be linked from an authenticated
-                    # profile flow rather than silently claimed here. The sole
-                    # exception is an unambiguous legacy Google-only account.
-                    # Older versions used either an empty password or Django's
-                    # standard unusable-password marker, so use the public API
-                    # instead of checking the stored hash directly.
-                    email_matches = list(
-                        User.objects.select_for_update()
-                        .filter(email__iexact=email)
-                        .order_by('pk')[:2]
-                    )
-                    if (
-                        len(email_matches) == 1
-                        and email_matches[0].is_active
-                        and not email_matches[0].has_usable_password()
-                    ):
-                        user = email_matches[0]
-                        user.email = email
-                        user.set_unusable_password()
-                        user.save(update_fields=['email', 'password'])
-                        UserProfile.objects.get_or_create(user=user)
-                        GoogleIdentity.objects.create(
-                            user=user,
-                            issuer=GOOGLE_ISSUER,
-                            subject=subject,
-                            email_at_link_time=email,
-                        )
-                    elif email_matches:
-                        return Response(
-                            {
-                                'error': (
-                                    'Вече съществува акаунт с този имейл. '
-                                    'Влезте по обичайния начин, за да го свържете.'
-                                )
-                            },
-                            status=status.HTTP_409_CONFLICT,
-                        )
-                    else:
-                        if site_settings.maintenance_mode:
-                            return Response(
-                                {
-                                    'error': (
-                                        'Сайтът временно е в режим '
-                                        'на поддръжка.'
-                                    )
-                                },
-                                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                            )
-                        if not site_settings.enable_user_registration:
-                            return Response(
-                                {
-                                    'error': (
-                                        'Регистрацията временно е деактивирана.'
-                                    )
-                                },
-                                status=status.HTTP_403_FORBIDDEN,
-                            )
-
-                        user = User(
-                            username=_generate_available_username(email),
-                            email=email,
-                            first_name=(
-                                id_info.get('given_name') or ''
-                            ).strip(),
-                            last_name=(
-                                id_info.get('family_name') or ''
-                            ).strip(),
-                            is_active=True,
-                        )
-                        user.set_unusable_password()
-                        user.save()
-                        UserProfile.objects.get_or_create(user=user)
-                        GoogleIdentity.objects.create(
-                            user=user,
-                            issuer=GOOGLE_ISSUER,
-                            subject=subject,
-                            email_at_link_time=email,
-                        )
-        except IntegrityError:
-            # A concurrent request may have created the same identity. Do not
-            # expose database details or guess-link by e-mail.
-            identity = (
-                GoogleIdentity.objects.select_related('user')
-                .filter(issuer=GOOGLE_ISSUER, subject=subject)
-                .first()
-            )
-            if not identity or not identity.user.is_active:
-                return Response(
-                    {'error': 'Неуспешно създаване на акаунт.'},
-                    status=status.HTTP_409_CONFLICT,
-                )
-            user = identity.user
-        except Exception:
-            logger.exception("Google account sign-in failed unexpectedly")
-            return Response(
-                {'error': 'Входът с Google временно не е достъпен.'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        mark_google_email_verified(user)
 
         try:
             import_google_avatar_once(user, id_info.get('picture'))

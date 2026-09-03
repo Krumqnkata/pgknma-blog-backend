@@ -123,6 +123,7 @@ if ENABLE_GOOGLE_AUTH and not configured_google_client_id:
 GOOGLE_CLIENT_ID = (
     configured_google_client_id if ENABLE_GOOGLE_AUTH else ""
 )
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "").strip()
 if not DEBUG and not TURNSTILE_SECRET_KEY:
     raise ImproperlyConfigured(
@@ -280,6 +281,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'blog.context_processors.google_client_id',
             ],
         },
     },
