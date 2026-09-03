@@ -315,7 +315,7 @@ IS_PRODUCTION_SQLITE = (
 if IS_PRODUCTION_SQLITE and not ALLOW_PRODUCTION_SQLITE:
     raise ImproperlyConfigured(
         "SQLite in production requires the explicit "
-        "ALLOW_PRODUCTION_SQLITE=true opt-in. Read DEPLOYMENT.md first."
+        "ALLOW_PRODUCTION_SQLITE=true opt-in. Read docs/operations/DEPLOYMENT.md first."
     )
 
 if DB_ENGINE == "django.db.backends.sqlite3":

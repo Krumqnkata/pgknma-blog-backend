@@ -2,9 +2,9 @@
 """Award the founding-member badge to active users already in the blog.
 
 Examples:
-    python award_blog_pioneer_badge.py --dry-run
-    python award_blog_pioneer_badge.py
-    python award_blog_pioneer_badge.py --select-title
+    python scripts/award_blog_pioneer_badge.py --dry-run
+    python scripts/award_blog_pioneer_badge.py
+    python scripts/award_blog_pioneer_badge.py --select-title
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ for stream in (sys.stdout, sys.stderr):
     except (AttributeError, OSError):
         pass
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cms.settings')
 

@@ -2,10 +2,10 @@
 """Add or remove a reusable set of test digital rewards for one user.
 
 Examples:
-    python add_test_digital_rewards.py --username admin
-    python add_test_digital_rewards.py --username admin --no-select
-    python add_test_digital_rewards.py --username admin --remove
-    python add_test_digital_rewards.py --purge
+    python scripts/add_test_digital_rewards.py --username admin
+    python scripts/add_test_digital_rewards.py --username admin --no-select
+    python scripts/add_test_digital_rewards.py --username admin --remove
+    python scripts/add_test_digital_rewards.py --purge
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ for stream in (sys.stdout, sys.stderr):
     except (AttributeError, OSError):
         pass
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cms.settings')
 

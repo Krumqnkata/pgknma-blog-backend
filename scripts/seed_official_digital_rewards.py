@@ -2,10 +2,10 @@
 """Create the official digital-reward catalogue and optionally grant it.
 
 Examples:
-    python seed_official_digital_rewards.py
-    python seed_official_digital_rewards.py --link-badges
-    python seed_official_digital_rewards.py --link-badges --grant-to admin
-    python seed_official_digital_rewards.py --grant-to admin --select
+    python scripts/seed_official_digital_rewards.py
+    python scripts/seed_official_digital_rewards.py --link-badges
+    python scripts/seed_official_digital_rewards.py --link-badges --grant-to admin
+    python scripts/seed_official_digital_rewards.py --grant-to admin --select
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ for stream in (sys.stdout, sys.stderr):
     except (AttributeError, OSError):
         pass
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cms.settings')
 
