@@ -526,6 +526,22 @@ class PostAdminForm(forms.ModelForm):
     class Media:
         js = ('blog/admin/post_gallery_upload.js',)
 
+    def clean(self):
+        cleaned = super().clean()
+        categories = cleaned.get('categories')
+        from blog.models import Category, GENERAL_CATEGORY_SLUG, MAX_POST_CATEGORIES
+
+        if categories is not None:
+            if len(categories) > MAX_POST_CATEGORIES:
+                raise ValidationError(
+                    {'categories': f'Могат да бъдат избрани най-много {MAX_POST_CATEGORIES} категории.'}
+                )
+            general = Category.objects.filter(short_name=GENERAL_CATEGORY_SLUG).first()
+            if general and general not in categories:
+                cleaned['categories'] = list(categories) + [general]
+
+        return cleaned
+
     def clean_gallery_images(self):
         images = self.cleaned_data.get('gallery_images') or []
         if not isinstance(images, (list, tuple)):

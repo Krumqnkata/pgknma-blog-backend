@@ -35,29 +35,28 @@ class GlobalSearchApiTests(APITestCase):
         self.category = Category.objects.create(full_name='Училищни новини')
         self.public_post = Posts.objects.create(
             title='Олимпиада по математика',
-            category=self.category,
             hook='Успех за училищния отбор',
             content='Публично съдържание',
             published=True,
             allowed=True,
         )
+        self.public_post.categories.add(self.category)
         Posts.objects.create(
             title='Олимпиада скрита чернова',
-            category=self.category,
             hook='Не трябва да се вижда',
             content='Чернова',
             published=False,
             allowed=True,
         )
-        Posts.objects.create(
+        scheduled = Posts.objects.create(
             title='Олимпиада с бъдеща дата',
-            category=self.category,
             hook='Все още скрита',
             content='Насрочена',
             published=True,
             allowed=True,
             published_at=timezone.now() + timedelta(days=1),
         )
+        scheduled.categories.add(self.category)
         Event.objects.create(
             title='Олимпиада по математика',
             start_datetime=timezone.now(),

@@ -182,7 +182,13 @@ class Category(models.Model):
 
 class Posts(models.Model):
     title = models.CharField(max_length=100, blank=False, help_text="Заглавието на публикацията до 100 символа.")
-    category = models.ForeignKey(Category, on_delete=models.PROTECT, help_text="Категорията, към която принадлежи публикацията.")
+    categories = models.ManyToManyField(
+        Category,
+        related_name='posts',
+        blank=True,
+        verbose_name="Категории",
+        help_text="Категориите, към които принадлежи публикацията. 'Общи' се добавя автоматично. Максимум 3.",
+    )
     banner = models.ImageField(upload_to=post_banner_upload_path, blank=True, null=True, validators=[validate_image_upload_size], help_text="Банер изображение, което ще се показва в горната част на публикацията.")
     hook = models.TextField(max_length=100, help_text="Кратко въведение или 'кукичка', което да привлече вниманието на читателя до 100 символа.")
     content = models.TextField(blank=False, help_text="Пълното съдържание на публикацията. Поддържа се Markdown формат.")
@@ -229,6 +235,16 @@ class Posts(models.Model):
 
     def __str__(self):
         return self.title
+
+    def clean(self):
+        super().clean()
+        if self.pk and self.categories.count() > 3:
+            raise ValidationError(
+                {'categories': 'Могат да бъдат избрани най-много 3 категории.'}
+            )
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
 
 class Comments(models.Model):
     content = models.TextField(blank=False, help_text="Съдържанието на коментара.")
@@ -943,6 +959,47 @@ class EmailVerificationToken(models.Model):
 def ensure_blog_user_profile(sender, instance, created, raw=False, **kwargs):
     if created and not raw:
         UserProfile.objects.get_or_create(user=instance)
+
+
+GENERAL_CATEGORY_SLUG = 'default'
+MAX_POST_CATEGORIES = 3
+
+
+@receiver(m2m_changed, sender=Posts.categories.through)
+def enforce_post_category_limits(sender, instance, action, reverse, model, pk_set, **kwargs):
+    if reverse:
+        return
+
+    if action == 'pre_clear':
+        # M2M set() calls clear() first then add(). Allow clear
+        # unconditionally — Общи will be re-added in post_add if missing.
+        return
+
+    if action == 'post_clear':
+        general = Category.objects.filter(short_name=GENERAL_CATEGORY_SLUG).first()
+        if general:
+            instance.categories.add(general)
+        return
+
+    if action == 'post_remove':
+        general = Category.objects.filter(short_name=GENERAL_CATEGORY_SLUG).first()
+        if general and not instance.categories.filter(pk=general.pk).exists():
+            instance.categories.add(general)
+        return
+
+    if action == 'pre_add':
+        general = Category.objects.filter(short_name=GENERAL_CATEGORY_SLUG).first()
+        if general and not instance.categories.filter(pk=general.pk).exists():
+            pk_set.add(general.pk)
+        current = instance.categories.count()
+        added = sum(
+            1 for pk in (pk_set or set())
+            if not instance.categories.filter(pk=pk).exists()
+        )
+        if current + added > MAX_POST_CATEGORIES:
+            raise ValidationError(
+                f'Могат да бъдат избрани най-много {MAX_POST_CATEGORIES} категории.'
+            )
 
 
 # Create your models here.

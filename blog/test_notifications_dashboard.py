@@ -298,13 +298,13 @@ class PageViewAndAdminDashboardTests(TestCase):
         )
         self.post = Posts.objects.create(
             title='Популярна публикация',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             author=self.admin_user,
             published=True,
             allowed=True,
         )
+        self.post.categories.add(self.category)
 
     def test_page_view_endpoint_tracks_post_without_network_metadata(self):
         client = APIClient()

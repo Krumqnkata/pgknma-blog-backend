@@ -65,7 +65,7 @@ def build_personal_data_export(user):
         {
             'id': post.pk,
             'title': post.title,
-            'category': post.category.full_name,
+            'categories': [c.full_name for c in post.categories.all()],
             'hook': post.hook,
             'content': post.content,
             'banner_file': _file_name(post.banner),
@@ -76,7 +76,7 @@ def build_personal_data_export(user):
         }
         for post in (
             Posts.objects.filter(author=user)
-            .select_related('category')
+            .prefetch_related('categories')
             .order_by('created_at', 'pk')
         )
     ]

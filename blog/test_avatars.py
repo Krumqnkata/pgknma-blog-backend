@@ -174,13 +174,13 @@ class AvatarApiTests(APITestCase):
         category = Category.objects.create(full_name='Новини', short_name='news')
         post = Posts.objects.create(
             title='Тестова публикация',
-            category=category,
             hook='Тест',
             content='Съдържание',
             author=self.user,
             published=True,
             allowed=True,
         )
+        post.categories.add(category)
         Comments.objects.create(content='Коментар', user=self.user, post=post)
 
         post_response = self.client.get(f'/api/posts/{post.pk}/')

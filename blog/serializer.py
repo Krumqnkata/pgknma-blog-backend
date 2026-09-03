@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
     validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge, UserDigitalReward, \
-    NotificationPreference, PageView, PushSubscription
+    NotificationPreference, PageView, PushSubscription, Category
 from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
 from django.conf import settings
 from django.contrib.auth.models import User, update_last_login
@@ -230,7 +230,8 @@ class PostSerializer(serializers.ModelSerializer):
     author_avatar_url = serializers.SerializerMethodField()
     author_site_role = serializers.SerializerMethodField()
     author_equipped_rewards = serializers.SerializerMethodField()
-    category_name = serializers.StringRelatedField(source='category')
+    category_name = serializers.SerializerMethodField()
+    categories = serializers.SerializerMethodField()
     images = serializers.SerializerMethodField()
     gallery = PostImageSerializer(source='images', many=True, read_only=True)
     documents = serializers.SerializerMethodField()
@@ -241,10 +242,10 @@ class PostSerializer(serializers.ModelSerializer):
         model = Posts
         fields = (
             'id',
-            'category',       # Запазваме ID за бъдещи филтрирания
-            'category_name',  # ⬅️ Добавено: Име на категория
-            'author',         # Запазваме ID на автора
-            'author_username',# ⬅️ Добавено: Потребителско име
+            'category_name',
+            'categories',
+            'author',
+            'author_username',
             'author_avatar_url',
             'author_site_role',
             'author_equipped_rewards',
@@ -266,6 +267,16 @@ class PostSerializer(serializers.ModelSerializer):
         if obj.banner and hasattr(obj.banner, 'url'):
             return obj.banner.url
         return None
+
+    def get_category_name(self, obj):
+        first = obj.categories.first()
+        return first.full_name if first else None
+
+    def get_categories(self, obj):
+        return [
+            {'id': c.pk, 'full_name': c.full_name, 'short_name': c.short_name}
+            for c in obj.categories.all()
+        ]
 
     def get_author_username(self, obj):
         return obj.author.username if obj.author else None

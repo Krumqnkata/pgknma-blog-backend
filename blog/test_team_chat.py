@@ -364,11 +364,11 @@ class TeamChatSharingTests(TestCase):
         )
         self.post = Posts.objects.create(
             title='Защитено заглавие на публикация',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             author=self.superuser,
         )
+        self.post.categories.add(self.category)
 
     def _request_for(self, user):
         request = RequestFactory().get('/admin/team-chat/')

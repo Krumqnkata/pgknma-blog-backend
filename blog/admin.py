@@ -811,10 +811,11 @@ class PostsAdmin(ModelAdmin):
     form = PostAdminForm
     inlines = (PostImageInline,)
     readonly_fields_base = ('author', 'created_at')
-    list_display = ('title', 'author', 'publication_status', 'published_at', 'created_at')
-    list_filter = ('published', 'allowed', 'category', 'published_at', 'created_at')
+    list_display = ('title', 'author', 'categories_display', 'publication_status', 'published_at', 'created_at')
+    list_filter = ('published', 'allowed', 'categories', 'published_at', 'created_at')
     search_fields = ('title', 'content')
     exclude = ('author',)
+    filter_horizontal = ('categories',)
 
     @admin.display(description='Статус', ordering='published_at')
     def publication_status(self, obj):
@@ -825,6 +826,10 @@ class PostsAdmin(ModelAdmin):
         if obj.published_at and obj.published_at > timezone.now():
             return f'Планирана за {obj.published_at.strftime("%d.%m.%Y %H:%M")}'
         return 'Публикувана'
+
+    @admin.display(description='Категории')
+    def categories_display(self, obj):
+        return ', '.join(c.full_name for c in obj.categories.all()) or '—'
 
     # V V V ДОБАВЯНЕ НА MARKDOWN ВИДЖЕТ V V V
     def formfield_for_dbfield(self, db_field, request, **kwargs):
@@ -895,7 +900,7 @@ class PostsAdmin(ModelAdmin):
 
     # V V V КОРЕКЦИЯ НА GET_QUERYSET V V V
     def get_queryset(self, request):
-        qs = super().get_queryset(request)
+        qs = super().get_queryset(request).prefetch_related('categories')
         user = request.user
         if user.is_superuser:
             return qs

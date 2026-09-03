@@ -49,13 +49,13 @@ class AutomaticContentNotificationTests(APITestCase):
     def test_scheduled_post_notifies_once_when_it_becomes_public(self):
         post = Posts.objects.create(
             title='Планирана публикация',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             published=True,
             allowed=True,
             published_at=self.now + timedelta(hours=1),
         )
+        post.categories.add(self.category)
         self.assertFalse(Notification.objects.filter(category=CONTENT_POST).exists())
 
         Posts.objects.filter(pk=post.pk).update(published_at=self.now - timedelta(minutes=1))
@@ -177,12 +177,12 @@ class PersonalAutomaticNotificationTests(APITestCase):
         )
         self.post = Posts.objects.create(
             title='Публикация с коментари',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             published=True,
             allowed=True,
         )
+        self.post.categories.add(self.category)
 
     def test_reply_notifies_only_parent_comment_author(self):
         parent = Comments.objects.create(content='Начален коментар', user=self.user, post=self.post)
@@ -275,14 +275,15 @@ class NotificationSourceLifecycleTests(APITestCase):
         )
 
     def create_public_post(self):
-        return Posts.objects.create(
+        post = Posts.objects.create(
             title='Публикация с известие',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             published=True,
             allowed=True,
         )
+        post.categories.add(self.category)
+        return post
 
     def test_deleting_public_content_hides_notice_and_cancels_pending_push(self):
         post = self.create_public_post()
@@ -418,12 +419,12 @@ class NotificationSourceLifecycleTests(APITestCase):
     def test_repair_command_links_and_cleans_legacy_notice(self):
         draft = Posts.objects.create(
             title='Скрита стара публикация',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             published=False,
             allowed=False,
         )
+        draft.categories.add(self.category)
         legacy = Notification.objects.create(
             text='Старо автоматично известие',
             category=CONTENT_POST,

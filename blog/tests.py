@@ -74,9 +74,9 @@ def public_post(author, suffix='one', **overrides):
         full_name=f'Category {suffix}',
         short_name=f'category-{suffix}',
     )
+    categories = overrides.pop('categories', None)
     values = {
         'title': f'Post {suffix}',
-        'category': category,
         'hook': 'Hook',
         'content': 'Content',
         'author': author,
@@ -84,7 +84,12 @@ def public_post(author, suffix='one', **overrides):
         'allowed': True,
     }
     values.update(overrides)
-    return Posts.objects.create(**values)
+    post = Posts.objects.create(**values)
+    if categories is not None:
+        post.categories.set(categories)
+    else:
+        post.categories.add(category)
+    return post
 
 
 @override_settings(PUBLIC_SITE_URL='https://pgknma.space')
@@ -1197,12 +1202,14 @@ class PreservationAndCompatibilityTests(TestCase):
         self.assertIsNone(comment.user)
         self.assertIsNone(answer.user)
 
-    def test_category_with_posts_is_protected(self):
+    def test_category_clear_re_adds_general(self):
         user = make_user()
         post = public_post(user, 'protected-category')
 
-        with self.assertRaises(ProtectedError):
-            post.category.delete()
+        post.categories.clear()
+
+        self.assertEqual(post.categories.count(), 1)
+        self.assertEqual(post.categories.first().short_name, 'default')
 
     def test_consent_record_is_top_level_with_legacy_alias(self):
         self.assertIs(Cookie.ConsentRecord, ConsentRecord)

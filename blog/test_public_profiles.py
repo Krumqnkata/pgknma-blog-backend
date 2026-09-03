@@ -45,20 +45,20 @@ class PublicUserProfileTests(TestCase):
         )
         self.public_post = Posts.objects.create(
             title='Публична публикация',
-            category=category,
             hook='Описание',
             content='Съдържание',
             published=True,
             allowed=True,
         )
+        self.public_post.categories.add(category)
         self.private_post = Posts.objects.create(
             title='Чернова',
-            category=category,
             hook='Описание',
             content='Съдържание',
             published=False,
             allowed=False,
         )
+        self.private_post.categories.add(category)
 
     def test_public_profile_hides_email_by_default_but_owner_can_see_it(self):
         public_response = self.client.get(self.url)

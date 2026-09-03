@@ -163,7 +163,7 @@ def _post_social_head(post):
   <meta property="og:image:type" content="{escape(image_type)}">
   <meta property="og:image:alt" content="{escape(post.title)}">
   <meta property="article:published_time" content="{published_at.isoformat()}">
-  <meta property="article:section" content="{escape(str(post.category))}">
+  <meta property="article:section" content="{escape(post.categories.first().full_name if post.categories.first() else '')}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{escape(metadata['title'])}">
   <meta name="twitter:description" content="{escape(metadata['description'])}">
@@ -249,10 +249,11 @@ class PostViewSet(viewsets.ModelViewSet):
         ).select_related('reward')
         return with_current_month_views(
             _public_posts_queryset()
-            .select_related('author', 'author__userprofile', 'category')
+            .select_related('author', 'author__userprofile')
             .prefetch_related(
                 'images',
                 'documents',
+                'categories',
                 Prefetch(
                     'author__digital_rewards',
                     queryset=equipped_rewards,
@@ -2504,9 +2505,11 @@ class GlobalSearchView(APIView):
             Q(title__icontains=query)
             | Q(hook__icontains=query)
             | Q(content__icontains=query)
-            | Q(category__full_name__icontains=query)
-        ).select_related('category')[:6]
+            | Q(categories__full_name__icontains=query)
+        ).distinct().prefetch_related('categories')[:6]
         for post in posts:
+            first_category = post.categories.first()
+            meta = first_category.full_name if first_category else ''
             results.append({
                 'kind': 'post',
                 'id': post.pk,
@@ -2514,7 +2517,7 @@ class GlobalSearchView(APIView):
                 'description': Truncator(strip_tags(post.hook or post.content)).chars(140),
                 'url': f'/post/{post.pk}',
                 'image_url': post.banner.url if post.banner else '',
-                'meta': post.category.full_name,
+                'meta': meta,
             })
 
         events = Event.objects.filter(published=True).filter(

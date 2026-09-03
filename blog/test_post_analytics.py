@@ -24,13 +24,13 @@ class PostMonthlyViewsTests(TestCase):
         )
         self.post = Posts.objects.create(
             title='Месечна статистика',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             author=self.author,
             published=True,
             allowed=True,
         )
+        self.post.categories.add(self.category)
 
     def _create_view_at(self, value: datetime) -> None:
         page_view = PageView.objects.create(

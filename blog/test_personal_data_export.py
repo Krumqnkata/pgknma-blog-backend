@@ -47,11 +47,11 @@ class PersonalDataExportTests(APITestCase):
         )
         self.post = Posts.objects.create(
             title='Тестова публикация',
-            category=category,
             hook='Кратко описание',
             content='Съдържание на публикацията',
             author=self.user,
         )
+        self.post.categories.add(category)
         self.own_comment = Comments.objects.create(
             user=self.user,
             post=self.post,

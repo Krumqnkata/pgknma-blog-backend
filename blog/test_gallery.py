@@ -39,13 +39,13 @@ class GalleryTestMixin:
         )
         self.post = Posts.objects.create(
             title='Публикация с галерия',
-            category=self.category,
             hook='Кратко описание',
             content='Съдържание',
             author=self.author,
             published=True,
             allowed=True,
         )
+        self.post.categories.add(self.category)
 
     def _cleanup_media(self):
         self.media_override.disable()
@@ -138,7 +138,7 @@ class PostGalleryFormTests(GalleryTestMixin, TestCase):
         form = PostAdminForm(
             data={
                 'title': self.post.title,
-                'category': self.category.pk,
+                'categories': [self.category.pk],
                 'hook': self.post.hook,
                 'content': self.post.content,
                 'published': 'on',

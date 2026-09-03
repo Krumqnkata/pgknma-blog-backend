@@ -551,18 +551,18 @@ class AuthorObjectScopeTests(TestCase):
         category = Category.objects.create(full_name="Scope", short_name="scope")
         cls.own_post = Posts.objects.create(
             title="Own post",
-            category=category,
             hook="Own",
             content="Own",
             author=cls.author,
         )
+        cls.own_post.categories.add(category)
         cls.foreign_post = Posts.objects.create(
             title="Foreign post",
-            category=category,
             hook="Foreign",
             content="Foreign",
             author=cls.other_author,
         )
+        cls.foreign_post.categories.add(category)
         cls.own_image, cls.foreign_image = PostImage.objects.bulk_create(
             [
                 PostImage(post=cls.own_post, image="posts/own.jpg"),
