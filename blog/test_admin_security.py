@@ -29,7 +29,6 @@ from .forms import (
 )
 from .models import (
     BellSongSuggestion,
-    Category,
     Comments,
     MemeOfWeek,
     PostDocument,
@@ -126,15 +125,10 @@ class PostMediaPathTests(TestCase):
             password='test-password',
             is_staff=True,
         )
-        category = Category.objects.create(
-            full_name='Новини',
-            short_name='news',
-        )
         request = RequestFactory().post('/admin/blog/posts/add/')
         request.user = author
         post = Posts(
             title='Публикация с файлове',
-            category=category,
             banner=self._image('banner.png'),
             hook='Кратко описание',
             content='Съдържание',

@@ -797,10 +797,10 @@ class PostImageInline(StackedInline):
         if not obj or not obj.image:
             return 'Ще се появи след записване.'
         return format_html(
-            '<img src="{}" alt="{}" '
+            '<img src="{}" alt="{}" loading="lazy" decoding="async" '
             'style="width:220px;height:150px;object-fit:cover;'
             'object-position:{}% {}%;border-radius:10px;" />',
-            obj.image.url,
+            (obj.thumbnail_image or obj.image).url,
             obj.alt_text or obj.title or '',
             obj.focus_x,
             obj.focus_y,
@@ -877,14 +877,25 @@ class PostsAdmin(ModelAdmin):
         )['max_position']
         next_position = 0 if last_position is None else last_position + 1
         has_featured_image = obj.images.filter(is_featured=True).exists()
-        for offset, image in enumerate(images):
-            PostImage.objects.create(
-                post=obj,
-                image=image,
-                position=next_position + offset,
-                is_featured=not has_featured_image and offset == 0,
-                file_hash=getattr(image, '_post_image_sha256', None),
-            )
+        created_images = []
+        try:
+            with transaction.atomic():
+                for offset, image in enumerate(images):
+                    created_images.append(PostImage.objects.create(
+                        post=obj,
+                        image=image,
+                        position=next_position + offset,
+                        is_featured=not has_featured_image and offset == 0,
+                        file_hash=getattr(image, '_post_image_sha256', None),
+                    ))
+        except Exception:
+            # The admin wraps DB work in a transaction, but a rolled-back
+            # multipart upload otherwise leaves successful earlier files.
+            for created in created_images:
+                for field in (created.image, created.display_image, created.thumbnail_image):
+                    if field:
+                        field.storage.delete(field.name)
+            raise
 
         # Handle multiple document uploads
         documents = form.cleaned_data.get('gallery_documents') or []
@@ -1527,10 +1538,10 @@ class PostImageAdmin(ModelAdmin):
     def image_preview(self, obj):
         if obj.image:
             return format_html(
-                '<img src="{}" alt="{}" '
+                '<img src="{}" alt="{}" loading="lazy" decoding="async" '
                 'style="width:150px;height:110px;object-fit:cover;'
                 'object-position:{}% {}%;border-radius:8px;" />',
-                obj.image.url,
+                (obj.thumbnail_image or obj.image).url,
                 obj.alt_text or obj.title or '',
                 obj.focus_x,
                 obj.focus_y,

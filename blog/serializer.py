@@ -188,12 +188,16 @@ class AvatarUpdateResponseSerializer(serializers.Serializer):
 
 class PostImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
+    display_url = serializers.SerializerMethodField()
+    thumbnail_url = serializers.SerializerMethodField()
 
     class Meta:
         model = PostImage
         fields = (
             'id',
             'image_url',
+            'display_url',
+            'thumbnail_url',
             'title',
             'alt_text',
             'position',
@@ -206,6 +210,12 @@ class PostImageSerializer(serializers.ModelSerializer):
         if obj.image and hasattr(obj.image, 'url'):
             return obj.image.url
         return None
+
+    def get_display_url(self, obj) -> str | None:
+        return obj.display_image.url if obj.display_image else self.get_image_url(obj)
+
+    def get_thumbnail_url(self, obj) -> str | None:
+        return obj.thumbnail_image.url if obj.thumbnail_image else self.get_image_url(obj)
 
 class PostDocumentSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()

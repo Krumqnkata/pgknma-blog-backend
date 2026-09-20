@@ -24,6 +24,7 @@ from .avatars import (
     validate_avatar_upload_size,
 )
 from .team_chat_storage import team_chat_protected_storage
+from .post_images import make_post_image_variants
 
 
 def team_chat_attachment_upload_path(instance, filename):
@@ -93,6 +94,12 @@ def post_banner_upload_path(instance, filename):
 
 def post_gallery_upload_path(instance, filename):
     return post_media_upload_path(instance, filename, 'gallery')
+
+def post_gallery_display_upload_path(instance, filename):
+    return post_media_upload_path(instance, filename, 'gallery-display')
+
+def post_gallery_thumbnail_upload_path(instance, filename):
+    return post_media_upload_path(instance, filename, 'gallery-thumbnails')
 
 def post_document_upload_path(instance, filename):
     return post_media_upload_path(instance, filename, 'documents')
@@ -2091,6 +2098,12 @@ class PrivacyPolicy(models.Model):
 class PostImage(models.Model):
     post = models.ForeignKey(Posts, related_name='images', on_delete=models.CASCADE, help_text="Публикацията, към която е свързана тази снимка.")
     image = models.ImageField(upload_to=post_gallery_upload_path, validators=[validate_image_upload_size], help_text="Файлът с изображението.")
+    display_image = models.ImageField(
+        upload_to=post_gallery_display_upload_path, blank=True,
+    )
+    thumbnail_image = models.ImageField(
+        upload_to=post_gallery_thumbnail_upload_path, blank=True,
+    )
     title = models.CharField(
         max_length=150,
         blank=True,
@@ -2156,16 +2169,17 @@ class PostImage(models.Model):
         ]
 
     def save(self, *args, **kwargs):
+        new_image = bool(self.image and not getattr(self.image, '_committed', True))
+        update_fields = kwargs.get('update_fields')
+        process_image = new_image and (update_fields is None or 'image' in update_fields)
         if self.image:
-            is_new_file = not getattr(self.image, '_committed', True)
-            if not self.file_hash or is_new_file:
+            if not self.file_hash or new_image:
                 uploaded_file = getattr(self.image, 'file', None)
                 self.file_hash = (
                     getattr(uploaded_file, '_post_image_sha256', None)
                     or calculate_file_sha256(self.image)
                 )
 
-        update_fields = kwargs.get('update_fields')
         if update_fields is not None and self.file_hash:
             kwargs['update_fields'] = tuple(set(update_fields) | {'file_hash'})
 
@@ -2186,7 +2200,32 @@ class PostImage(models.Model):
                     post_id=self.post_id,
                     is_featured=True,
                 ).exclude(pk=self.pk).update(is_featured=False)
-            return super().save(*args, **kwargs)
+            if process_image:
+                validate_image_upload_size(self.image)
+                variants = make_post_image_variants(self.image.file, self.file_hash)
+                if variants:
+                    self.display_image = variants[0]
+                    self.thumbnail_image = variants[1]
+                else:
+                    self.display_image = None
+                    self.thumbnail_image = None
+                if update_fields is not None:
+                    kwargs['update_fields'] = tuple(set(kwargs['update_fields']) | {
+                        'display_image', 'thumbnail_image',
+                    })
+            pending_fields = [
+                field for field in (self.image, self.display_image, self.thumbnail_image)
+                if field and not getattr(field, '_committed', True)
+            ]
+            try:
+                return super().save(*args, **kwargs)
+            except Exception:
+                # Django's DB transaction cannot roll back files already written
+                # by FileField.pre_save. Only remove files from this failed save.
+                for field in pending_fields:
+                    if field._committed and field.name:
+                        field.storage.delete(field.name)
+                raise
 
 class PostDocument(models.Model):
     post = models.ForeignKey(Posts, related_name='documents', on_delete=models.CASCADE, help_text="Публикацията, към която е свързан този документ.")
