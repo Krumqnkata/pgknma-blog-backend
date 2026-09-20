@@ -2221,6 +2221,7 @@ class Event(models.Model):
             ('Arts', 'Изкуства'),
             ('Community', 'Общностно'),
             ('Holiday', 'Празник'),
+            ('Other', 'Друго'),
         ],
         verbose_name="Категория",
         help_text="Тип на събитието.",

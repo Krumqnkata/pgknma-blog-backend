@@ -182,7 +182,12 @@ _SOCIAL_HEAD_PATTERNS = (
 
 def post_page(request, pk):
     """Serve the React app with crawler-visible metadata for one public post."""
-    post = get_object_or_404(_public_posts_queryset().select_related('category'), pk=pk)
+    # ``categories`` is a ManyToManyField, so it must be prefetched rather
+    # than passed to select_related() (which only supports FK/O2O fields).
+    post = get_object_or_404(
+        _public_posts_queryset().prefetch_related('categories'),
+        pk=pk,
+    )
     try:
         html = settings.FRONTEND_INDEX_PATH.read_text(encoding='utf-8')
     except (OSError, UnicodeError):
