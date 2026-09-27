@@ -8,8 +8,9 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from blog.models import Badge, DigitalReward, SiteSettings
+from blog.models import Badge, DigitalReward, GamificationLevel, SiteSettings
 from blog.permissions import SiteIsAvailable
+from blog.serializer import GamificationLevelSerializer
 from .config import ACTION_DESCRIPTIONS, daily_limit, point_value
 
 
@@ -42,6 +43,7 @@ class CatalogRewardSerializer(serializers.Serializer):
 
 
 class GamificationCatalogSerializer(serializers.Serializer):
+    levels = GamificationLevelSerializer(many=True)
     point_rules = PointRuleSerializer(many=True)
     badges = CatalogBadgeSerializer(many=True)
     rewards = CatalogRewardSerializer(many=True)
@@ -144,6 +146,7 @@ class GamificationCatalogView(APIView):
             Prefetch('badges', queryset=visible_badges, to_attr='public_badges'),
         )
         payload = {
+            'levels': GamificationLevel.objects.order_by('minimum_points', 'number'),
             'point_rules': public_point_rules(),
             'badges': [badge_payload(badge) for badge in badges],
             'rewards': [{

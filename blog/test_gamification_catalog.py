@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .gamification.config import daily_limit, point_value
-from .models import Badge, DigitalReward, GamificationPointRule, SiteSettings
+from .models import Badge, DigitalReward, GamificationLevel, GamificationPointRule, SiteSettings
 
 
 class GamificationCatalogTests(TestCase):
@@ -104,3 +104,19 @@ class GamificationCatalogTests(TestCase):
         self.site.maintenance_mode = True
         self.site.save()
         self.assertEqual(self.client.get(self.url).status_code, 503)
+
+    def test_public_levels_follow_live_thresholds_and_allow_an_empty_catalog(self):
+        GamificationLevel.objects.all().delete()
+        self.assertEqual(self.client.get(self.url).data['levels'], [])
+        highest = GamificationLevel.objects.create(number=5, title='Вдъхновител', icon='trophy', minimum_points=250)
+        GamificationLevel.objects.create(number=1, title='Новак', icon='sprout', minimum_points=0)
+        GamificationLevel.objects.create(number=2, title='Участник', icon='star', minimum_points=100)
+        levels = self.client.get(self.url).data['levels']
+        self.assertEqual(len(levels), 3)
+        self.assertEqual([level['number'] for level in levels], [1, 2, 5])
+        self.assertEqual([level['minimum_points'] for level in levels], [0, 100, 250])
+        highest.minimum_points = 350
+        highest.save()
+        self.assertEqual(self.client.get(self.url).data['levels'][-1], {
+            'number': 5, 'title': 'Вдъхновител', 'icon': 'trophy', 'minimum_points': 350,
+        })
