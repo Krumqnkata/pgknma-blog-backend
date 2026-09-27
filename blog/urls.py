@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from . import views as blog_views
 from blog.auth import GoogleAuthView, GoogleLinkView
+from blog.gamification.catalog import GamificationCatalogView
 
 # Основен рутер за ViewSet-ове
 router = DefaultRouter()
@@ -86,6 +87,11 @@ urlpatterns = [
         'users/<str:username>/profile/',
         blog_views.PublicUserProfileView.as_view(),
         name='public-user-profile',
+    ),
+    path(
+        'gamification/catalog/',
+        GamificationCatalogView.as_view(),
+        name='gamification-catalog',
     ),
     path(
         'gamification/profile/',
