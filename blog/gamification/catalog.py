@@ -89,6 +89,9 @@ def badge_payload(badge):
 
 
 def public_point_rules():
+    from blog.games.definitions import GAMES, action_name
+    from blog.games.services import settings_row
+    game_settings = settings_row()
     site = SiteSettings.objects.filter(pk=1).first() or SiteSettings()
     features = {
         'poll_vote': site.enable_weekly_poll,
@@ -103,6 +106,9 @@ def public_point_rules():
         'post_read': 'След поне 15 секунди четене; еднократно за публикация.',
         'calendar_visit': 'При посещение на училищния календар; еднократно на ден.',
     }
+    for game in GAMES:
+        features[action_name(game)] = bool(game_settings.enabled and game_settings.start_date and game_settings.start_date <= timezone.localdate())
+        notes[action_name(game)] = f'За успешно решена нова задача. Общ лимит от игрите: {game_settings.daily_points_cap} точки на ден.'
     rules = []
     for action, title in ACTION_DESCRIPTIONS.items():
         points, limit = point_value(action), daily_limit(action)

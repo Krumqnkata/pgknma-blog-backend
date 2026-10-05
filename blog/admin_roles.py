@@ -79,6 +79,7 @@ GAMIFICATION_PERMISSIONS = (
             "gamificationpointrule",
             "mission",
             "digitalreward",
+            "gamesettings",
         ),
         ("view", "add", "change"),
     )
@@ -89,6 +90,8 @@ GAMIFICATION_PERMISSIONS = (
             "pointtransaction",
             "usermissionprogress",
             "missionactivity",
+            "gamepuzzle",
+            "gamesession",
         ),
         ("view",),
     )

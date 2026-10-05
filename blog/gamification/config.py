@@ -1,4 +1,5 @@
 from django.conf import settings
+from blog.games.definitions import GAMES, action_name
 
 
 DEFAULT_POINT_RULES = {
@@ -24,6 +25,9 @@ ACTION_DESCRIPTIONS = {
     'post_read': 'Прочетена публикация',
     'calendar_visit': 'Посещение на училищния календар',
 }
+
+DEFAULT_POINT_RULES.update({action_name(game): 5 for game in GAMES})
+ACTION_DESCRIPTIONS.update({action_name(game): f'Игра: {value[0]}' for game, value in GAMES.items()})
 
 
 def point_value(action):

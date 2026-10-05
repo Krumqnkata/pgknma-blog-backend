@@ -38,6 +38,7 @@ import csv
 from .session_auth import revoke_login_session
 from .avatars import reset_profile_avatar
 from .gamification.services import award_badge, change_points, evaluate_badge_for_all_users
+from .games import admin as games_admin  # noqa: F401
 from .admin_roles import ADMIN_ROLE_BY_NAME
 from .notification_categories import GENERAL
 

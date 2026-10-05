@@ -1,4 +1,5 @@
 .venv/
+.games-local/
 db.sqlite3
 db.sqlite3*.bak
 db.team-chat-local.sqlite3

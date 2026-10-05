@@ -154,11 +154,11 @@ class TeamChatDiscussionTests(TestCase):
         )
         post = Posts.objects.create(
             title='Ограничена публикация',
-            category=category,
             hook='Кратко описание',
             content='Съдържание',
             author=self.superuser,
         )
+        post.categories.add(category)
         discussion = create_discussion(
             author=self.superuser,
             title='Редакция на публикацията',
@@ -590,11 +590,11 @@ class TeamChatAttachmentTests(TeamChatPrivateStorageMixin, TestCase):
         category = Category.objects.create(full_name='Снимки', short_name='images')
         post = Posts.objects.create(
             title='Защитен запис',
-            category=category,
             hook='Описание',
             content='Съдържание',
             author=root,
         )
+        post.categories.add(category)
         discussion = create_discussion(
             author=root,
             title='Защитена дискусия',

@@ -217,12 +217,12 @@ class GamificationTestCase(TestCase):
         )
         self.post = Posts.objects.create(
             title='Геймификация',
-            category=category,
             hook='Кратко описание',
             content='Съдържание',
             published=True,
             allowed=True,
         )
+        self.post.categories.add(category)
 
     def points(self):
         self.user.userprofile.refresh_from_db()
@@ -1008,7 +1008,7 @@ class GamificationTestCase(TestCase):
         ).count(), 3)
 
     def test_official_reward_seed_is_idempotent_and_can_link_badges(self):
-        from seed_official_digital_rewards import OFFICIAL_REWARDS, seed_rewards
+        from scripts.seed_official_digital_rewards import OFFICIAL_REWARDS, seed_rewards
 
         with redirect_stdout(StringIO()):
             seed_rewards(link_badges=True, grant_to=None, select=False)
@@ -1040,7 +1040,7 @@ class GamificationTestCase(TestCase):
         )
 
     def test_blog_pioneer_badge_is_given_once_to_existing_active_users(self):
-        from award_blog_pioneer_badge import (
+        from scripts.award_blog_pioneer_badge import (
             BADGE_SLUG,
             REWARD_KEY,
             award_to_users,

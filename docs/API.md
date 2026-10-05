@@ -110,6 +110,10 @@ providers; виж `SECURITY_AND_DATA.md`.
 
 ## API change правила
 
+Миниигрите използват `/api/games/`, `/api/games/sessions/` и
+`/api/games/sessions/{uuid}/actions/`. Каталогът е публичен, играенето
+изисква вход и собствена сесия. Пълният договор е в [GAMES.md](GAMES.md#api).
+
 1. Не променяй response shape на използван endpoint без frontend промяна и
    regression tests.
 2. Добавяй optional field вместо да преименуваш/премахваш field, когато има

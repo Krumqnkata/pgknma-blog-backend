@@ -30,6 +30,7 @@ repository `../../Frontend/docs/`, защото frontend и backend се version
 | [SECURITY_AND_DATA.md](SECURITY_AND_DATA.md) | Токени, CORS/CSRF, rate limits, upload-и, push, retention и лични данни. |
 | [DEVELOPMENT_AND_TESTING.md](DEVELOPMENT_AND_TESTING.md) | Работен процес, миграции, backend проверки и test suite. |
 | [GAMIFICATION.md](GAMIFICATION.md) | Точки, нива, мисии, значки, награди и lifetime статистики. |
+| [GAMES.md](GAMES.md) | Шестте миниигри, пакетът за 400 дни, API, настройки и пускане. |
 | [NOTIFICATIONS_AND_PUSH.md](NOTIFICATIONS_AND_PUSH.md) | Канали, delivery lifecycle, preferences, push и scheduler. |
 | [TEAM_CHAT.md](TEAM_CHAT.md) | Staff chat, discussions, attachments, sharing и access control. |
 | [CONFIGURATION.md](CONFIGURATION.md) | Всички групи environment настройки, критични production стойности и безопасен upgrade процес. |

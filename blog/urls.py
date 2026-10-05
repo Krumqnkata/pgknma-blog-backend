@@ -5,6 +5,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, Spec
 from . import views as blog_views
 from blog.auth import GoogleAuthView, GoogleLinkView
 from blog.gamification.catalog import GamificationCatalogView
+from blog.games.views import GameActionView, GameCatalogView, GameSessionView, GameStartView
 
 # Основен рутер за ViewSet-ове
 router = DefaultRouter()
@@ -20,6 +21,10 @@ superuser_required = user_passes_test(
 
 # URL пътища
 urlpatterns = [
+    path('games/', GameCatalogView.as_view(), name='game-catalog'),
+    path('games/sessions/', GameStartView.as_view(), name='game-start'),
+    path('games/sessions/<uuid:session_id>/', GameSessionView.as_view(), name='game-session'),
+    path('games/sessions/<uuid:session_id>/actions/', GameActionView.as_view(), name='game-action'),
     # OpenAPI documentation: accessible only to active superusers.
     path(
         'schema/',

@@ -699,6 +699,12 @@ class GamificationPointRule(models.Model):
         ('meme_approved', 'Одобрено меме'),
         ('post_read', 'Прочетена публикация'),
         ('calendar_visit', 'Посещение на календара'),
+        ('game_quiz', 'Игра: Дневна викторина'),
+        ('game_word', 'Игра: Познай думата'),
+        ('game_code', 'Игра: Разбий кода'),
+        ('game_robot', 'Игра: Подреди алгоритъма'),
+        ('game_memory', 'Игра: Открий двойките'),
+        ('game_hunt', 'Игра: Лов на следи'),
     )
 
     action = models.CharField(
@@ -2736,3 +2742,7 @@ def remember_vote_targets_before_user_delete(sender, instance, **kwargs):
 def sync_vote_counters_after_user_delete(sender, instance, **kwargs):
     _sync_song_votes(getattr(instance, '_song_vote_ids_before_delete', []))
     _sync_meme_votes(getattr(instance, '_meme_vote_ids_before_delete', []))
+
+
+# Register the game models under the existing blog app/migration history.
+from .games.models import GamePuzzle, GameRequest, GameSession, GameSettings  # noqa: E402,F401

@@ -1,4 +1,5 @@
 from django.utils import timezone
+from .games.models import GameSession
 
 from .models import (
     BellSongSuggestion,
@@ -342,6 +343,17 @@ def build_personal_data_export(user):
             'contact_submissions': contact_submissions,
         },
         'activity': {
+            'game_sessions': [
+                {
+                    'id': str(item.pk), 'game': item.puzzle.game,
+                    'mode': item.mode, 'status': item.status,
+                    'state': item.state, 'score': item.score,
+                    'points_awarded': item.points_awarded,
+                    'created_at': _iso(item.created_at),
+                    'finished_at': _iso(item.finished_at),
+                }
+                for item in GameSession.objects.filter(user=user).select_related('puzzle').order_by('created_at', 'pk')
+            ],
             'poll_answers': poll_answers,
             'song_votes': song_votes,
             'meme_votes': meme_votes,
