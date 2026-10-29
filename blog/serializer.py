@@ -4,6 +4,7 @@ from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, Poll
     validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge, UserDigitalReward, \
     NotificationPreference, PageView, PushSubscription, Category
 from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
+from .header_logos import current_header_logo
 from django.conf import settings
 from django.contrib.auth.models import User, update_last_login
 from django.contrib.auth.validators import UnicodeUsernameValidator
@@ -1041,9 +1042,14 @@ class ConsentRecordSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'timestamp', 'user', 'ip_address']
 
 class SiteSettingsSerializer(serializers.ModelSerializer):
+    header_logo = serializers.SerializerMethodField()
+
     class Meta:
         model = SiteSettings
-        fields = ['maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'enable_program_page']
+        fields = ['maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'enable_program_page', 'header_logo']
+
+    def get_header_logo(self, obj):
+        return current_header_logo()
 
 
 class ScheduleEntrySerializer(serializers.ModelSerializer):

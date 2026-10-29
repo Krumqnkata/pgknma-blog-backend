@@ -2471,6 +2471,132 @@ class SiteSettings(models.Model):
         return super(SiteSettings, self).save(*args, **kwargs)
 
 
+class HeaderLogo(models.Model):
+    """Logo shown in the site header for a season, holiday or one-off occasion."""
+
+    class Kind(models.TextChoices):
+        SEASON = 'season', 'Сезон'
+        HOLIDAY = 'holiday', 'Празник'
+
+    class DateMode(models.TextChoices):
+        YEARLY = 'yearly', 'Всяка година (ден и месец)'
+        EASTER = 'easter', 'Спрямо православния Великден'
+        ONCE = 'once', 'Еднократно (конкретни дати)'
+
+    class Effect(models.TextChoices):
+        NONE = 'none', 'Без ефект'
+        SNOW = 'snow', 'Сняг'
+        LEAVES = 'leaves', 'Падащи листа'
+        PETALS = 'petals', 'Цветчета'
+        HEARTS = 'hearts', 'Сърца'
+        CONFETTI = 'confetti', 'Конфети'
+        STARS = 'stars', 'Блещукащи звезди'
+        BALLOONS = 'balloons', 'Балони'
+        MARTENITSA = 'martenitsa', 'Мартенички'
+        TRICOLOR = 'tricolor', 'Трикольор (бяло, зелено, червено)'
+        BATS = 'bats', 'Прилепи'
+        EGGS = 'eggs', 'Шарени яйца'
+        LETTERS = 'letters', 'Букви от азбуката'
+
+    name = models.CharField(max_length=80, verbose_name='Име', help_text='Вътрешно име, напр. „Есен“ или „Ден на будителите“.')
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.HOLIDAY, verbose_name='Тип', help_text='Празниците винаги имат предимство пред сезоните.')
+    is_active = models.BooleanField(default=True, verbose_name='Активно', help_text='Изключете, за да не се показва, без да го изтривате.')
+    priority = models.SmallIntegerField(default=0, verbose_name='Приоритет', help_text='Ако два записа от един тип се засичат, печели по-високият приоритет, а при равенство – по-краткият период.')
+    date_mode = models.CharField(max_length=10, choices=DateMode.choices, default=DateMode.YEARLY, verbose_name='Начин на задаване на периода')
+    start_month = models.PositiveSmallIntegerField(null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(12)], verbose_name='Начален месец')
+    start_day = models.PositiveSmallIntegerField(null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(31)], verbose_name='Начален ден')
+    end_month = models.PositiveSmallIntegerField(null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(12)], verbose_name='Краен месец')
+    end_day = models.PositiveSmallIntegerField(null=True, blank=True, validators=[MinValueValidator(1), MaxValueValidator(31)], verbose_name='Краен ден', help_text='Включително. Периодът може да минава през Нова година (напр. 1.12 – 28.02).')
+    easter_offset_start = models.SmallIntegerField(default=0, validators=[MinValueValidator(-60), MaxValueValidator(60)], verbose_name='Начало спрямо Великден (дни)', help_text='Напр. -1 за Велика събота.')
+    easter_offset_end = models.SmallIntegerField(default=0, validators=[MinValueValidator(-60), MaxValueValidator(60)], verbose_name='Край спрямо Великден (дни)', help_text='Напр. 1 за Велики понеделник.')
+    start_date = models.DateField(null=True, blank=True, verbose_name='Начална дата')
+    end_date = models.DateField(null=True, blank=True, verbose_name='Крайна дата', help_text='Включително.')
+    image = models.ImageField(
+        upload_to='header-logos/',
+        blank=True,
+        validators=[FileExtensionValidator(['png', 'gif', 'webp', 'jpg', 'jpeg'])],
+        verbose_name='Лого',
+        help_text='PNG, WebP, JPG или GIF (може анимирано), до 2 MB и 1024 px. Показва се на ~40 px височина върху тъмния хедър – най-добре квадратно с прозрачен фон. Записите без лого не се показват.',
+    )
+    static_image = models.ImageField(
+        upload_to='header-logos/still/',
+        blank=True,
+        validators=[FileExtensionValidator(['png', 'webp', 'jpg', 'jpeg'])],
+        verbose_name='Статично лого (по избор)',
+        help_text='За посетители с включено „намалено движение“. Ако е празно при анимирано лого, се използва първият кадър автоматично.',
+    )
+    image_still = models.ImageField(upload_to='header-logos/still/', blank=True, editable=False)
+    greeting = models.CharField(max_length=80, blank=True, verbose_name='Поздрав', help_text='Показва се до логото, напр. „Честит Ден на народните будители!“.')
+    alt_text = models.CharField(max_length=120, blank=True, verbose_name='Алтернативен текст', help_text='За екранни четци. Ако е празно, се използва поздравът.')
+    effect = models.CharField(max_length=10, choices=Effect.choices, default=Effect.NONE, verbose_name='Ефект в хедъра', help_text='Лека анимация; не се показва на хора с включено „намалено движение“.')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създадено')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Последна промяна')
+
+    class Meta:
+        verbose_name = 'Празнично лого'
+        verbose_name_plural = 'Празнични логота'
+        ordering = ['kind', 'start_month', 'start_day', 'name']
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        from .header_logos import month_day, validate_header_logo_file
+
+        errors = {}
+        if self.date_mode == self.DateMode.YEARLY:
+            for field in ('start_month', 'start_day', 'end_month', 'end_day'):
+                if getattr(self, field) is None:
+                    errors[field] = 'Задължително за годишен период.'
+            if not errors:
+                for prefix in ('start', 'end'):
+                    month = getattr(self, f'{prefix}_month')
+                    day = getattr(self, f'{prefix}_day')
+                    # 2024 is a leap year, so 29 February is accepted.
+                    if month_day(2024, month, day).day != day:
+                        errors[f'{prefix}_day'] = 'Месецът няма толкова дни.'
+        elif self.date_mode == self.DateMode.EASTER:
+            if self.easter_offset_end < self.easter_offset_start:
+                errors['easter_offset_end'] = 'Краят не може да е преди началото.'
+        elif self.date_mode == self.DateMode.ONCE:
+            if not self.start_date:
+                errors['start_date'] = 'Задължително за еднократен период.'
+            if not self.end_date:
+                errors['end_date'] = 'Задължително за еднократен период.'
+            if self.start_date and self.end_date and self.end_date < self.start_date:
+                errors['end_date'] = 'Крайната дата не може да е преди началната.'
+        for field in ('image', 'static_image'):
+            try:
+                validate_header_logo_file(getattr(self, field))
+            except ValidationError as error:
+                errors[field] = error.messages
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        from .header_logos import make_still_frame
+
+        previous = (
+            HeaderLogo.objects.filter(pk=self.pk).values_list('image', flat=True).first()
+            if self.pk else None
+        )
+        if (self.image.name or None) != (previous or None):
+            if self.image_still:
+                self.image_still.delete(save=False)
+            still = make_still_frame(self.image)
+            if still:
+                self.image_still.save(still.name, still, save=False)
+        super().save(*args, **kwargs)
+
+
+@receiver(post_save, sender=HeaderLogo, dispatch_uid='blog.header_logo_saved')
+@receiver(post_delete, sender=HeaderLogo, dispatch_uid='blog.header_logo_deleted')
+def clear_header_logo_cache_on_change(sender, **kwargs):
+    from .header_logos import clear_header_logo_cache
+
+    transaction.on_commit(clear_header_logo_cache)
+
+
 class GoogleIdentity(models.Model):
     """Stable Google account binding; e-mail is metadata, never the identity key."""
 

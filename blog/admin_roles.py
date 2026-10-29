@@ -128,7 +128,7 @@ VALENTINE_CODE_PERMISSIONS = (
 
 SITE_MANAGER_PERMISSIONS = (
     _model_permissions("blog", ("sitesettings",), ("view", "add", "change"))
-    | _model_permissions("blog", ("changelog",))
+    | _model_permissions("blog", ("changelog", "headerlogo"))
     | _model_permissions(
         "blog",
         ("privacypolicy", "termsofservice"),

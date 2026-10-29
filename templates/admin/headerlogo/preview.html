@@ -1,0 +1,92 @@
+{% extends "admin/base_site.html" %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <style>
+    .logo-preview { max-width: 960px; margin: 0 auto; }
+    .logo-preview__toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-bottom: 20px; }
+    .logo-preview__toolbar label { display: block; margin-bottom: 4px; font-size: .8rem; font-weight: 600; }
+    .logo-preview__toolbar input[type=date] { min-height: 40px; padding: 0 10px; border: 1px solid var(--border-color, #d1d5db); border-radius: 8px; }
+    .logo-preview__toolbar .button { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; border-radius: 8px; }
+    .logo-preview__header { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-radius: 14px; background: hsl(174 72% 35%); color: #fff; }
+    .logo-preview__header img { width: 40px; height: 40px; object-fit: contain; }
+    .logo-preview__brand { font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .logo-preview__brand small { display: block; font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; opacity: .88; }
+    .logo-preview__meta { margin: 10px 0 28px; color: #6b7280; font-size: .9rem; }
+    .logo-preview h2 { margin: 0 0 10px; font-size: 1.05rem; }
+    .logo-preview table { width: 100%; margin-bottom: 28px; border-collapse: collapse; }
+    .logo-preview th, .logo-preview td { padding: 8px 10px; border-bottom: 1px solid var(--border-color, #e5e7eb); text-align: left; vertical-align: middle; }
+    .logo-preview td img { width: 28px; height: 28px; object-fit: contain; padding: 3px; border-radius: 6px; background: hsl(174 72% 35%); vertical-align: middle; }
+    .logo-preview__status { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #f3f4f6; color: #374151; font-size: .78rem; font-weight: 600; }
+    .logo-preview__status--on { background: #dcfce7; color: #166534; }
+    .logo-preview__default { color: #6b7280; font-style: italic; }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="logo-preview">
+  <form method="get" class="logo-preview__toolbar">
+    <div>
+      <label for="logo-preview-date">Дата</label>
+      <input id="logo-preview-date" type="date" name="date" value="{{ selected|date:'Y-m-d' }}">
+    </div>
+    <button type="submit" class="button">Покажи</button>
+    {% if selected != today %}<a class="button" href="?">Днес</a>{% endif %}
+    <a class="button" href="{% url 'admin:blog_headerlogo_changelist' %}">Към списъка</a>
+  </form>
+
+  <div class="logo-preview__header" aria-label="Изглед на хедъра на {{ selected|date:'d.m.Y' }}">
+    <img src="{% if payload %}{{ payload.image_url }}{% else %}/logo-dark.png{% endif %}" alt="">
+    <span class="logo-preview__brand">ПГКНМА Блог{% if payload.greeting %}<small>{{ payload.greeting }}</small>{% endif %}</span>
+  </div>
+  <p class="logo-preview__meta">
+    {% if winner %}
+      На {{ selected|date:'d.m.Y' }} се показва <strong>{{ winner.name }}</strong>
+      ({{ winner.get_kind_display|lower }}, ефект: {{ winner.get_effect_display|lower }}).
+      <a href="{% url 'admin:blog_headerlogo_change' winner.pk %}">Редактирай</a>
+    {% else %}
+      На {{ selected|date:'d.m.Y' }} се показва стандартното лого.
+    {% endif %}
+  </p>
+
+  <h2>Записи, които покриват тази дата</h2>
+  {% if covering %}
+    <table>
+      <thead><tr><th>Лого</th><th>Име</th><th>Период</th><th>Състояние</th></tr></thead>
+      <tbody>
+        {% for row in covering %}
+          <tr>
+            <td>{% if row.logo.image %}<img src="{{ row.logo.image.url }}" alt="">{% else %}—{% endif %}</td>
+            <td><a href="{% url 'admin:blog_headerlogo_change' row.logo.pk %}">{{ row.logo.name }}</a></td>
+            <td>{{ row.period }}</td>
+            <td><span class="logo-preview__status{% if row.status == 'Показва се' %} logo-preview__status--on{% endif %}">{{ row.status }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="logo-preview__meta">Няма записи за тази дата.</p>
+  {% endif %}
+
+  <h2>График за следващите 12 месеца</h2>
+  <table>
+    <thead><tr><th>От</th><th>До</th><th>Лого</th></tr></thead>
+    <tbody>
+      {% for item in schedule %}
+        <tr>
+          <td>{{ item.start|date:'d.m.Y' }}</td>
+          <td>{{ item.end|date:'d.m.Y' }}</td>
+          <td>
+            {% if item.logo %}
+              <img src="{{ item.logo.image.url }}" alt="">
+              <a href="?date={{ item.start|date:'Y-m-d' }}">{{ item.logo.name }}</a>
+            {% else %}
+              <span class="logo-preview__default">Стандартно лого</span>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

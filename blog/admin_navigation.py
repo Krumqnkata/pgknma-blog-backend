@@ -118,6 +118,7 @@ ADMIN_NAVIGATION = (
         "title": "Администрация",
         "items": (
             _item("Настройки на сайта", "/admin/blog/sitesettings/", "settings", *_permissions("blog", "sitesettings")),
+            _item("Празнични логота", "/admin/blog/headerlogo/", "celebration", *_permissions("blog", "headerlogo")),
             _item("Регистър с промени", "/admin/blog/changelog/", "settings", *_permissions("blog", "changelog")),
             _item("Политики за поверителност", "/admin/blog/privacypolicy/", "privacy_tip", *_permissions("blog", "privacypolicy")),
             _item("Условия за ползване", "/admin/blog/termsofservice/", "gavel", *_permissions("blog", "termsofservice")),
