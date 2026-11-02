@@ -5,7 +5,7 @@
 **Не отваряй публичен issue за пробив в сигурността.** Вместо това:
 
 1. Използвай бутона **Report a vulnerability** в таба
-   [Security](../../security/advisories/new) на това repository, или
+   [Security](https://github.com/Krumqnkata/pgknma-blog-backend/security/advisories/new) на това repository, или
 2. пиши на **support@pgknma.space** с тема `Security`.
 
 Опиши какво си открил, как може да се повтори и какъв е възможният ефект.
