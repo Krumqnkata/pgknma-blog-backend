@@ -1,7 +1,7 @@
 # Авторство и права / Authorship and rights
 
 **ПГКНМА Блог — Backend**
-Copyright © 2025–2026 Krumqnkata, ad0312, lkbonev72
+Copyright © 2025–2026 Krumqnkata, ythef0, lkbonev72
 
 ## Код
 
@@ -33,6 +33,6 @@ Copyright © 2025–2026 Krumqnkata, ad0312, lkbonev72
 
 ---
 
-The source code is © Krumqnkata, ad0312 and lkbonev72, licensed under
+The source code is © Krumqnkata, ythef0 and lkbonev72, licensed under
 AGPL-3.0-or-later. PGKNMA's name, logos, photos, videos, documents, legal texts
 and site content belong to the school and are not covered by that license.
