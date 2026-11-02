@@ -1,7 +1,7 @@
 # ПГКНМА Блог — Django backend
 
-[![CI](https://github.com/Krumqnkata/pgknma-valentine/actions/workflows/ci.yml/badge.svg)](https://github.com/Krumqnkata/pgknma-valentine/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/Krumqnkata/pgknma-valentine/actions/workflows/codeql.yml/badge.svg)](https://github.com/Krumqnkata/pgknma-valentine/actions/workflows/codeql.yml)
+[![CI](https://github.com/Krumqnkata/pgknma-blog-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/Krumqnkata/pgknma-blog-backend/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/Krumqnkata/pgknma-blog-backend/actions/workflows/codeql.yml/badge.svg)](https://github.com/Krumqnkata/pgknma-blog-backend/actions/workflows/codeql.yml)
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)](LICENSE)
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Django 6](https://img.shields.io/badge/Django-6-092E20?logo=django&logoColor=white)
