@@ -71,9 +71,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles_collected"
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# Local development is SQLite/DEBUG by default. Production must opt in and
-# provide every secret explicitly through the process environment.
-DEBUG = env_bool("DJANGO_DEBUG", True)
+# Fail closed: DEBUG is off unless DJANGO_DEBUG=True is set explicitly
+# (.env.example does this for local development). Without it every secret
+# must come from the process environment.
+DEBUG = env_bool("DJANGO_DEBUG", False)
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip()
 if not SECRET_KEY:

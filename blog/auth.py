@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 GOOGLE_ISSUER = 'https://accounts.google.com'
 VALID_GOOGLE_ISSUERS = {'accounts.google.com', GOOGLE_ISSUER}
+GOOGLE_UNAVAILABLE_MESSAGE = 'Входът с Google временно не е достъпен.'
+
+
+class GoogleAuthError(ValueError):
+    """A Google sign-in failure that carries the HTTP status the API returns."""
+
+    def __init__(self, message, status_code=status.HTTP_400_BAD_REQUEST):
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _verified_email(id_info):
@@ -51,7 +60,10 @@ def _generate_available_username(email):
 
 def verify_google_credential(credential):
     if not getattr(settings, 'GOOGLE_CLIENT_ID', '').strip():
-        raise ValueError('Входът с Google временно не е достъпен.')
+        raise GoogleAuthError(
+            GOOGLE_UNAVAILABLE_MESSAGE,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     try:
         id_info = id_token.verify_oauth2_token(
@@ -63,7 +75,10 @@ def verify_google_credential(credential):
         raise
     except Exception:
         logger.exception("Google token verification failed unexpectedly")
-        raise ValueError('Входът с Google временно не е достъпен.')
+        raise GoogleAuthError(
+            GOOGLE_UNAVAILABLE_MESSAGE,
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     issuer = id_info.get('iss')
     subject = id_info.get('sub')
@@ -114,18 +129,21 @@ def verify_google_credential(credential):
                         email_at_link_time=email,
                     )
                 elif email_matches:
-                    raise ValueError(
+                    raise GoogleAuthError(
                         'Вече съществува акаунт с този имейл. '
-                        'Влезте по обичайния начин, за да го свържете.'
+                        'Влезте по обичайния начин, за да го свържете.',
+                        status.HTTP_409_CONFLICT,
                     )
                 else:
                     if site_settings.maintenance_mode:
-                        raise ValueError(
-                            'Сайтът временно е в режим на поддръжка.'
+                        raise GoogleAuthError(
+                            'Сайтът временно е в режим на поддръжка.',
+                            status.HTTP_503_SERVICE_UNAVAILABLE,
                         )
                     if not site_settings.enable_user_registration:
-                        raise ValueError(
-                            'Регистрацията временно е деактивирана.'
+                        raise GoogleAuthError(
+                            'Регистрацията временно е деактивирана.',
+                            status.HTTP_403_FORBIDDEN,
                         )
 
                     user = User(
@@ -179,7 +197,9 @@ class GoogleAuthView(APIView):
         except ValueError as exc:
             return Response(
                 {'error': str(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
+                status=getattr(
+                    exc, 'status_code', status.HTTP_400_BAD_REQUEST
+                ),
             )
 
         try:

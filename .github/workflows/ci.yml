@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Django check and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # CI uses throwaway local settings: SQLite and no real secrets.
+      DJANGO_DEBUG: "True"
+      DB_ENGINE: sqlite
+      ENABLE_GOOGLE_AUTH: "False"
+      WEB_PUSH_ENABLED: "False"
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install MySQL client headers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config default-libmysqlclient-dev
+
+      - run: pip install -r requirements.txt
+
+      - name: Django system check
+        run: python manage.py check
+
+      - name: Missing migrations
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Tests
+        run: python manage.py test

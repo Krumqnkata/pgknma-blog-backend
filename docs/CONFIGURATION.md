@@ -13,6 +13,8 @@
 - Production: създай `.env` от `.env.production.example` **само при първа
   инсталация**. При update добавяй липсващите ключове ръчно; не презаписвай
   съществуващ файл със secrets.
+- `DJANGO_DEBUG` е `False` по подразбиране. Локално трябва изрично
+  `DJANGO_DEBUG=True` (вече е в `.env.example`).
 - `DJANGO_DEBUG=False` не допуска празен `DJANGO_SECRET_KEY`, production
   database или некоректни security boolean-и. Това е умишлен fail-fast
   механизъм.
