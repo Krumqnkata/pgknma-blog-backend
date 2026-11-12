@@ -1,4 +1,4 @@
-from blog.models import Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import AIContentCheck, Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -812,12 +812,55 @@ class PostImageInline(StackedInline):
 class PostsAdmin(ModelAdmin):
     form = PostAdminForm
     inlines = (PostImageInline,)
-    readonly_fields_base = ('author', 'created_at')
+    readonly_fields_base = ('author', 'created_at', 'ai_summary_info')
     list_display = ('title', 'author', 'categories_display', 'publication_status', 'published_at', 'created_at')
     list_filter = ('published', 'allowed', 'categories', 'published_at', 'created_at')
     search_fields = ('title', 'content')
     exclude = ('author',)
     filter_horizontal = ('categories',)
+    actions = ('regenerate_ai_summary',)
+
+    @admin.display(description='Състояние на резюмето')
+    def ai_summary_info(self, obj):
+        if not obj or not obj.pk:
+            return 'Резюмето се прави автоматично след публикуване.'
+        if obj.ai_summary_manual:
+            return 'Редактирано ръчно — ИИ няма да го презаписва.'
+        if not obj.ai_summary:
+            return 'Още няма резюме. Ще се появи до няколко минути след публикуване.'
+        updated = timezone.localtime(obj.ai_summary_updated_at).strftime('%d.%m.%Y %H:%M') if obj.ai_summary_updated_at else '—'
+        if obj.ai_summary_source_hash != obj.ai_summary_source_digest():
+            return f'Направено от ИИ на {updated}. Статията е променена — ще се обнови автоматично.'
+        return f'Направено от ИИ на {updated}.'
+
+    @admin.action(
+        description='Генерирай ИИ резюме наново',
+        permissions=['change'],
+    )
+    def regenerate_ai_summary(self, request, queryset):
+        from .ai import config
+        from .ai.client import AIError
+        from .ai.summaries import generate_summary
+
+        if not config.ai_feature_enabled(config.SUMMARIES):
+            self.message_user(
+                request,
+                'ИИ резюметата са изключени (копче в „Настройки на сайта“ или липсващи ключове).',
+                messages.WARNING,
+            )
+            return
+        done = failed = 0
+        for post in queryset:
+            if not self.has_change_permission(request, post):
+                continue
+            try:
+                generate_summary(post)
+                done += 1
+            except AIError as exc:
+                failed += 1
+                self.message_user(request, f'„{post.title}“: {exc}', messages.ERROR)
+        if done:
+            self.message_user(request, f'Готови резюмета: {done}.', messages.SUCCESS)
 
     @admin.display(description='Статус', ordering='published_at')
     def publication_status(self, obj):
@@ -863,6 +906,14 @@ class PostsAdmin(ModelAdmin):
 
         if is_new_post:
             obj.author = request.user
+        if 'ai_summary' in (getattr(form, 'changed_data', None) or ()):
+            # A summary typed by a person wins over the AI. Clearing the field
+            # hands it back to the AI, which writes a new one on the next run.
+            obj.ai_summary = (obj.ai_summary or '').strip()
+            obj.ai_summary_manual = bool(obj.ai_summary)
+            obj.ai_summary_updated_at = timezone.now()
+            if not obj.ai_summary:
+                obj.ai_summary_source_hash = ''
         super().save_model(request, obj, form, change)
 
         if pending_banner is not None:
@@ -939,15 +990,61 @@ class PostsAdmin(ModelAdmin):
             return True
         return request.user.has_perm('blog.can_edit_users_post')
 
+class AICheckListFilter(admin.SimpleListFilter):
+    title = 'ИИ проверка'
+    parameter_name = 'ai_check'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('flagged', '⚠️ Маркирани от ИИ'),
+            ('ok', '✓ Изглеждат наред'),
+            ('unchecked', 'Непроверени'),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == 'flagged':
+            return queryset.filter(ai_checks__verdict=AIContentCheck.VERDICT_FLAGGED)
+        if self.value() == 'ok':
+            return queryset.filter(ai_checks__verdict=AIContentCheck.VERDICT_OK)
+        if self.value() == 'unchecked':
+            return queryset.exclude(
+                ai_checks__verdict__in=(AIContentCheck.VERDICT_OK, AIContentCheck.VERDICT_FLAGGED)
+            )
+        return queryset
+
+
+class AICheckAdminMixin:
+    """Adds the „ИИ“ column. The check only helps; moderators still decide."""
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related('ai_checks')
+
+    @admin.display(description='ИИ')
+    def ai_check_display(self, obj):
+        check = next(iter(obj.ai_checks.all()), None)
+        if check is None:
+            return format_html('<span title="{}">…</span>', 'Още не е проверено')
+        if check.verdict == AIContentCheck.VERDICT_FLAGGED:
+            return format_html(
+                '<span title="{}" style="color:#b45309;font-weight:600">⚠️ {}</span>',
+                check.reason or 'Без обяснение',
+                check.get_category_display() or 'Възможно неподходящо',
+            )
+        if check.verdict == AIContentCheck.VERDICT_OK:
+            return format_html('<span title="{}">✓</span>', 'Изглежда наред')
+        return format_html('<span title="{}">—</span>', 'Проверката не успя')
+
+
 @admin.register(Category)
 class CategoryAdmin(ModelAdmin):
     list_display = ('full_name', 'short_name')
     search_fields = ('full_name',)
 
 @admin.register(Comments)
-class CommentsAdmin(ModelAdmin):
+class CommentsAdmin(AICheckAdminMixin, ModelAdmin):
     readonly_fields = ('user', 'content', 'created_at', 'post', 'parent')
-    list_display = ('user', 'content', 'created_at', 'post')
+    list_display = ('user', 'content', 'created_at', 'post', 'ai_check_display')
+    list_filter = (AICheckListFilter,)
     search_fields = ('user__username', 'content')
     def has_add_permission(self, request):
         return False
@@ -1058,9 +1155,9 @@ class PollAnswerAdmin(ModelAdmin):
         return False
 
 @admin.register(BellSongSuggestion)
-class BellSongSuggestionAdmin(ModelAdmin):
-    list_display = ('title', 'user', 'slot', 'status', 'votes', 'submitted_at', 'embedded_media_display')
-    list_filter = ('status', 'slot')
+class BellSongSuggestionAdmin(AICheckAdminMixin, ModelAdmin):
+    list_display = ('title', 'user', 'slot', 'status', 'votes', 'submitted_at', 'embedded_media_display', 'ai_check_display')
+    list_filter = ('status', 'slot', AICheckListFilter)
     search_fields = ('title', 'link', 'user__username')
     readonly_fields = ('user', 'submitted_at', 'title', 'link', 'embedded_media_display', 'votes', 'slot', 'note',)
     
@@ -1593,9 +1690,9 @@ class PostDocumentAdmin(ModelAdmin):
         return ()
 
 @admin.register(MemeOfWeek)
-class MemeOfWeekAdmin(ModelAdmin):
-    list_display = ('title', 'user', 'image_preview', 'status', 'votes', 'created_at')
-    list_filter = ('status', 'created_at')
+class MemeOfWeekAdmin(AICheckAdminMixin, ModelAdmin):
+    list_display = ('title', 'user', 'image_preview', 'status', 'votes', 'created_at', 'ai_check_display')
+    list_filter = ('status', 'created_at', AICheckListFilter)
     search_fields = ('title', 'user__username')
     readonly_fields = (
         'user', 'created_at', 'image', 'image_preview', 'votes', 'title',
@@ -1828,7 +1925,47 @@ class ConsentRecordAdmin(ModelAdmin):
 @admin.register(SiteSettings)
 class SiteSettingsAdmin(ModelAdmin):
     change_form_template = 'admin/site_settings_change_form.html'
-    list_display = ('__str__', 'maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'auto_verify_on_email_failure', 'enable_program_page')
+    list_display = ('__str__', 'maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'auto_verify_on_email_failure', 'enable_program_page', 'enable_ai')
+    readonly_fields = ('ai_connection_status',)
+    fieldsets = (
+        (None, {
+            'fields': (
+                'maintenance_mode',
+                'enable_bell_suggestions',
+                'enable_weekly_poll',
+                'enable_meme_of_the_week',
+                'enable_user_registration',
+                'auto_verify_on_email_failure',
+                'enable_program_page',
+            ),
+        }),
+        ('Изкуствен интелект (ИИ)', {
+            'description': (
+                'Общото копче спира всички ИИ функции наведнъж. Отделните '
+                'копчета действат само когато общото е включено.'
+            ),
+            'fields': (
+                'ai_connection_status',
+                'enable_ai',
+                'enable_ai_summaries',
+                'enable_ai_moderation',
+                'enable_ai_assistant',
+                'ai_model_public',
+                'ai_model_student_text',
+            ),
+        }),
+    )
+
+    @admin.display(description='Връзка с Cloudflare Workers AI')
+    def ai_connection_status(self, obj):
+        from .ai.client import credentials_configured
+
+        if credentials_configured():
+            return '✓ Ключовете са настроени на сървъра.'
+        return (
+            '✗ Липсват CF_ACCOUNT_ID и/или CF_API_TOKEN в .env на сървъра — '
+            'ИИ функциите няма да работят, дори копчетата да са включени.'
+        )
 
     class Media:
         css = {

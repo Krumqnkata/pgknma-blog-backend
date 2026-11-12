@@ -30,6 +30,7 @@
 | Public URLs | `PUBLIC_SITE_URL`, `FRONTEND_URL`, `SITEMAP_DOMAIN`, `SITEMAP_PROTOCOL`, `FRONTEND_INDEX_PATH` | Canonical links, email return links, sitemap и server-side social preview fallback. |
 | Login и anti-bot | `ENABLE_GOOGLE_AUTH`, `GOOGLE_CLIENT_ID`, `TURNSTILE_SECRET_KEY`, email verification settings | OAuth, Turnstile и lifecycle на email verification. |
 | Email | `RESEND_API_KEY`, `DEFAULT_FROM_EMAIL`, `EMAIL_VERIFICATION_REPLY_TO` | Resend API sender и reply-to адрес. |
+| ИИ (по избор) | `CF_ACCOUNT_ID`, `CF_API_TOKEN`, `AI_REQUEST_TIMEOUT_SECONDS`, `AI_BATCH_SIZE`, `AI_ASSISTANT_DAILY_LIMIT`, `THROTTLE_AI_ASSISTANT_*` | Cloudflare Workers AI. Копчетата и моделите са в админа. Виж [AI.md](AI.md). |
 | Web Push | `WEB_PUSH_ENABLED`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `WEB_PUSH_*` | Push capability, allowlist, rate limit, timeout и event reminders. |
 | Upload-и | `FILE_UPLOAD_MAX_MEMORY_SIZE`, `DATA_UPLOAD_*`, `MAX_*_UPLOAD_SIZE`, `TEAM_CHAT_MAX_IMAGE_UPLOAD_SIZE` | Глобални и domain-specific upload лимити. |
 | Browser security | `CORS_ALLOWED_ORIGINS`, `CORS_ALLOW_CREDENTIALS`, `CSRF_TRUSTED_ORIGINS`, `SECURE_*` | Allowed browser origins, CSRF и HTTPS/HSTS cookies. |

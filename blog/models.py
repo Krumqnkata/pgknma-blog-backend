@@ -4,7 +4,7 @@ import uuid
 from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.models import Group, User
-from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
 from django.contrib.contenttypes.models import ContentType
 from django.db import models, transaction
 from django.db.models import BooleanField
@@ -25,6 +25,11 @@ from .avatars import (
 )
 from .team_chat_storage import team_chat_protected_storage
 from .post_images import make_post_image_variants
+from .ai.models_catalog import (
+    DEFAULT_PUBLIC_MODEL as DEFAULT_PUBLIC_AI_MODEL,
+    DEFAULT_STUDENT_TEXT_MODEL as DEFAULT_STUDENT_TEXT_AI_MODEL,
+    MODEL_CHOICES as AI_MODEL_CHOICES,
+)
 
 
 def team_chat_attachment_upload_path(instance, filename):
@@ -228,6 +233,33 @@ class Posts(models.Model):
         editable=False,
         verbose_name="Известие за публикуване изпратено на",
     )
+    ai_summary = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="Резюме „Накратко“",
+        help_text=(
+            "Прави се автоматично от ИИ. Можете да го поправите ръчно — тогава "
+            "ИИ повече няма да го презаписва. Оставете празно, за да се "
+            "генерира наново."
+        ),
+    )
+    ai_summary_source_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default='',
+        editable=False,
+    )
+    ai_summary_updated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Резюмето е обновено на",
+    )
+    ai_summary_manual = models.BooleanField(
+        default=False,
+        editable=False,
+        verbose_name="Резюмето е редактирано ръчно",
+    )
 
     class Meta:
         permissions = [
@@ -253,6 +285,63 @@ class Posts(models.Model):
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
 
+    def ai_summary_source_digest(self):
+        """Hash of the text the summary is based on; a change means a new summary."""
+        source = '\n'.join((self.title or '', self.hook or '', self.content or ''))
+        return hashlib.sha256(source.encode('utf-8')).hexdigest()
+
+
+class AIContentCheck(models.Model):
+    """Result of the AI moderation check for one comment, song or meme.
+
+    The check never hides or deletes anything; it only helps moderators. It is
+    removed together with the checked object through GenericRelation.
+    """
+
+    VERDICT_OK = 'ok'
+    VERDICT_FLAGGED = 'flagged'
+    VERDICT_ERROR = 'error'
+    VERDICT_CHOICES = (
+        (VERDICT_OK, 'Изглежда наред'),
+        (VERDICT_FLAGGED, 'Възможно неподходящо'),
+        (VERDICT_ERROR, 'Неуспешна проверка'),
+    )
+    CATEGORY_CHOICES = (
+        ('profanity', 'Нецензурни думи'),
+        ('insult', 'Обидно'),
+        ('bullying', 'Тормоз'),
+        ('personal_data', 'Лични данни'),
+        ('spam', 'Спам'),
+        ('other', 'Друго'),
+    )
+
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.PositiveIntegerField()
+    content_object = GenericForeignKey('content_type', 'object_id')
+    verdict = models.CharField(max_length=10, choices=VERDICT_CHOICES, verbose_name="Резултат")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, blank=True, default='', verbose_name="Категория")
+    reason = models.CharField(max_length=300, blank=True, default='', verbose_name="Причина")
+    model_name = models.CharField(max_length=120, blank=True, default='', verbose_name="Модел")
+    attempts = models.PositiveSmallIntegerField(default=0, verbose_name="Опити")
+    checked_at = models.DateTimeField(default=timezone.now, verbose_name="Проверено на")
+
+    class Meta:
+        verbose_name = "ИИ проверка на съдържание"
+        verbose_name_plural = "ИИ проверки на съдържание"
+        constraints = [
+            models.UniqueConstraint(
+                fields=('content_type', 'object_id'),
+                name='blog_ai_content_check_unique_object',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=('verdict', 'checked_at'), name='blog_ai_check_verdict_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.content_type} #{self.object_id}: {self.get_verdict_display()}'
+
+
 class Comments(models.Model):
     content = models.TextField(blank=False, help_text="Съдържанието на коментара.")
     user = models.ForeignKey(
@@ -265,6 +354,7 @@ class Comments(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, help_text="Дата и час на създаване на коментара. Формат: YYYY-MM-DD HH:MM:SS.")
     post = models.ForeignKey(Posts, on_delete=models.CASCADE, help_text="Публикацията, към която е коментарът.")
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='replies', help_text="Родителският коментар, ако този е отговор.")
+    ai_checks = GenericRelation(AIContentCheck)
 
     class Meta:
         ordering = ['created_at']
@@ -325,6 +415,7 @@ class BellSongSuggestion(models.Model):
     submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Изпратено на", help_text="Дата и час на изпращане на предложението. Формат: YYYY-MM-DD HH:MM:SS.")
     voted_by = models.ManyToManyField(User, related_name='voted_songs', blank=True, verbose_name="Гласували потребители", help_text="Потребители, които са гласували за тази песен.")
     votes = models.IntegerField(default=0, verbose_name="Гласове", help_text="Брой на гласовете за песента.")
+    ai_checks = GenericRelation(AIContentCheck)
 
     class Meta:
         verbose_name = "Предложение за песен за звънец"
@@ -368,6 +459,7 @@ class MemeOfWeek(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата на качване", null=True, help_text="Дата и час на качване на мемето. Формат: YYYY-MM-DD HH:MM:SS.")
     voted_by = models.ManyToManyField(User, related_name='voted_memes', blank=True, verbose_name="Гласували потребители", help_text="Потребители, които са гласували за това меме.")
     votes = models.IntegerField(default=0, verbose_name="Гласове", help_text="Брой на гласовете за мемето.")
+    ai_checks = GenericRelation(AIContentCheck)
 
     class Meta:
         verbose_name = "Меме на седмицата"
@@ -2449,6 +2541,49 @@ class SiteSettings(models.Model):
         ),
     )
     enable_program_page = models.BooleanField(default=True, verbose_name="Активирана страница 'Програма'", help_text="Показва или скрива страницата с учебната програма.")
+    enable_ai = models.BooleanField(
+        default=False,
+        verbose_name="ИИ функции (общо копче)",
+        help_text=(
+            "Главното копче за изкуствения интелект. Когато е изключено, "
+            "всички ИИ функции са спрени, независимо от копчетата по-долу."
+        ),
+    )
+    enable_ai_summaries = models.BooleanField(
+        default=True,
+        verbose_name="ИИ: резюмета на статиите („Накратко“)",
+        help_text="Автоматично кратко резюме в началото на всяка статия.",
+    )
+    enable_ai_moderation = models.BooleanField(
+        default=True,
+        verbose_name="ИИ: помощ при модерацията",
+        help_text=(
+            "Маркира в админ панела коментари, предложения за песни и мемета, "
+            "които може да са неподходящи. Нищо не се трие автоматично."
+        ),
+    )
+    enable_ai_assistant = models.BooleanField(
+        default=True,
+        verbose_name="ИИ: асистент за посетителите",
+        help_text="Чат, който отговаря на въпроси само от съдържанието на сайта.",
+    )
+    ai_model_public = models.CharField(
+        max_length=120,
+        choices=AI_MODEL_CHOICES,
+        default=DEFAULT_PUBLIC_AI_MODEL,
+        verbose_name="ИИ модел за публично съдържание",
+        help_text="Използва се за резюметата на статиите. Числата са неврони за 1 милион токена (вход / изход).",
+    )
+    ai_model_student_text = models.CharField(
+        max_length=120,
+        choices=AI_MODEL_CHOICES,
+        default=DEFAULT_STUDENT_TEXT_AI_MODEL,
+        verbose_name="ИИ модел за текстове от ученици",
+        help_text=(
+            "Използва се за модерацията и за асистента. Препоръчва се Mistral, "
+            "защото работи на сървърите на Cloudflare."
+        ),
+    )
 
     class Meta:
         verbose_name = "Настройки на сайта"
