@@ -134,6 +134,25 @@ TURNSTILE_VERIFY_URL = (
     "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 )
 
+# Cloudflare Workers AI. Both values are optional: without them every AI
+# feature stays off and the site behaves exactly as before. The admin switches
+# live in SiteSettings (enable_ai and the per-feature enable_ai_* fields).
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "").strip()
+CF_API_TOKEN = os.getenv("CF_API_TOKEN", "").strip()
+AI_API_BASE_URL = "https://api.cloudflare.com/client/v4"
+# The models themselves are chosen in the admin (SiteSettings.ai_model_*).
+AI_REQUEST_TIMEOUT_SECONDS = env_int("AI_REQUEST_TIMEOUT_SECONDS", 60)
+AI_BATCH_SIZE = env_int("AI_BATCH_SIZE", 20)
+# Site-wide cap on assistant questions per UTC day, so visitors cannot use up
+# the free 10 000 neurons that summaries and moderation also need.
+AI_ASSISTANT_DAILY_LIMIT = env_int("AI_ASSISTANT_DAILY_LIMIT", 120)
+if AI_REQUEST_TIMEOUT_SECONDS < 5:
+    raise ImproperlyConfigured("AI_REQUEST_TIMEOUT_SECONDS must be at least 5.")
+if AI_BATCH_SIZE < 1:
+    raise ImproperlyConfigured("AI_BATCH_SIZE must be at least 1.")
+if AI_ASSISTANT_DAILY_LIMIT < 0:
+    raise ImproperlyConfigured("AI_ASSISTANT_DAILY_LIMIT cannot be negative.")
+
 # Transactional email is sent through Resend's HTTPS API via django-anymail.
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
@@ -448,6 +467,14 @@ REST_FRAMEWORK = {
             "120/hour",
         ),
         'analytics': os.getenv("THROTTLE_ANALYTICS", "240/hour"),
+        'ai_assistant_user': os.getenv(
+            "THROTTLE_AI_ASSISTANT_USER",
+            "30/day",
+        ),
+        'ai_assistant_anon': os.getenv(
+            "THROTTLE_AI_ASSISTANT_ANON",
+            "10/day",
+        ),
     },
 }
 

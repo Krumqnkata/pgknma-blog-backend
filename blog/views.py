@@ -118,16 +118,12 @@ from .push import (
     cancel_read_deliveries_for_subscription,
 )
 from .post_analytics import with_current_month_views
-
-
-def _public_posts_queryset():
-    now = timezone.now()
-    return (
-        Posts.objects.filter(published=True, allowed=True)
-        .filter(Q(published_at__isnull=True) | Q(published_at__lte=now))
-        .annotate(visible_at=Coalesce('published_at', 'created_at'))
-        .order_by('-visible_at')
-    )
+from .public_content import (
+    event_search_q,
+    post_search_q,
+    public_events_queryset,
+    public_posts_queryset as _public_posts_queryset,
+)
 
 
 def _post_social_metadata(post):
@@ -2507,10 +2503,7 @@ class GlobalSearchView(APIView):
 
         results = []
         posts = _public_posts_queryset().filter(
-            Q(title__icontains=query)
-            | Q(hook__icontains=query)
-            | Q(content__icontains=query)
-            | Q(categories__full_name__icontains=query)
+            post_search_q(query)
         ).distinct().prefetch_related('categories')[:6]
         for post in posts:
             first_category = post.categories.first()
@@ -2525,12 +2518,8 @@ class GlobalSearchView(APIView):
                 'meta': meta,
             })
 
-        events = Event.objects.filter(published=True).filter(
-            Q(title__icontains=query)
-            | Q(description__icontains=query)
-            | Q(location__icontains=query)
-            | Q(category__icontains=query)
-            | Q(attendees_text__icontains=query)
+        events = public_events_queryset().filter(
+            event_search_q(query)
         ).order_by('start_datetime')[:5]
         for event in events:
             results.append({

@@ -32,6 +32,7 @@ repository `../../Frontend/docs/`, защото frontend и backend се version
 | [GAMIFICATION.md](GAMIFICATION.md) | Точки, нива, мисии, значки, награди и lifetime статистики. |
 | [GAMES.md](GAMES.md) | Шестте миниигри, пакетът за 400 дни, API, настройки и пускане. |
 | [NOTIFICATIONS_AND_PUSH.md](NOTIFICATIONS_AND_PUSH.md) | Канали, delivery lifecycle, preferences, push и scheduler. |
+| [AI.md](AI.md) | ИИ резюмета, помощ при модерацията и асистент през Cloudflare Workers AI; копчета, модели, лимити и поверителност. |
 | [TEAM_CHAT.md](TEAM_CHAT.md) | Staff chat, discussions, attachments, sharing и access control. |
 | [CONFIGURATION.md](CONFIGURATION.md) | Всички групи environment настройки, критични production стойности и безопасен upgrade процес. |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Диагностика на routing, WAF, Push, timers, uploads, migrations и cache проблеми. |

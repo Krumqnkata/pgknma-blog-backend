@@ -3,6 +3,7 @@ from django.contrib.auth.decorators import user_passes_test
 from rest_framework.routers import DefaultRouter
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
 from . import views as blog_views
+from blog.ai.views import AIAssistantView
 from blog.auth import GoogleAuthView, GoogleLinkView
 from blog.gamification.catalog import GamificationCatalogView
 from blog.games.views import GameActionView, GameCatalogView, GameSessionView, GameStartView
@@ -207,6 +208,9 @@ urlpatterns = [
 
     # Общо търсене в публичните публикации, събития, песни и мемета.
     path('search/', blog_views.GlobalSearchView.as_view(), name='global-search'),
+
+    # ИИ асистент: отговаря само от съдържанието на сайта, въпросите не се пазят.
+    path('ai/assistant/', AIAssistantView.as_view(), name='ai-assistant'),
 
     # Анонимна статистика за прегледи (не се съхранява IP адрес).
     path(

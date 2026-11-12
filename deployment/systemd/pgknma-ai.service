@@ -1,0 +1,13 @@
+[Unit]
+Description=PGKNMA AI tasks (article summaries and moderation checks)
+After=network.target mysql.service
+
+[Service]
+Type=oneshot
+User=webmaster
+Group=www-data
+WorkingDirectory=/var/www/blog/cms/cms
+ExecStart=/var/www/blog/cms/venv/bin/python manage.py run_ai_tasks
+
+[Install]
+WantedBy=multi-user.target

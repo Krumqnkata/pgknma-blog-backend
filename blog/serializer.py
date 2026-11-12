@@ -248,6 +248,7 @@ class PostSerializer(serializers.ModelSerializer):
     documents = serializers.SerializerMethodField()
     banner = serializers.SerializerMethodField()
     views_this_month = serializers.SerializerMethodField()
+    ai_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Posts
@@ -272,7 +273,19 @@ class PostSerializer(serializers.ModelSerializer):
             'gallery',
             'documents',
             'views_this_month',
+            'ai_summary',
         )
+
+    def get_ai_summary(self, obj) -> str:
+        # The context dict is shared by every item of a list, so the switch is
+        # read from the database once per response, not once per post.
+        enabled = self.context.get('_ai_summaries_enabled')
+        if enabled is None:
+            from .ai import config
+
+            enabled = config.ai_feature_enabled(config.SUMMARIES)
+            self.context['_ai_summaries_enabled'] = enabled
+        return obj.ai_summary if enabled else ''
 
     def get_banner(self, obj):
         if obj.banner and hasattr(obj.banner, 'url'):
@@ -1043,13 +1056,26 @@ class ConsentRecordSerializer(serializers.ModelSerializer):
 
 class SiteSettingsSerializer(serializers.ModelSerializer):
     header_logo = serializers.SerializerMethodField()
+    ai_summaries_enabled = serializers.SerializerMethodField()
+    ai_assistant_enabled = serializers.SerializerMethodField()
 
     class Meta:
         model = SiteSettings
-        fields = ['maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'enable_program_page', 'header_logo']
+        fields = ['maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'enable_program_page', 'header_logo', 'ai_summaries_enabled', 'ai_assistant_enabled']
 
     def get_header_logo(self, obj):
         return current_header_logo()
+
+    # Effective values: main switch + feature switch + configured credentials.
+    def get_ai_summaries_enabled(self, obj) -> bool:
+        from .ai import config
+
+        return config.ai_feature_enabled(config.SUMMARIES, obj)
+
+    def get_ai_assistant_enabled(self, obj) -> bool:
+        from .ai import config
+
+        return config.ai_feature_enabled(config.ASSISTANT, obj)
 
 
 class ScheduleEntrySerializer(serializers.ModelSerializer):

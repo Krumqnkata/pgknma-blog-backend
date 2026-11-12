@@ -79,6 +79,21 @@ systemctl list-timers pgknma-notifications.timer
 journalctl -u pgknma-notifications.service -n 100 --no-pager
 ```
 
+### AI задачи
+
+Файлове: `deployment/systemd/pgknma-ai.service` и `.timer`.
+Timer-ът е на всеки 5 минути и изпълнява `run_ai_tasks` (резюмета на статии и
+ИИ проверка на ново съдържание). Без `CF_ACCOUNT_ID`/`CF_API_TOKEN` или при
+изключено копче в админа командата не прави нищо. Подробно: [AI.md](AI.md).
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now pgknma-ai.timer
+systemctl list-timers pgknma-ai.timer
+journalctl -u pgknma-ai.service -n 100 --no-pager
+python manage.py run_ai_tasks --dry-run   # колко записа чакат, без да вика ИИ
+```
+
 ### Data retention
 
 Файлове: `deploy/systemd/pgknma-data-retention.service` и `.timer`.
