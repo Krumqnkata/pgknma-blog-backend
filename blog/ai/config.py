@@ -38,9 +38,26 @@ def student_text_model(site_settings=None):
 
 
 def ai_feature_enabled(feature, site_settings=None):
+    """The feature may call Cloudflare: admin switches on and credentials present."""
     if feature not in _FEATURE_FIELDS:
         raise ValueError(f'Unknown AI feature: {feature}')
     if not credentials_configured():
         return False
     site_settings = site_settings or get_site_settings()
     return bool(site_settings.enable_ai and getattr(site_settings, _FEATURE_FIELDS[feature]))
+
+
+def assistant_visible(site_settings=None):
+    """The assistant is shown. It answers from its rules even without Cloudflare."""
+    site_settings = site_settings or get_site_settings()
+    return bool(site_settings.enable_ai and site_settings.enable_ai_assistant)
+
+
+def assistant_ai_enabled(site_settings=None):
+    """Questions without a matching rule may go to the AI model."""
+    site_settings = site_settings or get_site_settings()
+    return bool(
+        assistant_visible(site_settings)
+        and site_settings.ai_assistant_use_ai
+        and credentials_configured()
+    )

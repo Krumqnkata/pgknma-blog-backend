@@ -291,6 +291,140 @@ class Posts(models.Model):
         return hashlib.sha256(source.encode('utf-8')).hexdigest()
 
 
+class AssistantRule(models.Model):
+    """A ready answer that the AI assistant gives without calling the AI."""
+
+    title = models.CharField(max_length=150, verbose_name="Заглавие")
+    phrases = models.TextField(
+        verbose_name="Ключови фрази",
+        help_text=(
+            "По една фраза на ред. Правилото отговаря, ако във въпроса има ВСИЧКИ "
+            "думи от поне една фраза (форма и окончания нямат значение). "
+            "Пример: „кога ваканция“, „коледна ваканция“."
+        ),
+    )
+    answer = models.TextField(verbose_name="Отговор")
+    link_title = models.CharField(max_length=120, blank=True, default='', verbose_name="Текст на линка")
+    link_url = models.CharField(
+        max_length=300,
+        blank=True,
+        default='',
+        verbose_name="Линк",
+        help_text="Страница от сайта (напр. /events) или пълен адрес (https://…).",
+    )
+    priority = models.SmallIntegerField(
+        default=0,
+        verbose_name="Приоритет",
+        help_text="При няколко съвпадения печели правилото с по-висок приоритет.",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Активно")
+    hit_count = models.PositiveIntegerField(default=0, editable=False, verbose_name="Използвано")
+    last_hit_at = models.DateTimeField(null=True, blank=True, editable=False, verbose_name="Последно използвано")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Правило на ИИ асистента"
+        verbose_name_plural = "Правила на ИИ асистента"
+        ordering = ('-priority', 'title')
+
+    def __str__(self):
+        return self.title
+
+    def clean(self):
+        super().clean()
+        url = (self.link_url or '').strip()
+        if url and not (url.startswith('/') or url.startswith('https://')):
+            raise ValidationError({'link_url': 'Линкът трябва да започва с „/“ или „https://“.'})
+        if not any(line.strip() for line in (self.phrases or '').splitlines()):
+            raise ValidationError({'phrases': 'Добавете поне една фраза.'})
+
+
+class AssistantUnansweredQuestion(models.Model):
+    """A question nobody could answer. Stored without any link to the user."""
+
+    STATUS_NEW = 'new'
+    STATUS_RESOLVED = 'resolved'
+    STATUS_CHOICES = ((STATUS_NEW, 'Ново'), (STATUS_RESOLVED, 'Решено'))
+
+    question = models.CharField(max_length=500, verbose_name="Въпрос")
+    normalized = models.CharField(max_length=500, unique=True, editable=False)
+    times_asked = models.PositiveIntegerField(default=1, verbose_name="Пъти зададен")
+    first_asked_at = models.DateTimeField(auto_now_add=True, verbose_name="Първо зададен")
+    last_asked_at = models.DateTimeField(default=timezone.now, verbose_name="Последно зададен")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_NEW, verbose_name="Статус")
+
+    class Meta:
+        verbose_name = "Неотговорен въпрос към асистента"
+        verbose_name_plural = "Неотговорени въпроси към асистента"
+        ordering = ('-times_asked', '-last_asked_at')
+
+    def __str__(self):
+        return self.question
+
+
+class AssistantConversation(models.Model):
+    """A saved assistant conversation of a logged-in user (private to that user)."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='assistant_conversations')
+    title = models.CharField(max_length=120, verbose_name="Заглавие")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "Разговор с ИИ асистента"
+        verbose_name_plural = "Разговори с ИИ асистента"
+        ordering = ('-updated_at',)
+
+    def __str__(self):
+        return self.title
+
+
+class AssistantMessage(models.Model):
+    ROLE_CHOICES = (('user', 'Потребител'), ('assistant', 'Асистент'))
+    SOURCE_CHOICES = (('rule', 'Правило'), ('ai', 'ИИ'), ('none', 'Без отговор'))
+
+    conversation = models.ForeignKey(AssistantConversation, on_delete=models.CASCADE, related_name='messages')
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    content = models.TextField()
+    answer_source = models.CharField(max_length=10, choices=SOURCE_CHOICES, blank=True, default='')
+    rule_key = models.CharField(max_length=80, blank=True, default='')
+    sources = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('created_at', 'pk')
+
+
+class KnowledgeChunk(models.Model):
+    """One piece of site content the assistant can search (with an optional embedding)."""
+
+    source_type = models.CharField(max_length=30, db_index=True)
+    source_id = models.CharField(max_length=80)
+    part = models.PositiveSmallIntegerField(default=0)
+    title = models.CharField(max_length=255)
+    url = models.CharField(max_length=300, blank=True, default='')
+    text = models.TextField()
+    stems = models.TextField(blank=True, default='')
+    content_hash = models.CharField(max_length=64)
+    embedding = models.BinaryField(null=True, blank=True)
+    embedding_model = models.CharField(max_length=120, blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Част от знанията на асистента"
+        verbose_name_plural = "Знания на асистента"
+        constraints = [
+            models.UniqueConstraint(
+                fields=('source_type', 'source_id', 'part'),
+                name='blog_knowledge_chunk_unique_part',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.source_type}:{self.source_id}#{self.part} {self.title}'
+
+
 class AIContentCheck(models.Model):
     """Result of the AI moderation check for one comment, song or meme.
 
@@ -2638,6 +2772,14 @@ class SiteSettings(models.Model):
         help_text=(
             "Използва се за модерацията и за асистента. Препоръчва се Mistral, "
             "защото работи на сървърите на Cloudflare."
+        ),
+    )
+    ai_assistant_use_ai = models.BooleanField(
+        default=True,
+        verbose_name="ИИ асистент: ИИ за въпроси без правило",
+        help_text=(
+            "Асистентът първо търси готов отговор в правилата. Изключете това, "
+            "за да отговаря само по правила — тогава не се изпращат заявки към Cloudflare."
         ),
     )
 

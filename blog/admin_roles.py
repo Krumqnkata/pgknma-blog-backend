@@ -44,9 +44,11 @@ EDITOR_PERMISSIONS = (
             "scheduleentry",
             "notification",
             "changelog",
+            "assistantrule",
         ),
     )
     | _model_permissions("blog", ("scheduleimport",), ("view", "change"))
+    | _model_permissions("blog", ("assistantunansweredquestion",), ("view", "change", "delete"))
     | _model_permissions(
         "blog",
         ("termsofservice", "privacypolicy"),

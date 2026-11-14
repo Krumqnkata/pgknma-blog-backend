@@ -1,217 +1,141 @@
-"""The AI assistant: answers visitors' questions only from the site's content.
+"""The AI assistant: rules first, then the AI with the best matching site content.
 
-Questions are not stored anywhere. Each request finds the relevant FAQ
-entries, articles, events and (when asked) a class timetable, and sends only
-those to the model, which keeps the request small on the free plan.
+1. Admin rules (AssistantRule) — ready answers written in the admin.
+2. Built-in rules (intents.py) — timetable, events, news, points… from the database.
+3. The AI model with the most relevant knowledge chunks (retrieval.py).
+Questions nobody can answer are logged without any user data, so admins can
+add a rule for them.
 """
 
 import re
 from dataclasses import dataclass, field
-from datetime import timedelta
-from functools import lru_cache
-from functools import reduce
-from operator import or_
-from pathlib import Path
 
 from django.utils import timezone
 
-from blog.models import ScheduleEntry
-from blog.public_content import (
-    event_search_q,
-    post_search_q,
-    public_events_queryset,
-    public_posts_queryset,
-)
+from blog.models import UserBadge, UserProfile
 
 from . import config, prompts
-from .client import run_chat
-from .summaries import markdown_to_text
+from .client import AIQuotaExceeded, AIUnavailable, run_chat
+from .intents import AskContext, match_builtin
+from .retrieval import build_context, search
+from .rules import log_unanswered, match_admin_rule
+from .text import is_personal
 
-KNOWLEDGE_FILE = Path(__file__).with_name('knowledge.md')
-MAX_KEYWORDS = 6
-MAX_FAQ_SECTIONS = 3
-MAX_POSTS = 3
-MAX_EVENTS = 3
-UPCOMING_EVENTS = 3
-POST_EXCERPT_CHARS = 700
+CONTACT_SOURCE = {'title': 'Контакт', 'url': '/contact'}
+FAQ_SOURCE = {'title': 'Често задавани въпроси', 'url': '/faq'}
 
-_WORD = re.compile(r'[0-9a-zа-яѝ]+', re.IGNORECASE)
-_CLASS_NAME = re.compile(r'(?<!\d)(8|9|10|11|12)\s*[-–]?\s*([абвгдеa-e])(?![а-яa-z])', re.IGNORECASE)
-_LATIN_TO_CYRILLIC_CLASS = {'a': 'а', 'b': 'б', 'v': 'в', 'c': 'в', 'g': 'г', 'd': 'д', 'e': 'е'}
-
-# Very common Bulgarian words that would match almost every text.
-STOPWORDS = {
-    'като', 'какво', 'каква', 'какъв', 'какви', 'кога', 'къде', 'колко', 'който', 'която', 'което',
-    'които', 'защо', 'може', 'мога', 'можем', 'имам', 'имаме', 'има', 'няма', 'тази', 'този', 'това',
-    'тези', 'там', 'тук', 'сега', 'още', 'много', 'малко', 'само', 'вече', 'дали', 'ако', 'или',
-    'обаче', 'когато', 'моля', 'искам', 'трябва', 'бъде', 'бъдат', 'нещо', 'някой', 'всеки', 'всички',
-    'сайт', 'сайта', 'сайтът', 'училище', 'училището', 'днес', 'утре', 'кажи', 'кажете', 'знаеш',
-}
+NO_ANSWER_TEXT = (
+    'Не намерих отговор на този въпрос в сайта. Опитайте да попитате по друг начин, '
+    'вижте „Често задавани въпроси“ или пишете на екипа чрез страницата за контакт.'
+)
+RULES_ONLY_TEXT = (
+    'Нямам готов отговор на този въпрос. Мога да помогна с програмата, събитията, новините, '
+    'анкетата, мемето на седмицата, точките и мисиите. За други въпроси вижте '
+    '„Често задавани въпроси“ или пишете на екипа чрез страницата за контакт.'
+)
+LIMIT_TEXT = (
+    'За днес свободните въпроси към ИИ свършиха. Все още мога да отговарям за програмата, '
+    'събитията, новините, анкетата, мемето на седмицата и точките — питайте!'
+)
+AI_DOWN_TEXT = (
+    'ИИ в момента не е достъпен, затова мога да отговарям само на въпроси, за които имам '
+    'готов отговор — програмата, събитията, новините, точките. Опитайте след малко.'
+)
+_SAYS_UNKNOWN = re.compile(
+    r'не знам|нямам (?:такава |достатъчно )?информация|не намерих|не мога да (?:намеря|отговоря)|няма информация'
+)
+WEEKDAYS = ('понеделник', 'вторник', 'сряда', 'четвъртък', 'петък', 'събота', 'неделя')
 
 
 @dataclass
-class AssistantAnswer:
+class AssistantResult:
     answer: str
     sources: list = field(default_factory=list)
+    answer_source: str = 'none'   # rule | ai | none
+    rule_key: str = ''
 
 
-def extract_keywords(question):
-    """Simple stems: long words cut to 6 letters so „ваканцията“ finds „ваканция“."""
-    keywords = []
-    for word in _WORD.findall(question.lower()):
-        if len(word) < 4 or word in STOPWORDS:
-            continue
-        stem = word[:6] if len(word) > 6 else word
-        if stem not in keywords:
-            keywords.append(stem)
-    return keywords[:MAX_KEYWORDS]
+def personal_context(user):
+    """Short summary of the user's own progress, sent to the AI only for personal questions."""
+    from blog.gamification.services import active_missions_for_user, level_state
+
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    state = level_state(profile.gamification_points)
+    lines = [f'Потребителско име: {user.username}', f'Точки: {profile.gamification_points}']
+    if state.current:
+        lines.append(f'Ниво: {state.current.number} „{state.current.title}“')
+    if state.next:
+        lines.append(f'Следващо ниво: {state.next.number} „{state.next.title}“, остават {state.points_to_next} точки')
+    for mission in active_missions_for_user(user):
+        goals = ', '.join(f'{req["label"]} {req["current"]}/{req["target"]}' for req in mission['requirements'])
+        done = 'изпълнена' if mission['completed_at'] else f'{mission["progress_percent"]}%'
+        lines.append(f'Мисия „{mission["title"]}“ ({done}): {goals}')
+    badges = [row.badge.title for row in UserBadge.objects.filter(user=user).select_related('badge')[:15]]
+    lines.append('Значки: ' + (', '.join(badges) if badges else 'няма'))
+    return '\n'.join(lines)
 
 
-@lru_cache(maxsize=1)
-def knowledge_sections():
-    text = KNOWLEDGE_FILE.read_text(encoding='utf-8')
-    text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
-    sections = []
-    for block in re.split(r'^## ', text, flags=re.MULTILINE)[1:]:
-        heading, _, body = block.partition('\n')
-        body = re.sub(r'^# .*$', '', body, flags=re.MULTILINE).strip()
-        sections.append((heading.strip(), body))
-    return tuple(sections)
+def _messages(question, history, context, personal):
+    today = timezone.localdate()
+    system = f'{prompts.ASSISTANT_SYSTEM}\nДнес е {WEEKDAYS[today.weekday()]}, {today.strftime("%d.%m.%Y")}.'
+    messages = [{'role': 'system', 'content': system}]
+    for turn in list(history)[-6:]:
+        if turn.get('role') in ('user', 'assistant') and turn.get('content'):
+            messages.append({'role': turn['role'], 'content': str(turn['content'])[:1000]})
+    parts = [f'КОНТЕКСТ:\n{context or "Няма намерена информация."}']
+    if personal:
+        parts.append(f'ЛИЧНИ ДАННИ НА ПИТАЩИЯ:\n{personal}')
+    parts.append(f'ВЪПРОС:\n{question}')
+    messages.append({'role': 'user', 'content': '\n\n'.join(parts)})
+    return messages
 
 
-def _score(text, keywords):
-    lowered = text.lower()
-    return sum(lowered.count(keyword) for keyword in keywords)
-
-
-def relevant_knowledge(keywords):
-    scored = [
-        (_score(f'{heading} {heading} {body}', keywords), heading, body)
-        for heading, body in knowledge_sections()
-    ]
-    scored = [item for item in scored if item[0] > 0]
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return [(heading, body) for _, heading, body in scored[:MAX_FAQ_SECTIONS]]
-
-
-def relevant_posts(keywords):
-    if not keywords:
-        return []
-    query = reduce(or_, (post_search_q(keyword) for keyword in keywords))
-    candidates = list(public_posts_queryset().filter(query).distinct()[:20])
-    candidates.sort(
-        key=lambda post: _score(f'{post.title} {post.title} {post.hook} {post.content}', keywords),
-        reverse=True,
-    )
-    return candidates[:MAX_POSTS]
-
-
-def relevant_events(keywords):
-    """Return (events for the context, whether any of them matched the question)."""
-    since = timezone.now() - timedelta(days=1)
-    upcoming = list(
-        public_events_queryset().filter(start_datetime__gte=since).order_by('start_datetime')[:UPCOMING_EVENTS]
-    )
-    matched = []
-    if keywords:
-        query = reduce(or_, (event_search_q(keyword) for keyword in keywords))
-        matched = list(public_events_queryset().filter(query).order_by('-start_datetime')[:MAX_EVENTS])
-    seen, events = set(), []
-    for event in matched + upcoming:
-        if event.pk not in seen:
-            seen.add(event.pk)
-            events.append(event)
-    return events, bool(matched)
-
-
-def class_schedule(question, site_settings):
-    if not site_settings.enable_program_page:
-        return None, []
-    match = _CLASS_NAME.search(question)
-    if not match:
-        return None, []
-    letter = match.group(2).lower()
-    letter = _LATIN_TO_CYRILLIC_CLASS.get(letter, letter)
-    class_name = f'{match.group(1)}{letter.upper()}'
-    entries = list(ScheduleEntry.objects.filter(class_name__iexact=class_name).order_by('lesson_number'))
-    return class_name, entries
-
-
-def _format_datetime(value):
-    return timezone.localtime(value).strftime('%d.%m.%Y %H:%M') if value else ''
-
-
-def build_context(question, site_settings=None):
-    """Return (context text, sources) for one question."""
+def answer_question(question, *, user=None, history=(), site_settings=None, reserve_ai=None, release_ai=None):
+    """Answer one question. `reserve_ai`/`release_ai` guard the site-wide daily AI limit."""
     site_settings = site_settings or config.get_site_settings()
-    keywords = extract_keywords(question)
-    parts, sources = [], []
+    history = list(history)
 
-    knowledge = relevant_knowledge(keywords)
-    if knowledge:
-        parts.append('Често задавани въпроси и правила:\n' + '\n\n'.join(
-            f'- {heading}\n{body}' for heading, body in knowledge
-        ))
-        sources.append({'title': 'Често задавани въпроси', 'url': '/faq'})
+    rule = match_admin_rule(question)
+    if rule is None:
+        rule = match_builtin(AskContext(question, user=user, history=history, site_settings=site_settings))
+    if rule is not None:
+        return AssistantResult(rule.text, rule.sources, 'rule', rule.key)
 
-    posts = relevant_posts(keywords)
-    if posts:
-        blocks = []
-        for post in posts:
-            excerpt = post.ai_summary or markdown_to_text(post.content)[:POST_EXCERPT_CHARS]
-            date = _format_datetime(getattr(post, 'visible_at', None) or post.created_at)
-            blocks.append(f'- Статия „{post.title}“ ({date}): {post.hook}\n{excerpt}')
-            sources.append({'title': post.title, 'url': f'/post/{post.pk}'})
-        parts.append('Статии от сайта:\n' + '\n\n'.join(blocks))
+    if not config.assistant_ai_enabled(site_settings):
+        log_unanswered(question)
+        return AssistantResult(RULES_ONLY_TEXT, [FAQ_SOURCE, CONTACT_SOURCE], 'none')
 
-    events, events_matched = relevant_events(keywords)
-    if events:
-        lines = []
-        for event in events:
-            end = f' до {_format_datetime(event.end_datetime)}' if event.end_datetime else ''
-            description = markdown_to_text(event.description)[:300]
-            lines.append(
-                f'- {event.title}: {_format_datetime(event.start_datetime)}{end}, {event.location}. '
-                f'За: {event.attendees_text}. {description}'
-            )
-        parts.append(f'Събития (днес е {timezone.localdate().strftime("%d.%m.%Y")}):\n' + '\n'.join(lines))
-        # Upcoming events are always in the context, but the calendar is only
-        # shown as a source when an event matched the question.
-        if events_matched:
-            sources.append({'title': 'Училищен календар', 'url': '/events'})
+    logged_in = bool(user and user.is_authenticated)
+    personal = personal_context(user) if logged_in and is_personal(question) else ''
+    hits = search(question)
+    if not hits and not personal:
+        log_unanswered(question)
+        return AssistantResult(NO_ANSWER_TEXT, [FAQ_SOURCE, CONTACT_SOURCE], 'none')
 
-    class_name, entries = class_schedule(question, site_settings)
-    if class_name:
-        if entries:
-            rows = [
-                f'{entry.lesson_number}. час — Пн: {entry.monday or "—"}; Вт: {entry.tuesday or "—"}; '
-                f'Ср: {entry.wednesday or "—"}; Чт: {entry.thursday or "—"}; Пт: {entry.friday or "—"}'
-                for entry in entries
-            ]
-            parts.append(f'Седмична програма на {class_name} клас:\n' + '\n'.join(rows))
-            sources.append({'title': f'Програма на {class_name}', 'url': '/program'})
-        else:
-            parts.append(f'Няма въведена програма за {class_name} клас.')
+    if reserve_ai is not None and not reserve_ai():
+        return AssistantResult(LIMIT_TEXT, [], 'none', 'daily_limit')
+    context, sources = build_context(hits)
+    try:
+        result = run_chat(
+            model=config.student_text_model(site_settings),
+            messages=_messages(question, history, context, personal),
+            max_tokens=450,
+            temperature=0.2,
+        )
+    except AIQuotaExceeded:
+        if release_ai:
+            release_ai()
+        return AssistantResult(LIMIT_TEXT, [], 'none', 'daily_limit')
+    except AIUnavailable:
+        if release_ai:
+            release_ai()
+        return AssistantResult(AI_DOWN_TEXT, [], 'none', 'ai_unavailable')
 
-    context = '\n\n'.join(parts) if parts else 'Няма намерена информация по този въпрос.'
-    return context, sources
-
-
-def answer_question(question, history=()):
-    """Ask the model. Raises AIError subclasses on failure."""
-    site_settings = config.get_site_settings()
-    context, sources = build_context(question, site_settings)
-    messages = [{'role': 'system', 'content': prompts.ASSISTANT_SYSTEM}]
-    for turn in history:
-        messages.append({'role': turn['role'], 'content': turn['content']})
-    messages.append({
-        'role': 'user',
-        'content': f'КОНТЕКСТ:\n{context}\n\nВЪПРОС:\n{question}',
-    })
-    result = run_chat(
-        model=config.student_text_model(site_settings),
-        messages=messages,
-        max_tokens=350,
-        temperature=0.2,
-    )
-    return AssistantAnswer(answer=result.text, sources=sources[:5])
+    text = result.text
+    if prompts.UNKNOWN_MARKER in text:
+        text = text.replace(prompts.UNKNOWN_MARKER, '').strip()
+        # Models sometimes add the marker to a good answer; trust it only with a real "I don't know".
+        if not text or len(text) < 40 or _SAYS_UNKNOWN.search(text.lower()):
+            log_unanswered(question)
+            return AssistantResult(text or NO_ANSWER_TEXT, [CONTACT_SOURCE], 'none')
+    return AssistantResult(text, sources, 'ai')
