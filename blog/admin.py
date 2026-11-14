@@ -1,4 +1,4 @@
-from blog.models import AIContentCheck, Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import AIContentCheck, MemeWeekResult, Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -1423,6 +1423,7 @@ class NotificationPreferenceAdmin(ModelAdmin):
         'posts_enabled',
         'events_enabled',
         'polls_enabled',
+        'memes_enabled',
         'changelog_enabled',
         'updated_at',
     )
@@ -1433,6 +1434,7 @@ class NotificationPreferenceAdmin(ModelAdmin):
         'posts_enabled',
         'events_enabled',
         'polls_enabled',
+        'memes_enabled',
         'changelog_enabled',
         'badges_enabled',
         'missions_enabled',
@@ -1461,12 +1463,12 @@ class NotificationReadStateAdmin(ModelAdmin):
 
 @admin.register(PushSubscription)
 class PushSubscriptionAdmin(ModelAdmin):
-    list_display = ('owner_display', 'browser_display', 'active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'changelog_enabled', 'failure_count', 'last_success_at', 'updated_at')
-    list_filter = ('active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'changelog_enabled', 'updated_at', 'last_success_at')
+    list_display = ('owner_display', 'browser_display', 'active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'memes_enabled', 'changelog_enabled', 'failure_count', 'last_success_at', 'updated_at')
+    list_filter = ('active', 'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'memes_enabled', 'changelog_enabled', 'updated_at', 'last_success_at')
     search_fields = ('user__username', 'user__email', 'endpoint', 'user_agent')
     readonly_fields = (
         'user', 'endpoint', 'endpoint_hash', 'management_token_hash', 'p256dh', 'auth', 'user_agent', 'active',
-        'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'changelog_enabled',
+        'general_enabled', 'posts_enabled', 'events_enabled', 'polls_enabled', 'memes_enabled', 'changelog_enabled',
         'failure_count', 'created_at', 'updated_at', 'last_success_at',
     )
     fields = readonly_fields
@@ -1691,11 +1693,11 @@ class PostDocumentAdmin(ModelAdmin):
 
 @admin.register(MemeOfWeek)
 class MemeOfWeekAdmin(AICheckAdminMixin, ModelAdmin):
-    list_display = ('title', 'user', 'image_preview', 'status', 'votes', 'created_at', 'ai_check_display')
-    list_filter = ('status', 'created_at', AICheckListFilter)
+    list_display = ('title', 'user', 'image_preview', 'status', 'votes', 'week_start', 'created_at', 'ai_check_display')
+    list_filter = ('status', 'week_start', 'created_at', AICheckListFilter)
     search_fields = ('title', 'user__username')
     readonly_fields = (
-        'user', 'created_at', 'image', 'image_preview', 'votes', 'title',
+        'user', 'created_at', 'image', 'image_preview', 'votes', 'title', 'week_start',
     )
     exclude = ('voted_by',)
 
@@ -1710,6 +1712,22 @@ class MemeOfWeekAdmin(AICheckAdminMixin, ModelAdmin):
 
     def has_add_permission(self, request):
         return False  # Това ще забрани добавянето на нов мемета през админ панела
+
+
+@admin.register(MemeWeekResult)
+class MemeWeekResultAdmin(ModelAdmin):
+    """Closed meme weeks. Read-only: results are produced by the scheduler."""
+
+    list_display = ('week_start', 'winner', 'winner_votes', 'meme_count', 'announced_at', 'points_awarded_at')
+    list_filter = ('week_start',)
+    search_fields = ('winner__title', 'winner__user__username')
+    readonly_fields = ('week_start', 'winner', 'winner_votes', 'meme_count', 'finalized_at', 'announced_at', 'points_awarded_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(GamificationLevel)

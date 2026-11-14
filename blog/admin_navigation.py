@@ -69,6 +69,7 @@ ADMIN_NAVIGATION = (
             _item("Отговори на анкети", "/admin/blog/pollanswer/", "how_to_vote", *_permissions("blog", "pollanswer")),
             _item("Предложения за песни", "/admin/blog/bellsongsuggestion/", "music_note", *_permissions("blog", "bellsongsuggestion")),
             _item("Меме на седмицата", "/admin/blog/memeofweek/", "sentiment_very_satisfied", *_permissions("blog", "memeofweek")),
+            _item("Победители по седмици", "/admin/blog/memeweekresult/", "emoji_events", *_permissions("blog", "memeweekresult")),
         ),
     },
     {

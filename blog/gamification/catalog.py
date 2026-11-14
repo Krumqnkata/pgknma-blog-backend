@@ -97,12 +97,14 @@ def public_point_rules():
         'poll_vote': site.enable_weekly_poll,
         'song_approved': site.enable_bell_suggestions,
         'meme_approved': site.enable_meme_of_the_week,
+        'meme_week_winner': site.enable_meme_of_the_week,
     }
     notes = {
         'poll_vote': 'При отговор в анкета.',
         'comment': 'За нов коментар. При изтриване точките се отнемат.',
         'song_approved': 'След одобрение от екипа.',
         'meme_approved': 'След одобрение от екипа.',
+        'meme_week_winner': 'Бонус за мемето с най-много гласове за седмицата.',
         'post_read': 'След поне 15 секунди четене; еднократно за публикация.',
         'calendar_visit': 'При посещение на училищния календар; еднократно на ден.',
     }

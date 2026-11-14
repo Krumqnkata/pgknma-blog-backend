@@ -7,6 +7,7 @@ DEFAULT_POINT_RULES = {
     'comment': 5,
     'song_approved': 20,
     'meme_approved': 20,
+    'meme_week_winner': 50,
     'post_read': 2,
     'calendar_visit': 2,
 }
@@ -22,6 +23,7 @@ ACTION_DESCRIPTIONS = {
     'comment': 'Валиден коментар',
     'song_approved': 'Одобрено предложение за песен',
     'meme_approved': 'Одобрено меме',
+    'meme_week_winner': 'Меме на седмицата',
     'post_read': 'Прочетена публикация',
     'calendar_visit': 'Посещение на училищния календар',
 }

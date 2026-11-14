@@ -12,6 +12,7 @@ from blog.automatic_notifications import (
     notify_poll_if_active,
     notify_post_if_due,
 )
+from blog.meme_weeks import finalize_meme_weeks
 from blog.models import Event, Mission, PollQuestion, Posts
 from blog.notification_sources import synchronize_all_notification_sources
 from blog.push import (
@@ -34,7 +35,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         now = timezone.now()
         reminder_hours = max(1, options['reminder_hours'])
-        counts = {'posts': 0, 'events': 0, 'reminders': 0, 'polls': 0, 'missions': 0}
+        counts = {'posts': 0, 'events': 0, 'reminders': 0, 'polls': 0, 'missions': 0, 'meme_weeks': 0}
 
         post_ids = Posts.objects.filter(
             published=True,
@@ -82,6 +83,9 @@ class Command(BaseCommand):
         ).values_list('pk', flat=True)
         for mission_id in mission_ids.iterator():
             counts['missions'] += bool(notify_mission_if_available(mission_id, now=now))
+
+        # Closes finished meme weeks: winner, bonus points and announcement.
+        counts['meme_weeks'] = len(finalize_meme_weeks(now=now))
 
         source_sync = synchronize_all_notification_sources(now=now)
         expired_pushes = cancel_expired_notification_deliveries(now=now)

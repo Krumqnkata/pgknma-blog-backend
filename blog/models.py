@@ -392,6 +392,12 @@ SLOT_CHOICES = (
     ('special', 'Специален повод'),
 )
 
+def meme_week_start(day=None):
+    """Monday of the meme week (Monday 00:00 – Sunday 23:59, local school time)."""
+    day = day or timezone.localdate()
+    return day - timedelta(days=day.weekday())
+
+
 STATUS_CHOICES = (
     ('pending', 'Чакащо одобрение'),
     ('approved', 'Одобрено'),
@@ -459,6 +465,16 @@ class MemeOfWeek(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата на качване", null=True, help_text="Дата и час на качване на мемето. Формат: YYYY-MM-DD HH:MM:SS.")
     voted_by = models.ManyToManyField(User, related_name='voted_memes', blank=True, verbose_name="Гласували потребители", help_text="Потребители, които са гласували за това меме.")
     votes = models.IntegerField(default=0, verbose_name="Гласове", help_text="Брой на гласовете за мемето.")
+    week_start = models.DateField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="Седмица",
+        help_text=(
+            "Понеделникът на седмицата, в която мемето участва. Попълва се "
+            "автоматично при одобрение — мемето влиза в седмицата на одобрението."
+        ),
+    )
     ai_checks = GenericRelation(AIContentCheck)
 
     class Meta:
@@ -472,11 +488,48 @@ class MemeOfWeek(models.Model):
             ),
         ]
 
+    def save(self, *args, **kwargs):
+        if self.status == 'approved' and self.week_start is None:
+            self.week_start = meme_week_start()
+            update_fields = kwargs.get('update_fields')
+            if update_fields is not None:
+                kwargs['update_fields'] = {*update_fields, 'week_start'}
+        return super().save(*args, **kwargs)
+
     def __str__(self):
         if self.title:
             return f"{self.title} ({self.get_status_display()})"
         username = self.user.username if self.user else "изтрит потребител"
         return f"Meme by {username}"
+
+
+class MemeWeekResult(models.Model):
+    """The closed result of one meme week. Created once, after the week ends."""
+
+    week_start = models.DateField(unique=True, verbose_name="Седмица (понеделник)")
+    winner = models.ForeignKey(
+        MemeOfWeek,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='week_wins',
+        verbose_name="Победител",
+    )
+    winner_votes = models.PositiveIntegerField(default=0, verbose_name="Гласове на победителя")
+    meme_count = models.PositiveIntegerField(default=0, verbose_name="Мемета в седмицата")
+    finalized_at = models.DateTimeField(auto_now_add=True, verbose_name="Приключена на")
+    announced_at = models.DateTimeField(null=True, blank=True, verbose_name="Обявена на")
+    points_awarded_at = models.DateTimeField(null=True, blank=True, verbose_name="Точки дадени на")
+
+    class Meta:
+        verbose_name = "Резултат от седмица (мемета)"
+        verbose_name_plural = "Резултати по седмици (мемета)"
+        ordering = ('-week_start',)
+
+    def __str__(self):
+        winner = self.winner.title if self.winner_id and self.winner else 'без победител'
+        return f"{self.week_start:%d.%m.%Y}: {winner}"
+
 
 class UserProfile(models.Model):
     class AvatarSource(models.TextChoices):
@@ -789,6 +842,7 @@ class GamificationPointRule(models.Model):
         ('comment', 'Валиден коментар'),
         ('song_approved', 'Одобрено предложение за песен'),
         ('meme_approved', 'Одобрено меме'),
+        ('meme_week_winner', 'Меме на седмицата (победител)'),
         ('post_read', 'Прочетена публикация'),
         ('calendar_visit', 'Посещение на календара'),
         ('game_quiz', 'Игра: Дневна викторина'),
@@ -2021,6 +2075,7 @@ class NotificationPreference(models.Model):
     posts_enabled = models.BooleanField(default=True, verbose_name='Нови публикации')
     events_enabled = models.BooleanField(default=True, verbose_name='Събития и напомняния')
     polls_enabled = models.BooleanField(default=True, verbose_name='Нови анкети')
+    memes_enabled = models.BooleanField(default=True, verbose_name='Меме на седмицата')
     changelog_enabled = models.BooleanField(default=True, verbose_name='Промени по сайта')
     comment_replies_enabled = models.BooleanField(default=True, verbose_name='Отговори на коментари')
     submissions_enabled = models.BooleanField(default=True, verbose_name='Решения за предложения')
@@ -2070,6 +2125,7 @@ class PushSubscription(models.Model):
     posts_enabled = models.BooleanField(default=True, verbose_name='Нови публикации')
     events_enabled = models.BooleanField(default=True, verbose_name='Събития и напомняния')
     polls_enabled = models.BooleanField(default=True, verbose_name='Нови анкети')
+    memes_enabled = models.BooleanField(default=True, verbose_name='Меме на седмицата')
     changelog_enabled = models.BooleanField(default=True, verbose_name='Промени по сайта')
     failure_count = models.PositiveSmallIntegerField(default=0, verbose_name='Поредни грешки')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създаден на')

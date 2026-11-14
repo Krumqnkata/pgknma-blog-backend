@@ -10,7 +10,8 @@ official/admin, automatic/system и gamification визуално; backend categ
 
 - `general` — official/admin;
 - `content_post`, `content_event`, `event_reminder`, `content_poll`,
-  `content_changelog` — automatic content;
+  `content_meme`, `content_changelog` — automatic content (`content_meme` е
+  обявяването на победителя в „Меме на седмицата“, настройка `memes_enabled`);
 - `comment_reply`, `submission_status`, `mission_available` — personal/event;
 - `security_login`, `security_account` — personal security;
 - `gamification_*` — game channel;
