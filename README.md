@@ -8,7 +8,7 @@
 
 Това repository съдържа Django REST API, Django Unfold admin и оперативните
 скриптове за ПГКНМА Блог — дигиталната платформа на Професионална гимназия по
-компютърно моделиране и компютърни анализи „Проф. Минко Балкански“.
+компютърни науки и математически анализи „Проф. Минко Балкански“.
 
 React/Vite frontend-ът е в отделно repository:
 [Krumqnkata/PGKNMA-Blog](https://github.com/Krumqnkata/PGKNMA-Blog).
