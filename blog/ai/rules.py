@@ -45,7 +45,7 @@ def match_admin_rule(question):
 def log_unanswered(question):
     """Count a question nobody could answer. No user data is stored."""
     question = (question or '').strip()[:500]
-    normalized = normalize(question)[:500]
+    normalized = normalize(question)[:255]
     if not normalized:
         return
     updated = AssistantUnansweredQuestion.objects.filter(normalized=normalized).update(

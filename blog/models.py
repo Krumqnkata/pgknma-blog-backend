@@ -348,7 +348,7 @@ class AssistantUnansweredQuestion(models.Model):
     STATUS_CHOICES = ((STATUS_NEW, 'Ново'), (STATUS_RESOLVED, 'Решено'))
 
     question = models.CharField(max_length=500, verbose_name="Въпрос")
-    normalized = models.CharField(max_length=500, unique=True, editable=False)
+    normalized = models.CharField(max_length=255, unique=True, editable=False)
     times_asked = models.PositiveIntegerField(default=1, verbose_name="Пъти зададен")
     first_asked_at = models.DateTimeField(auto_now_add=True, verbose_name="Първо зададен")
     last_asked_at = models.DateTimeField(default=timezone.now, verbose_name="Последно зададен")
