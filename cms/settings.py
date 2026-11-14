@@ -142,6 +142,12 @@ CF_API_TOKEN = os.getenv("CF_API_TOKEN", "").strip()
 AI_API_BASE_URL = "https://api.cloudflare.com/client/v4"
 # The models themselves are chosen in the admin (SiteSettings.ai_model_*).
 AI_REQUEST_TIMEOUT_SECONDS = env_int("AI_REQUEST_TIMEOUT_SECONDS", 60)
+# Texts that exist only in the frontend (FAQ, rules, contacts, team…) reach the
+# assistant through site-knowledge.json, produced by `npm run build`. Point
+# AI_SITE_KNOWLEDGE_PATH at the deployed dist file to read it from disk;
+# otherwise it is downloaded from AI_SITE_KNOWLEDGE_URL (default: the public site).
+AI_SITE_KNOWLEDGE_PATH = os.getenv("AI_SITE_KNOWLEDGE_PATH", "").strip()
+AI_SITE_KNOWLEDGE_URL = os.getenv("AI_SITE_KNOWLEDGE_URL", "").strip()
 AI_BATCH_SIZE = env_int("AI_BATCH_SIZE", 20)
 # Site-wide cap on assistant questions per UTC day, so visitors cannot use up
 # the free 10 000 neurons that summaries and moderation also need.
@@ -469,11 +475,11 @@ REST_FRAMEWORK = {
         'analytics': os.getenv("THROTTLE_ANALYTICS", "240/hour"),
         'ai_assistant_user': os.getenv(
             "THROTTLE_AI_ASSISTANT_USER",
-            "30/day",
+            "60/day",
         ),
         'ai_assistant_anon': os.getenv(
             "THROTTLE_AI_ASSISTANT_ANON",
-            "10/day",
+            "30/day",
         ),
     },
 }

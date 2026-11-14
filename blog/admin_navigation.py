@@ -57,6 +57,8 @@ ADMIN_NAVIGATION = (
             _item("Събития", "/admin/blog/event/", "event", *_permissions("blog", "event")),
             _item("Учебна програма", "/admin/blog/scheduleentry/", "calendar_month", *_permissions("blog", "scheduleentry")),
             _item("Официални известия", "/admin/blog/notification/", "notifications", *_permissions("blog", "notification")),
+            _item("Правила на ИИ асистента", "/admin/blog/assistantrule/", "smart_toy", *_permissions("blog", "assistantrule")),
+            _item("Неотговорени въпроси (ИИ)", "/admin/blog/assistantunansweredquestion/", "contact_support", *_permissions("blog", "assistantunansweredquestion")),
             _item("Прегледи на страници", "/admin/blog/pageview/", "visibility", *_permissions("blog", "pageview")),
         ),
     },

@@ -1086,7 +1086,7 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
     def get_ai_assistant_enabled(self, obj) -> bool:
         from .ai import config
 
-        return config.ai_feature_enabled(config.ASSISTANT, obj)
+        return config.assistant_visible(obj)
 
 
 class ScheduleEntrySerializer(serializers.ModelSerializer):

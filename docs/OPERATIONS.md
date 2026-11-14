@@ -82,16 +82,24 @@ journalctl -u pgknma-notifications.service -n 100 --no-pager
 ### AI задачи
 
 Файлове: `deployment/systemd/pgknma-ai.service` и `.timer`.
-Timer-ът е на всеки 5 минути и изпълнява `run_ai_tasks` (резюмета на статии и
-ИИ проверка на ново съдържание). Без `CF_ACCOUNT_ID`/`CF_API_TOKEN` или при
+Timer-ът е на всеки 5 минути и изпълнява `run_ai_tasks` (резюмета на статии,
+ИИ проверка на ново съдържание и обновяване на индекса на знанията на
+асистента). Без `CF_ACCOUNT_ID`/`CF_API_TOKEN` резюметата и проверките не се
+правят, а индексът се обновява без embeddings (търсене само по думи). При
 изключено копче в админа командата не прави нищо. Подробно: [AI.md](AI.md).
+
+Индексът чете и `site-knowledge.json` от фронтенда. При качване **първо
+качете новия build на фронтенда**, после пуснете `run_ai_tasks --only knowledge`
+(или изчакайте timer-а). Най-надеждно е `AI_SITE_KNOWLEDGE_PATH` да сочи към
+`dist/site-knowledge.json` на сървъра.
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now pgknma-ai.timer
 systemctl list-timers pgknma-ai.timer
 journalctl -u pgknma-ai.service -n 100 --no-pager
-python manage.py run_ai_tasks --dry-run   # колко записа чакат, без да вика ИИ
+python manage.py run_ai_tasks --dry-run         # колко записа чакат, без да вика ИИ
+python manage.py run_ai_tasks --only knowledge  # обнови индекса на асистента веднага
 ```
 
 ### Data retention

@@ -67,21 +67,13 @@ def _error_codes(payload):
     return codes
 
 
-def run_chat(*, model, messages, max_tokens=400, temperature=0.3):
-    """Send a chat request and return the answer text.
+EMBEDDING_MODEL = '@cf/baai/bge-m3'  # multilingual, 1024 dimensions, ~1075 neurons / 1M tokens
 
-    Raises AIUnavailable or AIQuotaExceeded; never returns an empty text.
-    """
+
+def _post(model, body):
+    """POST to Workers AI and return the parsed `result`. Raises AIError subclasses."""
     if not credentials_configured():
         raise AIUnavailable('Липсват CF_ACCOUNT_ID и/или CF_API_TOKEN.')
-
-    token_param, extra = _model_options(model)
-    body = {
-        'messages': messages,
-        'temperature': temperature,
-        token_param: max_tokens,
-        **extra,
-    }
     url = f'{settings.AI_API_BASE_URL}/accounts/{settings.CF_ACCOUNT_ID}/ai/run/{model}'
     try:
         response = requests.post(
@@ -92,17 +84,14 @@ def run_chat(*, model, messages, max_tokens=400, temperature=0.3):
         )
     except requests.RequestException as exc:
         raise AIUnavailable('Няма връзка с Cloudflare Workers AI.') from exc
-
     try:
         payload = response.json()
     except ValueError:
         payload = {}
-
     codes = _error_codes(payload)
     if response.status_code == 429 or codes & QUOTA_ERROR_CODES:
         raise AIQuotaExceeded('Дневният безплатен лимит на Workers AI е изчерпан.')
     if response.status_code >= 400 or not payload.get('success', False):
-        # Never log the request body: it can contain text written by students.
         logger.warning(
             'Workers AI request failed: status=%s codes=%s model=%s',
             response.status_code,
@@ -110,8 +99,35 @@ def run_chat(*, model, messages, max_tokens=400, temperature=0.3):
             model,
         )
         raise AIUnavailable(f'Cloudflare върна грешка (HTTP {response.status_code}).')
+    return payload.get('result') or {}
 
-    result = payload.get('result') or {}
+
+def run_embeddings(texts, model=EMBEDDING_MODEL):
+    """Return one vector (list of floats) per text, in the same order."""
+    texts = [str(text)[:6000] for text in texts]
+    if not texts:
+        return []
+    result = _post(model, {'text': texts})
+    vectors = result.get('data') if isinstance(result, dict) else None
+    if not isinstance(vectors, list) or len(vectors) != len(texts):
+        raise AIUnavailable('Неочакван отговор от модела за embeddings.')
+    return vectors
+
+
+def run_chat(*, model, messages, max_tokens=400, temperature=0.3):
+    """Send a chat request and return the answer text.
+
+    Raises AIUnavailable or AIQuotaExceeded; never returns an empty text.
+    """
+    token_param, extra = _model_options(model)
+    body = {
+        'messages': messages,
+        'temperature': temperature,
+        token_param: max_tokens,
+        **extra,
+    }
+    # Never log the request body: it can contain text written by students.
+    result = _post(model, body)
     text = extract_text(result)
     if not text:
         raise AIUnavailable('Моделът върна празен отговор.')

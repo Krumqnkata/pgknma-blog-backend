@@ -1,4 +1,4 @@
-from blog.models import AIContentCheck, MemeWeekResult, Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import AIContentCheck, AssistantRule, AssistantUnansweredQuestion, KnowledgeChunk, MemeWeekResult, Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
@@ -1714,6 +1714,52 @@ class MemeOfWeekAdmin(AICheckAdminMixin, ModelAdmin):
         return False  # Това ще забрани добавянето на нов мемета през админ панела
 
 
+@admin.register(AssistantRule)
+class AssistantRuleAdmin(ModelAdmin):
+    """Ready answers of the AI assistant. They are checked before the AI is asked."""
+
+    list_display = ('title', 'is_active', 'priority', 'hit_count', 'last_hit_at', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('title', 'phrases', 'answer')
+    readonly_fields = ('hit_count', 'last_hit_at')
+    fieldsets = (
+        (None, {
+            'description': (
+                'Асистентът първо проверява тези правила. Ако във въпроса има всички думи '
+                'от някоя фраза, отговаря с текста отдолу — без ИИ и без да харчи лимит.'
+            ),
+            'fields': ('title', 'phrases', 'answer', 'link_title', 'link_url', 'priority', 'is_active'),
+        }),
+        ('Статистика', {'fields': ('hit_count', 'last_hit_at')}),
+    )
+
+
+@admin.register(AssistantUnansweredQuestion)
+class AssistantUnansweredQuestionAdmin(ModelAdmin):
+    """Questions the assistant could not answer — without any user data."""
+
+    list_display = ('question', 'times_asked', 'last_asked_at', 'status', 'create_rule_link')
+    list_filter = ('status',)
+    search_fields = ('question',)
+    readonly_fields = ('question', 'times_asked', 'first_asked_at', 'last_asked_at', 'status')
+    actions = ('mark_resolved',)
+
+    def has_add_permission(self, request):
+        return False
+
+    @admin.display(description='Правило')
+    def create_rule_link(self, obj):
+        from urllib.parse import urlencode
+
+        query = urlencode({'title': obj.question[:150], 'phrases': obj.question[:200]})
+        return format_html('<a href="{}?{}">Създай правило</a>', reverse('admin:blog_assistantrule_add'), query)
+
+    @admin.action(description='Маркирай като решени', permissions=['change'])
+    def mark_resolved(self, request, queryset):
+        updated = queryset.update(status=AssistantUnansweredQuestion.STATUS_RESOLVED)
+        self.message_user(request, f'Маркирани като решени: {updated}.', messages.SUCCESS)
+
+
 @admin.register(MemeWeekResult)
 class MemeWeekResultAdmin(ModelAdmin):
     """Closed meme weeks. Read-only: results are produced by the scheduler."""
@@ -1944,7 +1990,7 @@ class ConsentRecordAdmin(ModelAdmin):
 class SiteSettingsAdmin(ModelAdmin):
     change_form_template = 'admin/site_settings_change_form.html'
     list_display = ('__str__', 'maintenance_mode', 'enable_bell_suggestions', 'enable_weekly_poll', 'enable_meme_of_the_week', 'enable_user_registration', 'auto_verify_on_email_failure', 'enable_program_page', 'enable_ai')
-    readonly_fields = ('ai_connection_status',)
+    readonly_fields = ('ai_connection_status', 'ai_knowledge_status')
     fieldsets = (
         (None, {
             'fields': (
@@ -1968,11 +2014,33 @@ class SiteSettingsAdmin(ModelAdmin):
                 'enable_ai_summaries',
                 'enable_ai_moderation',
                 'enable_ai_assistant',
+                'ai_assistant_use_ai',
                 'ai_model_public',
                 'ai_model_student_text',
+                'ai_knowledge_status',
             ),
         }),
     )
+
+    @admin.display(description='Знания на асистента')
+    def ai_knowledge_status(self, obj):
+        from django.db.models import Count, Max, Q
+        from .ai.client import EMBEDDING_MODEL
+
+        stats = KnowledgeChunk.objects.aggregate(
+            total=Count('pk'),
+            embedded=Count('pk', filter=Q(embedding_model=EMBEDDING_MODEL)),
+            pages=Count('pk', filter=Q(source_type='page')),
+            updated=Max('updated_at'),
+        )
+        if not stats['total']:
+            return 'Още няма индекс. Създава се автоматично от `run_ai_tasks` (на всеки 5 минути).'
+        updated = timezone.localtime(stats['updated']).strftime('%d.%m.%Y %H:%M') if stats['updated'] else '—'
+        pages_note = '' if stats['pages'] else ' ⚠️ Няма текстове от фронтенда (site-knowledge.json) — проверете AI_SITE_KNOWLEDGE_PATH/URL.'
+        return (
+            f"{stats['total']} части ({stats['embedded']} със семантично търсене, "
+            f"{stats['pages']} от страниците на фронтенда). Последна промяна: {updated}.{pages_note}"
+        )
 
     @admin.display(description='Връзка с Cloudflare Workers AI')
     def ai_connection_status(self, obj):

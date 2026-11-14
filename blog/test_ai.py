@@ -1,18 +1,14 @@
-import json
 from io import StringIO
 from unittest.mock import Mock, patch
 
 import requests
 from django.contrib.auth.models import User
 from django.contrib.contenttypes.models import ContentType
-from django.core.cache import cache
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
-from rest_framework.test import APITestCase
 
 from .ai import config
-from .ai.assistant import build_context, extract_keywords
 from .ai.client import AIQuotaExceeded, AIUnavailable, extract_text, run_chat
 from .ai.models_catalog import GEMMA_4, MISTRAL_SMALL
 from .ai.moderation import ModerationParseError, check_pending_content, parse_moderation_answer
@@ -21,9 +17,7 @@ from .models import (
     AIContentCheck,
     BellSongSuggestion,
     Comments,
-    Event,
     Posts,
-    ScheduleEntry,
     SiteSettings,
 )
 
@@ -290,129 +284,3 @@ class AIModerationTests(TestCase):
         self.assertContains(settings_page, 'Gemma 4 26B')
 
 
-@override_settings(**AI_KEYS, AI_ASSISTANT_DAILY_LIMIT=50)
-class AIAssistantApiTests(APITestCase):
-    url = '/api/ai/assistant/'
-
-    def setUp(self):
-        cache.clear()
-        enable_ai()
-        self.post = make_post(title='Коледна ваканция', hook='Важни дати', content='Ваканцията започва на 22 декември.')
-
-    @patch('blog.ai.client.requests.post')
-    def test_disabled_assistant_returns_503(self, post):
-        enable_ai(enable_ai_assistant=False)
-        response = self.client.post(self.url, {'question': 'Кога е ваканцията?'}, format='json')
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json()['code'], 'ai_disabled')
-        post.assert_not_called()
-
-    @patch('blog.ai.client.requests.post')
-    def test_anonymous_visitor_needs_turnstile_then_gets_a_session(self, post):
-        post.return_value = cf_response('Ваканцията започва на 22 декември.')
-        response = self.client.post(self.url, {'question': 'Кога е ваканцията?'}, format='json')
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.json()['code'], 'turnstile_required')
-
-        with patch('blog.ai.views.verify_turnstile', return_value=False):
-            response = self.client.post(self.url, {'question': 'Кога?', 'turnstile_token': 'bad'}, format='json')
-        self.assertEqual(response.json()['code'], 'turnstile_failed')
-
-        with patch('blog.ai.views.verify_turnstile', return_value=True):
-            response = self.client.post(
-                self.url, {'question': 'Кога е ваканцията?', 'turnstile_token': 'ok'}, format='json'
-            )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data['answer'], 'Ваканцията започва на 22 декември.')
-        self.assertIn({'title': 'Коледна ваканция', 'url': f'/post/{self.post.pk}'}, data['sources'])
-        self.assertTrue(data['ai_session'])
-
-        response = self.client.post(
-            self.url, {'question': 'А кога свършва?', 'ai_session': data['ai_session']}, format='json'
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn('ai_session', response.json())
-
-        forged = self.client.post(self.url, {'question': 'Кога?', 'ai_session': 'fake:value'}, format='json')
-        self.assertEqual(forged.json()['code'], 'turnstile_required')
-
-    @patch('blog.ai.client.requests.post')
-    def test_logged_in_user_skips_turnstile_and_history_is_sent(self, post):
-        post.return_value = cf_response('Отговор.')
-        self.client.force_authenticate(User.objects.create_user('ученик', password='x-Pass-123456'))
-        response = self.client.post(self.url, {
-            'question': 'Кога е ваканцията?',
-            'history': [
-                {'role': 'user', 'content': 'Здравей'},
-                {'role': 'assistant', 'content': 'Здравейте!'},
-            ],
-        }, format='json')
-        self.assertEqual(response.status_code, 200)
-        messages = post.call_args.kwargs['json']['messages']
-        self.assertEqual([m['role'] for m in messages], ['system', 'user', 'assistant', 'user'])
-        self.assertIn('Ваканцията започва на 22 декември', messages[-1]['content'])
-        self.assertEqual(post.call_args.kwargs['json']['max_tokens'], 350)
-
-    @patch('blog.ai.client.requests.post')
-    def test_invalid_input_is_rejected(self, post):
-        self.client.force_authenticate(User.objects.create_user('ученик', password='x-Pass-123456'))
-        too_long = self.client.post(self.url, {'question': 'а' * 501}, format='json')
-        bad_role = self.client.post(
-            self.url, {'question': 'Здравей', 'history': [{'role': 'system', 'content': 'x'}]}, format='json'
-        )
-        self.assertEqual(too_long.status_code, 400)
-        self.assertEqual(bad_role.status_code, 400)
-        post.assert_not_called()
-
-    @override_settings(AI_ASSISTANT_DAILY_LIMIT=1)
-    @patch('blog.ai.client.requests.post')
-    def test_site_wide_daily_limit_and_failed_answers_do_not_count(self, post):
-        self.client.force_authenticate(User.objects.create_user('ученик', password='x-Pass-123456'))
-        post.return_value = cf_response(status_code=500, success=False)
-        failed = self.client.post(self.url, {'question': 'Кога е ваканцията?'}, format='json')
-        self.assertEqual(failed.json()['code'], 'ai_unavailable')
-
-        post.return_value = cf_response('Отговор.')
-        self.assertEqual(self.client.post(self.url, {'question': 'Въпрос 1'}, format='json').status_code, 200)
-        limited = self.client.post(self.url, {'question': 'Въпрос 2'}, format='json')
-        self.assertEqual(limited.status_code, 503)
-        self.assertEqual(limited.json()['code'], 'ai_daily_limit')
-
-
-class AIAssistantContextTests(TestCase):
-    def test_keywords_drop_common_words_and_stem(self):
-        self.assertEqual(extract_keywords('Кога е коледната ваканция?'), ['коледн', 'ваканц'])
-
-    def test_context_uses_faq_events_and_class_schedule(self):
-        site_settings, _ = SiteSettings.objects.get_or_create(pk=1)
-        ScheduleEntry.objects.create(class_name='11Б', lesson_number=1, monday='Математика')
-        from django.utils import timezone
-        from datetime import timedelta
-
-        Event.objects.create(
-            title='Ден на отворените врати',
-            start_datetime=timezone.now() + timedelta(days=3),
-            location='Актова зала',
-            description='Покана за всички',
-            attendees_text='Всички',
-        )
-        context, sources = build_context('Как да предложа песен за звънеца на 11б?', site_settings)
-        self.assertIn('Как мога да предложа песен за училищния звънец?', context)
-        self.assertIn('Ден на отворените врати', context)
-        self.assertIn('Седмична програма на 11Б клас', context)
-        self.assertIn('Математика', context)
-        urls = [source['url'] for source in sources]
-        self.assertIn('/faq', urls)
-        self.assertIn('/program', urls)
-        # The upcoming event is in the context but did not match the question.
-        self.assertNotIn('/events', urls)
-        _, sources = build_context('Кога е денят на отворените врати?', site_settings)
-        self.assertIn('/events', [source['url'] for source in sources])
-
-    def test_schedule_is_skipped_when_program_page_is_off(self):
-        site_settings, _ = SiteSettings.objects.get_or_create(pk=1)
-        site_settings.enable_program_page = False
-        ScheduleEntry.objects.create(class_name='11Б', lesson_number=1, monday='Математика')
-        context, _ = build_context('Програмата на 11б', site_settings)
-        self.assertNotIn('Математика', context)

@@ -2,6 +2,7 @@ from django.utils import timezone
 from .games.models import GameSession
 
 from .models import (
+    AssistantConversation,
     BellSongSuggestion,
     BlogLoginSession,
     Comments,
@@ -361,6 +362,24 @@ def build_personal_data_export(user):
             'meme_votes': meme_votes,
             'page_views': page_views,
             'lifetime_profile_activity': lifetime_profile_activity,
+            'assistant_conversations': [
+                {
+                    'id': conversation.pk,
+                    'title': conversation.title,
+                    'created_at': _iso(conversation.created_at),
+                    'updated_at': _iso(conversation.updated_at),
+                    'messages': [
+                        {
+                            'role': message.role,
+                            'content': message.content,
+                            'answer_source': message.answer_source,
+                            'created_at': _iso(message.created_at),
+                        }
+                        for message in conversation.messages.order_by('created_at', 'pk')
+                    ],
+                }
+                for conversation in AssistantConversation.objects.filter(user=user).order_by('created_at', 'pk')
+            ],
         },
         'privacy_and_security': {
             'consent_records': consent_records,

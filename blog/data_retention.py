@@ -9,6 +9,8 @@ from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
 from valentine.models import Register, ValentineLoginAttempt
 
 from .models import (
+    AssistantConversation,
+    AssistantUnansweredQuestion,
     BlogLoginSession,
     ConsentRecord,
     EmailVerificationToken,
@@ -47,6 +49,12 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
     old_team_chat_discussions = TeamChatDiscussion.objects.filter(
         updated_at__lt=cutoff,
     ).exclude(messages__created_at__gte=cutoff)
+    # AI assistant conversations follow the shared window from their last activity.
+    old_assistant_conversations = AssistantConversation.objects.filter(updated_at__lt=cutoff)
+    # Unanswered questions carry no user link; they are kept twice as long for admins.
+    old_unanswered_questions = AssistantUnansweredQuestion.objects.filter(
+        last_asked_at__lt=now - timedelta(days=days * 2),
+    )
 
     counts = {
         'consent_records': old_consents.count(),
@@ -60,6 +68,8 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         'expired_notifications': old_expired_notifications.count(),
         'team_chat_messages': old_team_chat_messages.count(),
         'team_chat_discussions': old_team_chat_discussions.count(),
+        'assistant_conversations': old_assistant_conversations.count(),
+        'assistant_unanswered_questions': old_unanswered_questions.count(),
     }
     if dry_run:
         return counts
@@ -84,5 +94,7 @@ def cleanup_personal_data(*, days, now=None, dry_run=False):
         # django-cleanup also removes private image and thumbnail files.
         old_team_chat_messages.delete()
         old_team_chat_discussions.delete()
+        old_assistant_conversations.delete()
+        old_unanswered_questions.delete()
 
     return counts
