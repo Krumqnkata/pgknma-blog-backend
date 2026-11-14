@@ -40,7 +40,7 @@ from django.db.models.functions import Coalesce
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile, Badge, PointTransaction, UserBadge, UserDigitalReward, NotificationPreference, NotificationReadState, PageView, PushSubscription
+from .models import Posts, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, Event, TermsOfService, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, Changelog, ScheduleEntry, BlogLoginSession, UserProfile, Badge, PointTransaction, UserBadge, UserDigitalReward, NotificationPreference, NotificationReadState, PageView, PushSubscription, MemeWeekResult, meme_week_start
 from .permissions import IsOwner, SiteIsAvailable
 from .network import get_client_ip
 from .network_operator import lookup_network_operator
@@ -97,6 +97,7 @@ from .notification_categories import (
     CONTENT_CHANGELOG,
     CONTENT_EVENT,
     CONTENT_POLL,
+    CONTENT_MEME,
     CONTENT_POST,
     EVENT_REMINDER,
     COMMENT_REPLY,
@@ -118,6 +119,7 @@ from .push import (
     cancel_read_deliveries_for_subscription,
 )
 from .post_analytics import with_current_month_views
+from .meme_weeks import latest_winner_result, week_end as meme_week_end
 from .public_content import (
     event_search_q,
     post_search_q,
@@ -213,6 +215,9 @@ def post_page(request, pk):
     response = HttpResponse(html, content_type='text/html; charset=utf-8')
     response['Cache-Control'] = 'public, max-age=60, stale-while-revalidate=300'
     return response
+
+
+MEME_WEEKS_PAGE_SIZE = 12
 
 
 def _with_vote_status(queryset, request, relation):
@@ -391,12 +396,71 @@ class MemeOfWeekViewSet(viewsets.ModelViewSet):
         queryset = (
             MemeOfWeek.objects.filter(status='approved')
             .select_related('user')
-            .order_by('-votes', '-created_at')
+            .order_by('-votes', 'created_at', 'pk')
         )
+        if self.action == 'list':
+            # The list is one week: the running one, or a past one with ?week=YYYY-MM-DD.
+            queryset = queryset.filter(week_start=self._requested_week())
         return _with_vote_status(queryset, self.request, MemeOfWeek.voted_by)
 
+    def _requested_week(self):
+        raw = str(self.request.query_params.get('week', '')).strip()
+        if raw:
+            try:
+                return meme_week_start(datetime.strptime(raw, '%Y-%m-%d').date())
+            except ValueError:
+                raise RestValidationError({'week': 'Очаква се дата във формат ГГГГ-ММ-ДД.'})
+        return meme_week_start()
+
+    @action(detail=False, methods=['get'], url_path='weeks')
+    def weeks(self, request):
+        """Archive of closed weeks with their winners (newest first), plus the running week."""
+        site_settings = SiteSettings.objects.filter(pk=1).first()
+        if site_settings and not site_settings.enable_meme_of_the_week:
+            return Response({'current_week_start': None, 'voting_ends_at': None, 'results': [], 'has_more': False})
+        current = meme_week_start()
+        results = MemeWeekResult.objects.select_related('winner', 'winner__user').order_by('-week_start')
+        before = str(request.query_params.get('before', '')).strip()
+        if before:
+            try:
+                results = results.filter(week_start__lt=datetime.strptime(before, '%Y-%m-%d').date())
+            except ValueError:
+                raise RestValidationError({'before': 'Очаква се дата във формат ГГГГ-ММ-ДД.'})
+        page = list(results[:MEME_WEEKS_PAGE_SIZE + 1])
+        serializer_context = self.get_serializer_context()
+        payload = []
+        for result in page[:MEME_WEEKS_PAGE_SIZE]:
+            winner = result.winner if result.winner_id and result.winner and result.winner.status == 'approved' else None
+            payload.append({
+                'week_start': result.week_start.isoformat(),
+                'meme_count': result.meme_count,
+                'winner': MemeOfWeekSerializer(winner, context=serializer_context).data if winner else None,
+                'winner_votes': result.winner_votes,
+            })
+        return Response({
+            'current_week_start': current.isoformat(),
+            'voting_ends_at': meme_week_end(current).isoformat(),
+            'results': payload,
+            'has_more': len(page) > MEME_WEEKS_PAGE_SIZE,
+        })
+
+    @action(detail=False, methods=['get'], url_path='winner')
+    def winner(self, request):
+        """The latest weekly winner, for the home page and the TV screen."""
+        site_settings = SiteSettings.objects.filter(pk=1).first()
+        result = None
+        if not site_settings or site_settings.enable_meme_of_the_week:
+            result = latest_winner_result()
+        if result is None:
+            return Response({'winner': None})
+        return Response({
+            'week_start': result.week_start.isoformat(),
+            'winner_votes': result.winner_votes,
+            'winner': MemeOfWeekSerializer(result.winner, context=self.get_serializer_context()).data,
+        })
+
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
+        if self.action in ['list', 'retrieve', 'weeks', 'winner']:
             self.permission_classes = [SiteIsAvailable, AllowAny]
         else:
             self.permission_classes = [SiteIsAvailable, IsAuthenticated]
@@ -1720,6 +1784,11 @@ class MemeVoteView(APIView):
             )
             if meme.status != 'approved':
                 return Response({'detail': 'Може да гласувате само за одобрени мемета.'}, status=status.HTTP_400_BAD_REQUEST)
+            if meme.week_start != meme_week_start():
+                return Response(
+                    {'detail': 'Гласуването за тази седмица приключи.', 'code': 'meme_week_closed'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             if meme.voted_by.filter(pk=request.user.pk).exists():
                 return Response({'detail': 'Вече сте гласували за това меме.'}, status=status.HTTP_400_BAD_REQUEST)
             meme.voted_by.add(request.user)
@@ -2010,6 +2079,7 @@ NOTIFICATION_PREFERENCE_CATEGORIES = {
     'posts_enabled': (CONTENT_POST,),
     'events_enabled': (CONTENT_EVENT, EVENT_REMINDER),
     'polls_enabled': (CONTENT_POLL,),
+    'memes_enabled': (CONTENT_MEME,),
     'comment_replies_enabled': (COMMENT_REPLY,),
     'submissions_enabled': (SUBMISSION_STATUS,),
     'mission_available_enabled': (MISSION_AVAILABLE,),
@@ -2356,6 +2426,7 @@ class PushSubscriptionView(APIView):
         'posts_enabled',
         'events_enabled',
         'polls_enabled',
+        'memes_enabled',
         'changelog_enabled',
     )
 

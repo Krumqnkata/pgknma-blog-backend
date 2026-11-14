@@ -2,7 +2,7 @@ from rest_framework import serializers
 from .models import Posts, UserProfile, Comments, PollQuestion, PollAnswer, PollOption, ContactSubmission, Notification, \
     Event, TermsOfService, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, ConsentRecord, SiteSettings, PostDocument, Changelog, ScheduleEntry, \
     validate_meme_image_size, BlogLoginSession, Badge, DigitalReward, GamificationLevel, PointTransaction, UserBadge, UserDigitalReward, \
-    NotificationPreference, PageView, PushSubscription, Category
+    NotificationPreference, PageView, PushSubscription, Category, meme_week_start
 from .avatars import AVATAR_PRESET_IDS, validate_avatar_upload_size
 from .header_logos import current_header_logo
 from django.conf import settings
@@ -749,6 +749,7 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             'posts_enabled',
             'events_enabled',
             'polls_enabled',
+            'memes_enabled',
             'changelog_enabled',
             'comment_replies_enabled',
             'submissions_enabled',
@@ -779,6 +780,7 @@ class PushSubscriptionSerializer(serializers.ModelSerializer):
             'posts_enabled',
             'events_enabled',
             'polls_enabled',
+            'memes_enabled',
             'changelog_enabled',
         )
 
@@ -1022,11 +1024,20 @@ class MemeOfWeekSerializer(serializers.ModelSerializer):
     user_username = serializers.SerializerMethodField()
     image_url = serializers.SerializerMethodField()
     has_voted = serializers.SerializerMethodField()
+    is_current_week = serializers.SerializerMethodField()
 
     class Meta:
         model = MemeOfWeek
-        fields = ['id', 'title', 'image', 'image_url', 'user_username', 'created_at', 'status', 'votes', 'has_voted']
-        read_only_fields = ['id', 'user_username', 'created_at', 'image_url', 'status', 'votes', 'has_voted']
+        fields = ['id', 'title', 'image', 'image_url', 'user_username', 'created_at', 'status', 'votes', 'has_voted', 'week_start', 'is_current_week']
+        read_only_fields = ['id', 'user_username', 'created_at', 'image_url', 'status', 'votes', 'has_voted', 'week_start', 'is_current_week']
+
+    def get_is_current_week(self, obj) -> bool:
+        # Voting is open only for memes of the running week.
+        current = self.context.get('_current_meme_week')
+        if current is None:
+            current = meme_week_start()
+            self.context['_current_meme_week'] = current
+        return obj.status == 'approved' and obj.week_start == current
 
     def get_image_url(self, obj):
         if obj.pk and obj.image:

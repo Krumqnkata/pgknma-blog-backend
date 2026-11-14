@@ -67,6 +67,7 @@ MODERATOR_PERMISSIONS = (
         ("bellsongsuggestion", "memeofweek"),
         ("view", "change", "delete"),
     )
+    | _model_permissions("blog", ("memeweekresult",), ("view",))
 )
 
 GAMIFICATION_PERMISSIONS = (
