@@ -19,6 +19,10 @@ def _item(title, link, icon, *permissions, **extra):
     return item
 
 
+def _never_active(request):
+    return False
+
+
 def _can_cleanup(request):
     """„Почистване на записи“ needs settings access plus a delete permission."""
     from .models import SiteSettings
@@ -53,9 +57,11 @@ ADMIN_NAVIGATION = (
                 "/admin/#site-statistics",
                 "monitoring",
                 *_permissions("blog", "pageview"),
+                # A section of the start page: only „Начало“ is highlighted there.
+                active=_never_active,
             ),
             _item(
-                "Изпратени контактни формуляри",
+                "Контактни съобщения",
                 "/admin/blog/contactsubmission/",
                 "mail",
                 *_permissions("blog", "contactsubmission"),
@@ -102,7 +108,7 @@ ADMIN_NAVIGATION = (
         "title": "ИИ асистент",
         "items": (
             _item("Правила на ИИ асистента", "/admin/blog/assistantrule/", "smart_toy", *_permissions("blog", "assistantrule")),
-            _item("Неотговорени въпроси (ИИ)", "/admin/blog/assistantunansweredquestion/", "contact_support", *_permissions("blog", "assistantunansweredquestion"), badge="blog.admin_badges.unanswered_questions", badge_variant="warning"),
+            _item("Въпроси без отговор", "/admin/blog/assistantunansweredquestion/", "contact_support", *_permissions("blog", "assistantunansweredquestion"), badge="blog.admin_badges.unanswered_questions", badge_variant="warning"),
         ),
     },
     {
@@ -169,7 +175,7 @@ ADMIN_NAVIGATION = (
         "items": (
             _item("Политики за поверителност", "/admin/blog/privacypolicy/", "privacy_tip", *_permissions("blog", "privacypolicy")),
             _item("Условия за ползване", "/admin/blog/termsofservice/", "gavel", *_permissions("blog", "termsofservice")),
-            _item("Записи на съгласие за бисквитки", "/admin/blog/consentrecord/", "cookie", *_permissions("blog", "consentrecord")),
+            _item("Съгласия за бисквитки", "/admin/blog/consentrecord/", "cookie", *_permissions("blog", "consentrecord")),
             _item("История на почистването", "/admin/blog/personaldatacleanuprun/", "cleaning_services", *_permissions("blog", "personaldatacleanuprun")),
         ),
     },

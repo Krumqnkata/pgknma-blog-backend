@@ -765,8 +765,8 @@ class UserProfile(models.Model):
     )
 
     class Meta:
-        verbose_name = 'Профилна снимка'
-        verbose_name_plural = 'Профилни снимки'
+        verbose_name = 'Потребителски профил'
+        verbose_name_plural = 'Потребителски профили'
 
     @property
     def avatar_url(self):
@@ -1329,8 +1329,8 @@ class ConsentRecord(models.Model):
     policy_version = models.CharField(max_length=50, default='v1.0', help_text="Версия на политиката за бисквитки, за която е дадено съгласието.", verbose_name="Версия на политиката")
 
     class Meta:
-        verbose_name = "Запис на съгласие за бисквитки"
-        verbose_name_plural = "Записи на съгласие за бисквитки"
+        verbose_name = "Съгласие за бисквитки"
+        verbose_name_plural = "Съгласия за бисквитки"
 
     def __str__(self):
         return f"Consent: {self.consent_status} at {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
@@ -1565,8 +1565,8 @@ class ContactSubmission(models.Model):
         return f"Съобщение от {self.name} ({self.email}) относно '{self.get_reason_display()}'"
 
     class Meta:
-        verbose_name = "Изпратен контактен формуляр"
-        verbose_name_plural = "Изпратени контактни формуляри"
+        verbose_name = "Контактно съобщение"
+        verbose_name_plural = "Контактни съобщения"
         ordering = ['-submitted_at']
 
 
@@ -2546,7 +2546,8 @@ class PostImage(models.Model):
     )
 
     def __str__(self):
-        return f"Image for post: {self.post.title}"
+        name = self.title or (self.image.name.rsplit('/', 1)[-1] if self.image else '')
+        return f"Снимка: {name}" if name else "Снимка"
 
     class Meta:
         verbose_name = "Снимка към публикация"

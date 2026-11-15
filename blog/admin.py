@@ -7,9 +7,10 @@ from django import forms
 from django.forms.models import BaseInlineFormSet
 from django.http import Http404, HttpResponseNotAllowed
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.formats import date_format
+from django.utils.html import format_html, format_html_join
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.utils.text import Truncator
+from django.utils.text import Truncator, capfirst
 from django.utils import timezone
 import re
 from datetime import timedelta
@@ -79,7 +80,9 @@ class GroupedFieldsetsMixin:
             fieldsets.append((title, {**options, 'fields': tuple(fields)}))
         leftovers = tuple(field for field in available if field not in used)
         if leftovers:
-            fieldsets.append(('Други', {'fields': leftovers}))
+            # On a form with tabs, „Други“ is a tab too, or it would sit above them.
+            tabbed = any('tab' in options.get('classes', ()) for _, options in self.fieldset_groups)
+            fieldsets.append(('Други', {'fields': leftovers, 'classes': ('tab',) if tabbed else ()}))
         return fieldsets
 
 
@@ -208,22 +211,29 @@ class QuickStatusMixin:
             back = reverse(f'admin:{opts.app_label}_{opts.model_name}_changelist')
         return redirect(back)
 
+    QUICK_BUTTONS = (
+        ('approved', 'ux-quick-ok', '✓ Одобри'),
+        ('rejected', 'ux-quick-no', '✕ Откажи'),
+    )
+
     @admin.display(description='Бързо решение')
     def quick_status_buttons(self, obj):
-        if obj.status != 'pending':
-            return ''
+        # Pending items get both buttons; decided ones keep the opposite one,
+        # so a decision can be changed with one click.
         opts = self.model._meta
         url_name = f'admin:{opts.app_label}_{opts.model_name}_quick_status'
         # The buttons post the list's own form (it carries the CSRF token) to
         # their own address, so no nested <form> is needed.
-        return format_html(
-            '<span class="ux-quick">'
-            '<button type="submit" class="ux-quick-btn ux-quick-ok" formaction="{}" formmethod="post" formnovalidate>✓ Одобри</button>'
-            '<button type="submit" class="ux-quick-btn ux-quick-no" formaction="{}" formmethod="post" formnovalidate>✕ Откажи</button>'
-            '</span>',
-            reverse(url_name, args=(obj.pk, 'approved')),
-            reverse(url_name, args=(obj.pk, 'rejected')),
+        buttons = format_html_join(
+            '',
+            '<button type="submit" class="ux-quick-btn {}" formaction="{}" formmethod="post" formnovalidate>{}</button>',
+            (
+                (css, reverse(url_name, args=(obj.pk, status)), label)
+                for status, css, label in self.QUICK_BUTTONS
+                if status != obj.status
+            ),
         )
+        return format_html('<span class="ux-quick">{}</span>', buttons)
 
 
 class DateSelectionForm(forms.Form):
@@ -873,7 +883,7 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
         ('Роля и достъп', {
             'description': (
                 'Изберете роля от „Групи“ — тя дава нужните права. '
-                '„Статус на персонал“ позволява влизане в админ панела.'
+                '„Достъп до админ панела“ позволява влизане тук; „Пълен достъп“ дава всички права.'
             ),
             'fields': ('is_active', 'is_staff', 'is_superuser', 'groups'),
         }),
@@ -991,6 +1001,8 @@ class PostImageInline(StackedInline):
     # collapsed.  An inline with validation errors opens automatically.
     collapsible = True
     show_change_link = True
+    # admin_ux.js shows the gallery only under the „Снимки и файлове“ tab.
+    classes = ('ux-into-tab', 'ux-tab-снимки-и-файлове')
     verbose_name = 'Снимка в галерията'
     verbose_name_plural = (
         'Галерия — влачете дръжката, за да промените реда; натиснете заглавието за детайли'
@@ -1013,29 +1025,31 @@ class PostImageInline(StackedInline):
 @admin.register(Posts)
 class PostsAdmin(GroupedFieldsetsMixin, ModelAdmin):
     form = PostAdminForm
+    # Tabs instead of one long page. The gallery list shows only with
+    # „Снимки и файлове“ (admin_ux.js, see `classes` on PostImageInline).
     fieldset_groups = (
         ('Основно', {
+            'classes': ('tab',),
             'description': 'Само тези полета са задължителни: заглавие, кратко въведение и текст.',
             'fields': ('title', 'hook', 'content', 'categories'),
         }),
         ('Снимки и файлове', {
+            'classes': ('tab',),
             'description': 'Банерът се показва най-горе. Снимките от галерията и документите са по избор.',
             'fields': ('banner', 'gallery_images', 'gallery_documents', 'delete_documents'),
         }),
-        ('Кога и дали да се показва', {
+        ('Публикуване', {
+            'classes': ('tab',),
             'description': (
                 'Без отметка „Публикувана“ статията се пази като чернова. '
                 'Празна дата = излиза веднага; бъдеща дата = излиза тогава.'
             ),
-            'fields': ('published', 'published_at', 'allowed'),
+            'fields': ('published', 'published_at', 'allowed', 'author', 'created_at'),
         }),
-        ('ИИ резюме „Накратко“', {
-            'classes': ('collapse',),
+        ('ИИ резюме', {
+            'classes': ('tab',),
+            'description': 'Кратко резюме „Накратко“ над статията.',
             'fields': ('ai_summary_info', 'ai_summary'),
-        }),
-        ('Информация', {
-            'classes': ('collapse',),
-            'fields': ('author', 'created_at'),
         }),
     )
     inlines = (PostImageInline,)
@@ -1979,7 +1993,7 @@ class TermsOfServiceAdmin(ModelAdmin):
     def content_preview(self, obj):
         if obj.content:
             return format_html("{}", Truncator(obj.content).chars(150))
-        return "-"
+        return None
     content_preview.short_description = 'Преглед'
 
     def has_delete_permission(self, request, obj=None):
@@ -2004,7 +2018,7 @@ class PrivacyPolicyAdmin(ModelAdmin):
     def content_preview(self, obj):
         if obj.content:
             return format_html("{}", Truncator(obj.content).chars(150))
-        return "-"
+        return None
     content_preview.short_description = 'Преглед'
 
     def has_delete_permission(self, request, obj=None):
@@ -2012,7 +2026,7 @@ class PrivacyPolicyAdmin(ModelAdmin):
 
 @admin.register(Event)
 class EventAdmin(GroupedFieldsetsMixin, ModelAdmin):
-    list_display = ('title', 'time_display', 'start_datetime', 'location', 'category', 'published')
+    list_display = ('title', 'time_display', 'location', 'category', 'published')
     list_filter = (EventTimeFilter, 'published', 'category', 'start_datetime')
     search_fields = ('title', 'description', 'location', 'attendees_text')
     readonly_fields = ('created_at',)
@@ -2053,15 +2067,19 @@ class EventAdmin(GroupedFieldsetsMixin, ModelAdmin):
 
     @admin.display(description='Кога', ordering='start_datetime')
     def time_display(self, obj):
+        # Date and „след 2 дни“ in one column.
         now = timezone.now()
         end = obj.end_datetime or obj.start_datetime
         if obj.start_datetime > now:
             days = (timezone.localdate(obj.start_datetime) - timezone.localdate()).days
             label = 'Днес' if days == 0 else ('Утре' if days == 1 else f'След {days} дни')
-            return status_badge(label, 'info')
-        if end >= now:
-            return status_badge('Тече сега', 'ok')
-        return status_badge('Мина', 'muted')
+            badge = status_badge(label, 'info')
+        elif end >= now:
+            badge = status_badge('Тече сега', 'ok')
+        else:
+            badge = status_badge('Мина', 'muted')
+        when = date_format(timezone.localtime(obj.start_datetime), 'DATETIME_FORMAT')
+        return format_html('<span class="ux-when"><span>{}</span>{}</span>', when, badge)
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == "description":
@@ -2762,3 +2780,74 @@ class SiteSettingsAdmin(ModelAdmin):
         if isinstance(db_field, models.BooleanField):
             kwargs["widget"] = UnfoldBooleanSwitchWidget()
         return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+
+# One look for an empty cell everywhere („—“, as in the custom columns).
+admin.site.empty_value_display = '—'
+
+
+# „Журнал на действията“: the django_admin_logs list, in Bulgarian and with
+# Unfold's look. Importing it registers the original first, so swap it here.
+from django.contrib.admin.models import ADDITION, CHANGE, DELETION, LogEntry  # noqa: E402
+from django_admin_logs.admin import LogEntryAdmin as _BaseLogEntryAdmin  # noqa: E402
+
+if admin.site.is_registered(LogEntry):
+    admin.site.unregister(LogEntry)
+
+
+@admin.register(LogEntry)
+class LogEntryAdmin(_BaseLogEntryAdmin, ModelAdmin):
+    list_display = ('action_time_display', 'user_link', 'action_message', 'content_type_display', 'object_link')
+    # The detail page: readable names and the change as text, not Django's
+    # raw fields („Repr на обекта“ and the escaped JSON in „Промени съобщение“).
+    fields = (
+        'action_time_display', 'user_link', 'action_kind', 'content_type_display', 'object_link',
+        'change_details',
+    )
+    readonly_fields = fields
+
+    ACTION_KINDS = {ADDITION: 'Добавяне', CHANGE: 'Промяна', DELETION: 'Изтриване'}
+
+    @admin.display(description='Вид действие')
+    def action_kind(self, obj):
+        return self.ACTION_KINDS.get(obj.action_flag, obj.get_action_flag_display())
+
+    @admin.display(description='Подробности')
+    def change_details(self, obj):
+        return obj.get_change_message() or None
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        # The tab title shows the record's name, not the whole change text.
+        obj = self.get_object(request, object_id)
+        if obj is not None:
+            extra_context = {**(extra_context or {}), 'subtitle': Truncator(obj.object_repr).chars(60)}
+        return super().change_view(request, object_id, form_url, extra_context)
+
+    @admin.display(description='Кога', ordering='action_time')
+    def action_time_display(self, obj):
+        return date_format(timezone.localtime(obj.action_time), 'DATETIME_FORMAT')
+
+    @admin.display(description='Вид запис', ordering='content_type')
+    def content_type_display(self, obj):
+        if obj.content_type is None:
+            return None
+        model = obj.content_type.model_class()
+        return capfirst(model._meta.verbose_name) if model else obj.content_type.name
+
+    @admin.display(description='Потребител', ordering='user__username')
+    def user_link(self, obj):
+        return super().user_link(obj)
+
+    @admin.display(description='Действие')
+    def action_message(self, obj):
+        # Long change lists („Променени … и …“) are cut, so the other columns
+        # stay on screen; the full text is in the tooltip.
+        message = super().action_message(obj)
+        short = Truncator(message).chars(80)
+        if short == message:
+            return message
+        return format_html('<span title="{}">{}</span>', message, short)
+
+    @admin.display(description='Запис')
+    def object_link(self, obj):
+        return super().object_link(obj)

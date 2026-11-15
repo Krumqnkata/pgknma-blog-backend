@@ -1,0 +1,24 @@
+{% load admin_urls admin_dashboard %}
+{% comment %}
+    Copy of Unfold's unfold/helpers/add_link.html (django-unfold 0.102): the
+    round „+“ became a button with text, „+ Нова публикация“. On a phone only
+    the „+“ shows, so the top bar still fits.
+    If Unfold is upgraded, compare with the new version of this template.
+{% endcomment %}
+
+{% with add_opts=cl.opts|default:opts %}
+{% url add_opts|admin_urlname:"add" as add_url %}
+
+{% if add_url %}
+    {% if cl.model_admin.show_add_link or adminform.model_admin.show_add_link %}
+        {% with title=add_opts|admin_add_label %}
+            <div class="flex flex-row items-center">
+                <a href="{% add_preserved_filters add_url is_popup to_field %}" class="addlink ux-add-button bg-primary-600 flex gap-1.5 items-center h-[38px] justify-center -my-1 px-3 rounded-default text-sm font-semibold text-white whitespace-nowrap hover:bg-primary-600/80" title="{{ title }}" aria-label="{{ title }}">
+                    <span class="material-symbols-outlined text-white" aria-hidden="true">add</span>
+                    <span class="ux-add-button-text">{{ title }}</span>
+                </a>
+            </div>
+        {% endwith %}
+    {% endif %}
+{% endif %}
+{% endwith %}

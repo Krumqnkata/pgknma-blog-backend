@@ -1,0 +1,8 @@
+{% extends "admin/base_site.html" %}
+{% load admin_dashboard %}
+{% comment %}
+    Extends Unfold's admin/base_site.html and only changes the browser-tab
+    title: „Публикации“ instead of „Изберете Публикация за промяна“.
+{% endcomment %}
+
+{% block title %}{% admin_page_title as page_title %}{% if subtitle and subtitle != page_title %}{{ subtitle }} | {% endif %}{{ page_title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
