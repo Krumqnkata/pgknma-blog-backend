@@ -1,0 +1,103 @@
+{% load i18n %}
+{% if show_attention %}
+<section class="ux-attention" aria-labelledby="attention-heading">
+    <h2 id="attention-heading" class="ux-section-title">{% trans "Какво чака теб" %}</h2>
+
+    <div class="ux-attention-grid">
+        {% if has_checks %}
+        <div class="ux-panel">
+            <h3 class="ux-panel-title"><span class="material-symbols-outlined" aria-hidden="true">inbox</span>{% trans "За преглед" %}</h3>
+            {% if pending_items %}
+            <ul class="ux-list">
+                {% for item in pending_items %}
+                <li>
+                    <a href="{{ item.url }}" class="ux-row">
+                        <span class="material-symbols-outlined ux-row-icon" aria-hidden="true">{{ item.icon }}</span>
+                        <span class="ux-row-text">
+                            <strong>{{ item.title }}</strong>
+                            <small>{{ item.hint }}</small>
+                        </span>
+                        <span class="ux-count" aria-label="{{ item.count }} {% trans 'чакащи' %}">{{ item.count }}</span>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="ux-empty"><span class="material-symbols-outlined" aria-hidden="true">task_alt</span>{% trans "Всичко е прегледано. Няма нищо чакащо." %}</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if poll_rows %}
+        <div class="ux-panel">
+            <h3 class="ux-panel-title"><span class="material-symbols-outlined" aria-hidden="true">poll</span>{% trans "Седмична анкета" %}</h3>
+            <ul class="ux-list">
+                {% for row in poll_rows %}
+                <li>
+                    {% if row.url %}<a href="{{ row.url }}" class="ux-row">{% else %}<div class="ux-row">{% endif %}
+                        <span class="ux-dot ux-dot-{{ row.tone }}" aria-hidden="true"></span>
+                        <span class="ux-row-text">
+                            <small>{{ row.label }}</small>
+                            <strong>{{ row.text }}</strong>
+                        </span>
+                        {% if row.url %}<span class="material-symbols-outlined ux-chevron" aria-hidden="true">chevron_right</span>{% endif %}
+                    {% if row.url %}</a>{% else %}</div>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if my_drafts %}
+        <div class="ux-panel">
+            <h3 class="ux-panel-title"><span class="material-symbols-outlined" aria-hidden="true">edit_note</span>{% trans "Моите чернови" %}</h3>
+            <ul class="ux-list">
+                {% for draft in my_drafts %}
+                <li>
+                    <a href="{{ draft.url }}" class="ux-row">
+                        <span class="ux-row-text"><strong>{{ draft.title }}</strong></span>
+                        <span class="ux-badge ux-badge-{{ draft.tone }}">{{ draft.state }}</span>
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if upcoming_events %}
+        <div class="ux-panel">
+            <h3 class="ux-panel-title"><span class="material-symbols-outlined" aria-hidden="true">event</span>{% trans "Събития в следващите 7 дни" %}</h3>
+            <ul class="ux-list">
+                {% for event in upcoming_events %}
+                <li>
+                    {% if can_change_events %}<a href="{% url 'admin:blog_event_change' event.pk %}" class="ux-row">{% else %}<div class="ux-row">{% endif %}
+                        <span class="ux-date">{{ event.start_datetime|date:"d.m" }}<small>{{ event.start_datetime|date:"H:i" }}</small></span>
+                        <span class="ux-row-text"><strong>{{ event.title }}</strong></span>
+                    {% if can_change_events %}</a>{% else %}</div>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if system_rows %}
+        <div class="ux-panel">
+            <h3 class="ux-panel-title"><span class="material-symbols-outlined" aria-hidden="true">monitor_heart</span>{% trans "Състояние на системата" %}</h3>
+            <ul class="ux-list">
+                {% for row in system_rows %}
+                <li>
+                    <div class="ux-row">
+                        <span class="ux-dot ux-dot-{{ row.tone }}" aria-hidden="true"></span>
+                        <span class="ux-row-text">
+                            <small>{{ row.label }}</small>
+                            <strong>{{ row.text }}</strong>
+                        </span>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endif %}

@@ -4,11 +4,13 @@ from django.db.models.signals import post_migrate
 
 class BlogConfig(AppConfig):
     name = 'blog'
+    verbose_name = 'Блог'
 
     def ready(self):
         from .gamification import signals  # noqa: F401
         from . import push_signals  # noqa: F401
         from . import notification_event_signals  # noqa: F401
+        from . import team_chat_bot_signals  # noqa: F401
         from .admin_chat import install_team_chat_admin_sharing
         from .admin_roles import sync_admin_roles_after_migrate
 

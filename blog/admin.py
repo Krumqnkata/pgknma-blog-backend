@@ -1,5 +1,6 @@
-from blog.models import AIContentCheck, AssistantRule, AssistantUnansweredQuestion, KnowledgeChunk, MemeWeekResult, Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
+from blog.models import AIContentCheck, AssistantRule, AssistantUnansweredQuestion, KnowledgeChunk, MemeWeekResult, Posts, Category, UserProfile, Comments, PollQuestion, PollOption, PollAnswer, PollDraft, ContactSubmission, Notification, GamificationNotification, NotificationPreference, NotificationReadState, PushSubscription, PushDelivery, PageView, TermsOfService, Event, PostImage, BellSongSuggestion, PrivacyPolicy, MemeOfWeek, Cookie, SiteSettings, PostDocument, Changelog, ScheduleEntry, ScheduleImport, BlogLoginSession, PersonalDataCleanupRun, Badge, DigitalReward, GamificationLevel, GamificationPointRule, Mission, MissionActivity, PointTransaction, UserBadge, UserDigitalReward, UserMissionProgress, calculate_file_sha256
 from django.contrib import admin
+from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import models, transaction
 from django import forms
@@ -7,11 +8,13 @@ from django.forms.models import BaseInlineFormSet
 from django.http import Http404, HttpResponseNotAllowed
 from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import Truncator
 from django.utils import timezone
 import re
+from datetime import timedelta
 from unfold_markdown.widgets import MarkdownWidget
-from unfold.widgets import UnfoldBooleanSwitchWidget
+from unfold.widgets import UnfoldAdminCheckboxSelectMultipleWidget, UnfoldBooleanSwitchWidget
 from .forms import (
     MemeSelectionForm,
     BadgeAdminForm,
@@ -24,6 +27,8 @@ from .forms import (
     UserDigitalRewardAdminForm,
 )
 from unfold.admin import ModelAdmin, StackedInline, TabularInline
+from unfold.decorators import action as unfold_action
+from unfold.enums import ActionVariant
 from django.contrib.auth.models import User, Group
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
@@ -47,6 +52,178 @@ try:
     admin.site.unregister(Group)
 except admin.sites.NotRegistered:
     pass
+
+
+class GroupedFieldsetsMixin:
+    """Split a long form into short, named sections without losing any field.
+
+    `fieldset_groups` lists the sections. Fields Django would show that are not
+    listed (for example a new model field added later) go to „Други“, so the
+    form never silently drops something. Fields that are not on the form for
+    this user are left out of the sections.
+    """
+
+    fieldset_groups = ()
+
+    def get_fieldsets(self, request, obj=None):
+        if not self.fieldset_groups:
+            return super().get_fieldsets(request, obj)
+        available = list(self.get_fields(request, obj))
+        used = set()
+        fieldsets = []
+        for title, options in self.fieldset_groups:
+            fields = [field for field in options['fields'] if field in available]
+            if not fields:
+                continue
+            used.update(fields)
+            fieldsets.append((title, {**options, 'fields': tuple(fields)}))
+        leftovers = tuple(field for field in available if field not in used)
+        if leftovers:
+            fieldsets.append(('Други', {'fields': leftovers}))
+        return fieldsets
+
+
+def status_badge(text, tone):
+    """Coloured label for change lists. tone: ok, warn, info, muted, danger."""
+    return format_html('<span class="ux-badge ux-badge-{}">{}</span>', tone, text)
+
+
+class PollStatusFilter(admin.SimpleListFilter):
+    title = 'Състояние'
+    parameter_name = 'poll_state'
+
+    def lookups(self, request, model_admin):
+        return (('active', 'Активна'), ('upcoming', 'Предстои'), ('past', 'Приключила'))
+
+    def queryset(self, request, queryset):
+        now = timezone.now()
+        if self.value() == 'active':
+            return queryset.filter(start_date__lte=now, end_date__gte=now)
+        if self.value() == 'upcoming':
+            return queryset.filter(start_date__gt=now)
+        if self.value() == 'past':
+            return queryset.filter(end_date__lt=now)
+        return queryset
+
+
+class EventTimeFilter(admin.SimpleListFilter):
+    title = 'Кога'
+    parameter_name = 'when'
+
+    def lookups(self, request, model_admin):
+        return (('upcoming', 'Предстоящи'), ('past', 'Минали'))
+
+    def queryset(self, request, queryset):
+        now = timezone.now()
+        if self.value() == 'upcoming':
+            return queryset.filter(start_datetime__gte=now)
+        if self.value() == 'past':
+            return queryset.filter(start_datetime__lt=now)
+        return queryset
+
+
+class PostStatusFilter(admin.SimpleListFilter):
+    title = 'Статус'
+    parameter_name = 'post_state'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('draft', 'Чернова'),
+            ('pending', 'Чака одобрение'),
+            ('scheduled', 'Планирана'),
+            ('live', 'Публикувана'),
+        )
+
+    def queryset(self, request, queryset):
+        now = timezone.now()
+        if self.value() == 'draft':
+            return queryset.filter(published=False)
+        if self.value() == 'pending':
+            return queryset.filter(published=True, allowed=False)
+        if self.value() == 'scheduled':
+            return queryset.filter(published=True, allowed=True, published_at__gt=now)
+        if self.value() == 'live':
+            return queryset.filter(published=True, allowed=True).exclude(published_at__gt=now)
+        return queryset
+
+
+MODERATION_STATUS_TONES = {'pending': 'warn', 'approved': 'ok', 'rejected': 'muted'}
+
+
+class PendingFirstMixin:
+    """Change list shows pending items first, then the newest."""
+
+    pending_date_field = 'created_at'
+
+    def get_ordering(self, request):
+        # An expression, not an annotation: ModelAdmin.get_queryset orders
+        # before subclasses could annotate.
+        pending_first = models.Case(
+            models.When(status='pending', then=models.Value(0)),
+            default=models.Value(1),
+            output_field=models.IntegerField(),
+        )
+        return (pending_first.asc(), f'-{self.pending_date_field}')
+
+
+class QuickStatusMixin:
+    """„✓ Одобри“ / „✕ Откажи“ buttons in the list for pending items.
+
+    Works on a phone without the status menu + „Запис“. The status is changed
+    with save(), so the usual signals still notify the student.
+    """
+
+    QUICK_STATUSES = {'approved': 'Одобрено', 'rejected': 'Отказано'}
+
+    def get_urls(self):
+        opts = self.model._meta
+        return [
+            path(
+                '<path:object_id>/quick-status/<str:status>/',
+                self.admin_site.admin_view(self.quick_status_view),
+                name=f'{opts.app_label}_{opts.model_name}_quick_status',
+            ),
+        ] + super().get_urls()
+
+    def quick_status_view(self, request, object_id, status):
+        if request.method != 'POST':
+            return HttpResponseNotAllowed(['POST'])
+        if status not in self.QUICK_STATUSES:
+            raise Http404
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            raise Http404
+        if not self.has_change_permission(request, obj):
+            raise PermissionDenied
+        if obj.status != status:
+            obj.status = status
+            obj.save(update_fields=('status',))
+            self.log_change(request, obj, [{'changed': {'fields': ['Статус']}}])
+        name = getattr(obj, 'title', '') or str(obj)
+        self.message_user(request, f'{self.QUICK_STATUSES[status]}: „{name}“.', messages.SUCCESS)
+
+        opts = self.model._meta
+        back = request.META.get('HTTP_REFERER', '')
+        if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+            back = reverse(f'admin:{opts.app_label}_{opts.model_name}_changelist')
+        return redirect(back)
+
+    @admin.display(description='Бързо решение')
+    def quick_status_buttons(self, obj):
+        if obj.status != 'pending':
+            return ''
+        opts = self.model._meta
+        url_name = f'admin:{opts.app_label}_{opts.model_name}_quick_status'
+        # The buttons post the list's own form (it carries the CSRF token) to
+        # their own address, so no nested <form> is needed.
+        return format_html(
+            '<span class="ux-quick">'
+            '<button type="submit" class="ux-quick-btn ux-quick-ok" formaction="{}" formmethod="post" formnovalidate>✓ Одобри</button>'
+            '<button type="submit" class="ux-quick-btn ux-quick-no" formaction="{}" formmethod="post" formnovalidate>✕ Откажи</button>'
+            '</span>',
+            reverse(url_name, args=(obj.pk, 'approved')),
+            reverse(url_name, args=(obj.pk, 'rejected')),
+        )
 
 
 class DateSelectionForm(forms.Form):
@@ -683,7 +860,30 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
     @admin.display(description='Роли')
     def assigned_roles(self, obj):
         names = [group.name for group in obj.groups.all()]
-        return ', '.join(names) if names else 'Без роля'
+        if names:
+            return ', '.join(names)
+        # A superuser needs no role: it can do everything anyway.
+        return 'Пълен достъп' if obj.is_superuser else 'Без роля'
+
+    # Editing an existing user (superusers only). Roles come from „Групи“;
+    # the 295 single permissions are rarely needed, so they are folded away.
+    change_fieldsets = (
+        ('Вход', {'fields': ('username', 'password')}),
+        ('Лична информация', {'fields': ('first_name', 'last_name', 'email')}),
+        ('Роля и достъп', {
+            'description': (
+                'Изберете роля от „Групи“ — тя дава нужните права. '
+                '„Статус на персонал“ позволява влизане в админ панела.'
+            ),
+            'fields': ('is_active', 'is_staff', 'is_superuser', 'groups'),
+        }),
+        ('Отделни права (рядко нужни)', {
+            'classes': ('collapse',),
+            'description': 'Обикновено е достатъчна роля от „Групи“. Добавяйте отделни права само по изключение.',
+            'fields': ('user_permissions',),
+        }),
+        ('Дати', {'fields': ('last_login', 'date_joined')}),
+    )
 
     def get_fieldsets(self, request, obj=None):
         if not request.user.is_superuser and obj is not None:
@@ -695,6 +895,8 @@ class UserAdmin(BaseUserAdmin, ModelAdmin):
                     ),
                 }),
             )
+        if obj is not None:
+            return self.change_fieldsets
         return super().get_fieldsets(request, obj)
 
     def has_add_permission(self, request):
@@ -809,16 +1011,47 @@ class PostImageInline(StackedInline):
         )
 
 @admin.register(Posts)
-class PostsAdmin(ModelAdmin):
+class PostsAdmin(GroupedFieldsetsMixin, ModelAdmin):
     form = PostAdminForm
+    fieldset_groups = (
+        ('Основно', {
+            'description': 'Само тези полета са задължителни: заглавие, кратко въведение и текст.',
+            'fields': ('title', 'hook', 'content', 'categories'),
+        }),
+        ('Снимки и файлове', {
+            'description': 'Банерът се показва най-горе. Снимките от галерията и документите са по избор.',
+            'fields': ('banner', 'gallery_images', 'gallery_documents', 'delete_documents'),
+        }),
+        ('Кога и дали да се показва', {
+            'description': (
+                'Без отметка „Публикувана“ статията се пази като чернова. '
+                'Празна дата = излиза веднага; бъдеща дата = излиза тогава.'
+            ),
+            'fields': ('published', 'published_at', 'allowed'),
+        }),
+        ('ИИ резюме „Накратко“', {
+            'classes': ('collapse',),
+            'fields': ('ai_summary_info', 'ai_summary'),
+        }),
+        ('Информация', {
+            'classes': ('collapse',),
+            'fields': ('author', 'created_at'),
+        }),
+    )
     inlines = (PostImageInline,)
     readonly_fields_base = ('author', 'created_at', 'ai_summary_info')
-    list_display = ('title', 'author', 'categories_display', 'publication_status', 'published_at', 'created_at')
-    list_filter = ('published', 'allowed', 'categories', 'published_at', 'created_at')
+    list_display = ('title', 'author', 'categories_display', 'publication_status', 'views_30_days', 'published_at')
+    list_filter = (PostStatusFilter, 'published', 'allowed', 'categories', 'published_at', 'created_at')
     search_fields = ('title', 'content')
     exclude = ('author',)
-    filter_horizontal = ('categories',)
     actions = ('regenerate_ai_summary',)
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        # A short list of checkboxes (at most 3 can be chosen) instead of the
+        # two-box picker, which was wider than the screen.
+        if db_field.name == 'categories':
+            kwargs['widget'] = UnfoldAdminCheckboxSelectMultipleWidget()
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     @admin.display(description='Състояние на резюмето')
     def ai_summary_info(self, obj):
@@ -865,12 +1098,17 @@ class PostsAdmin(ModelAdmin):
     @admin.display(description='Статус', ordering='published_at')
     def publication_status(self, obj):
         if not obj.published:
-            return 'Чернова'
+            return status_badge('Чернова', 'muted')
         if not obj.allowed:
-            return 'Чака одобрение'
+            return status_badge('Чака одобрение', 'warn')
         if obj.published_at and obj.published_at > timezone.now():
-            return f'Планирана за {obj.published_at.strftime("%d.%m.%Y %H:%M")}'
-        return 'Публикувана'
+            local = timezone.localtime(obj.published_at)
+            return status_badge(f'Планирана за {local:%d.%m.%Y %H:%M}', 'info')
+        return status_badge('Публикувана', 'ok')
+
+    @admin.display(description='Прегледи (30 дни)', ordering='views_30')
+    def views_30_days(self, obj):
+        return getattr(obj, 'views_30', '—')
 
     @admin.display(description='Категории')
     def categories_display(self, obj):
@@ -880,7 +1118,11 @@ class PostsAdmin(ModelAdmin):
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == "content":
             kwargs["widget"] = MarkdownWidget(attrs={"rows": 25})
-        return super().formfield_for_dbfield(db_field, request, **kwargs)
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == "hook" and formfield is not None:
+            # Up to 100 characters: three rows are enough and keep the form short.
+            formfield.widget.attrs["rows"] = 3
+        return formfield
 
     # V V V КОРЕКЦИЯ НА READONLY_FIELDS V V V
     def get_readonly_fields(self, request, obj=None):
@@ -964,7 +1206,12 @@ class PostsAdmin(ModelAdmin):
 
     # V V V КОРЕКЦИЯ НА GET_QUERYSET V V V
     def get_queryset(self, request):
-        qs = super().get_queryset(request).prefetch_related('categories')
+        qs = super().get_queryset(request).prefetch_related('categories').annotate(
+            views_30=models.Count(
+                'page_views',
+                filter=models.Q(page_views__created_at__gte=timezone.now() - timedelta(days=30)),
+            ),
+        )
         user = request.user
         if user.is_superuser:
             return qs
@@ -1043,9 +1290,28 @@ class CategoryAdmin(ModelAdmin):
 @admin.register(Comments)
 class CommentsAdmin(AICheckAdminMixin, ModelAdmin):
     readonly_fields = ('user', 'content', 'created_at', 'post', 'parent')
-    list_display = ('user', 'content', 'created_at', 'post', 'ai_check_display')
-    list_filter = (AICheckListFilter,)
+    list_display = ('content_preview', 'user', 'post', 'created_display', 'ai_check_display')
+    list_filter = (AICheckListFilter, 'created_at')
     search_fields = ('user__username', 'content')
+
+    def get_ordering(self, request):
+        # Comments marked by the AI first, then the newest. An expression, not an
+        # annotation: ModelAdmin.get_queryset orders before subclasses annotate.
+        flagged = AIContentCheck.objects.filter(
+            content_type=ContentType.objects.get_for_model(Comments),
+            object_id=models.OuterRef('pk'),
+            verdict=AIContentCheck.VERDICT_FLAGGED,
+        )
+        return (models.Exists(flagged).desc(), '-created_at')
+
+    @admin.display(description='Коментар')
+    def content_preview(self, obj):
+        return Truncator(obj.content).chars(90)
+
+    @admin.display(description='Написан на', ordering='created_at')
+    def created_display(self, obj):
+        return timezone.localtime(obj.created_at).strftime('%d.%m.%Y %H:%M')
+
     def has_add_permission(self, request):
         return False
 
@@ -1068,11 +1334,53 @@ class PollOptionInline(admin.TabularInline):
     image_preview.short_description = "Преглед"
 
 @admin.register(PollQuestion)
-class PollQuestionAdmin(ModelAdmin):
-    list_display = ('title', 'start_date', 'end_date', 'created_at')
-    list_filter = ('start_date', 'end_date')
+class PollQuestionAdmin(GroupedFieldsetsMixin, ModelAdmin):
+    fieldset_groups = (
+        ('Въпрос', {
+            'fields': ('title', 'subtitle', 'task_description', 'image', 'image_preview'),
+        }),
+        ('Кога се показва', {
+            'description': (
+                'По подразбиране анкетата е активна 7 дни от момента на създаване. '
+                'Анкетите от „ИИ чернови“ получават датите сами (понеделник – неделя).'
+            ),
+            'fields': ('start_date', 'end_date'),
+        }),
+    )
+    list_display = ('title', 'state_display', 'start_date', 'end_date', 'answers_count', 'correct_rate')
+    list_filter = (PollStatusFilter, 'start_date', 'end_date')
     search_fields = ('title', 'subtitle', 'task_description')
     inlines = [PollOptionInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            answer_total=models.Count('pollanswer', distinct=True),
+            answer_correct=models.Count(
+                'pollanswer',
+                filter=models.Q(pollanswer__selected_option__is_correct=True),
+                distinct=True,
+            ),
+        )
+
+    @admin.display(description='Състояние')
+    def state_display(self, obj):
+        now = timezone.now()
+        if obj.start_date > now:
+            return status_badge('Предстои', 'info')
+        if obj.end_date < now:
+            return status_badge('Приключила', 'muted')
+        return status_badge('Активна', 'ok')
+
+    @admin.display(description='Отговори', ordering='answer_total')
+    def answers_count(self, obj):
+        return obj.answer_total
+
+    @admin.display(description='Верни')
+    def correct_rate(self, obj):
+        if not obj.answer_total:
+            return '—'
+        return f'{round(100 * obj.answer_correct / obj.answer_total)}%'
+
     fields = ('title', 'subtitle', 'task_description', 'image', 'image_preview', 'start_date', 'end_date')
     readonly_fields = ('image_preview',)
 
@@ -1141,6 +1449,102 @@ class PollQuestionAdmin(ModelAdmin):
                     is_correct=False
                 )
 
+@admin.register(PollDraft)
+class PollDraftAdmin(ModelAdmin):
+    """AI quiz drafts: the admin edits one if needed and picks it for its week."""
+
+    list_display = ('week_display', 'title_display', 'correct_answer_display', 'verification_display', 'status')
+    list_filter = ('status', 'verification', 'week_start')
+    search_fields = ('title', 'task_description')
+    list_display_links = ('week_display', 'title_display')
+    actions_submit_line = ('publish_this_draft',)
+    fieldsets = (
+        ('Състояние', {
+            'fields': ('week_display', 'status', 'verification', 'verification_note', 'poll_link'),
+        }),
+        ('Въпрос', {
+            'description': 'Можете да поправите текста, преди да изберете черновата.',
+            'fields': ('title', 'task_description'),
+        }),
+        ('Отговори', {
+            'fields': ('option_a', 'option_b', 'option_c', 'option_d', 'correct_key', 'explanation'),
+        }),
+        ('Технически данни', {
+            'classes': ('collapse',),
+            'fields': ('ai_model', 'created_at'),
+        }),
+    )
+    editable_fields = ('title', 'task_description', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_key')
+
+    def has_add_permission(self, request):
+        return False
+
+    def get_readonly_fields(self, request, obj=None):
+        always = ('week_display', 'status', 'verification', 'verification_note', 'poll_link', 'explanation', 'ai_model', 'created_at')
+        if obj is None or obj.status == PollDraft.Status.PENDING:
+            return always
+        return always + self.editable_fields
+
+    def get_actions_submit_line(self, request, object_id):
+        draft = PollDraft.objects.filter(pk=object_id).only('status').first() if object_id else None
+        if draft is None or draft.status != PollDraft.Status.PENDING:
+            return []
+        return super().get_actions_submit_line(request, object_id)
+
+    @unfold_action(
+        description='Запази и избери тази анкета',
+        permissions=['blog.add_pollquestion'],
+        variant=ActionVariant.PRIMARY,
+    )
+    def publish_this_draft(self, request, obj):
+        from .ai.polls import PollPublishError, publish_draft
+
+        try:
+            poll = publish_draft(obj)
+        except (PollPublishError, ValidationError) as exc:
+            message = exc.messages[0] if isinstance(exc, ValidationError) else str(exc)
+            self.message_user(request, f'Анкетата не е пусната: {message}', messages.ERROR)
+            return
+        start = timezone.localtime(poll.start_date).strftime('%d.%m.%Y')
+        self.message_user(
+            request,
+            f'Готово! „{poll.title}“ ще се показва от понеделник {start} до неделя. '
+            'Другите чернови за тази седмица са отбелязани като неизбрани.',
+            messages.SUCCESS,
+        )
+
+    @admin.display(description='Седмица', ordering='week_start')
+    def week_display(self, obj):
+        monday = obj.week_start
+        sunday = monday + timedelta(days=6)
+        return f"{monday:%d.%m} – {sunday:%d.%m.%Y}"
+
+    @admin.display(description='Въпрос', ordering='title')
+    def title_display(self, obj):
+        if obj.status == PollDraft.Status.FAILED:
+            return f'Неуспешен опит: {obj.verification_note or "ИИ не върна въпрос"}'
+        return obj.title
+
+    @admin.display(description='Верен отговор')
+    def correct_answer_display(self, obj):
+        if not obj.correct_key:
+            return '—'
+        return f"{obj.correct_key.upper()}) {getattr(obj, f'option_{obj.correct_key}')}"
+
+    @admin.display(description='Втора проверка', ordering='verification')
+    def verification_display(self, obj):
+        if obj.status == PollDraft.Status.FAILED:
+            return '—'
+        return obj.get_verification_display()
+
+    @admin.display(description='Анкета')
+    def poll_link(self, obj):
+        if not obj.poll_id:
+            return 'Още не е избрана.'
+        url = reverse('admin:blog_pollquestion_change', args=[obj.poll_id])
+        return format_html('<a href="{}" class="text-primary-600 underline">Отвори анкетата</a>', url)
+
+
 @admin.register(PollAnswer)
 class PollAnswerAdmin(ModelAdmin):
     list_display = ('user', 'question', 'selected_option', 'created_at')
@@ -1155,8 +1559,14 @@ class PollAnswerAdmin(ModelAdmin):
         return False
 
 @admin.register(BellSongSuggestion)
-class BellSongSuggestionAdmin(AICheckAdminMixin, ModelAdmin):
-    list_display = ('title', 'user', 'slot', 'status', 'votes', 'submitted_at', 'embedded_media_display', 'ai_check_display')
+class BellSongSuggestionAdmin(QuickStatusMixin, PendingFirstMixin, AICheckAdminMixin, ModelAdmin):
+    # Status can be changed straight from the list (quick buttons, or select + „Запис“); pending first.
+    pending_date_field = 'submitted_at'
+    list_display = (
+        'title', 'quick_status_buttons', 'status', 'slot', 'votes', 'user', 'submitted_at', 'ai_check_display',
+    )
+    list_display_links = ('title',)
+    list_editable = ('status',)
     list_filter = ('status', 'slot', AICheckListFilter)
     search_fields = ('title', 'link', 'user__username')
     readonly_fields = ('user', 'submitted_at', 'title', 'link', 'embedded_media_display', 'votes', 'slot', 'note',)
@@ -1525,8 +1935,16 @@ class PageViewAdmin(ModelAdmin):
 
 @admin.register(ContactSubmission)
 class ContactSubmissionAdmin(ModelAdmin):
-    list_display = ('name', 'email', 'submitted_at')
-    list_filter = ('submitted_at',)
+    list_display = ('name', 'reason_display', 'message_preview', 'email', 'submitted_at')
+    list_filter = ('reason', 'submitted_at')
+
+    @admin.display(description='Причина', ordering='reason')
+    def reason_display(self, obj):
+        return status_badge(obj.get_reason_display(), 'info')
+
+    @admin.display(description='Съобщение')
+    def message_preview(self, obj):
+        return Truncator(obj.message).chars(80)
     search_fields = ('name', 'email', 'message')
     readonly_fields = ('name', 'email', 'message', 'submitted_at', 'user')
 
@@ -1587,11 +2005,58 @@ class PrivacyPolicyAdmin(ModelAdmin):
         return False
 
 @admin.register(Event)
-class EventAdmin(ModelAdmin):
-    list_display = ('title', 'start_datetime', 'location', 'category', 'attendees_text', 'published', 'created_at')
-    list_filter = ('published', 'category', 'start_datetime')
+class EventAdmin(GroupedFieldsetsMixin, ModelAdmin):
+    list_display = ('title', 'time_display', 'start_datetime', 'location', 'category', 'published')
+    list_filter = (EventTimeFilter, 'published', 'category', 'start_datetime')
     search_fields = ('title', 'description', 'location', 'attendees_text')
     readonly_fields = ('created_at',)
+
+    def get_ordering(self, request):
+        # Upcoming events first (nearest at the top), then past ones (newest
+        # first). Expressions, not annotations: see PendingFirstMixin.
+        now = timezone.now()
+        upcoming = models.Q(start_datetime__gte=now)
+        past_last = models.Case(
+            models.When(upcoming, then=models.Value(0)),
+            default=models.Value(1),
+            output_field=models.IntegerField(),
+        )
+        upcoming_start = models.Case(
+            models.When(upcoming, then=models.F('start_datetime')),
+            default=None,
+            output_field=models.DateTimeField(),
+        )
+        return (past_last.asc(), upcoming_start.asc(nulls_last=True), models.F('start_datetime').desc())
+
+    fieldset_groups = (
+        ('Какво', {
+            'fields': ('title', 'category', 'description'),
+        }),
+        ('Кога и къде', {
+            'description': 'Крайният час е по избор.',
+            'fields': ('start_datetime', 'end_datetime', 'location', 'attendees_text'),
+        }),
+        ('Показване', {
+            'fields': ('published',),
+        }),
+        ('Информация', {
+            'classes': ('collapse',),
+            'fields': ('created_at',),
+        }),
+    )
+
+    @admin.display(description='Кога', ordering='start_datetime')
+    def time_display(self, obj):
+        now = timezone.now()
+        end = obj.end_datetime or obj.start_datetime
+        if obj.start_datetime > now:
+            days = (timezone.localdate(obj.start_datetime) - timezone.localdate()).days
+            label = 'Днес' if days == 0 else ('Утре' if days == 1 else f'След {days} дни')
+            return status_badge(label, 'info')
+        if end >= now:
+            return status_badge('Тече сега', 'ok')
+        return status_badge('Мина', 'muted')
+
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == "description":
             kwargs["widget"] = MarkdownWidget(attrs={"rows": 10})
@@ -1692,8 +2157,13 @@ class PostDocumentAdmin(ModelAdmin):
         return ()
 
 @admin.register(MemeOfWeek)
-class MemeOfWeekAdmin(AICheckAdminMixin, ModelAdmin):
-    list_display = ('title', 'user', 'image_preview', 'status', 'votes', 'week_start', 'created_at', 'ai_check_display')
+class MemeOfWeekAdmin(QuickStatusMixin, PendingFirstMixin, AICheckAdminMixin, ModelAdmin):
+    # Status can be changed straight from the list (quick buttons, or select + „Запис“); pending first.
+    list_display = (
+        'title', 'image_preview', 'quick_status_buttons', 'status', 'votes', 'week_start', 'user', 'ai_check_display',
+    )
+    list_display_links = ('title',)
+    list_editable = ('status',)
     list_filter = ('status', 'week_start', 'created_at', AICheckListFilter)
     search_fields = ('title', 'user__username')
     readonly_fields = (
@@ -2020,6 +2490,30 @@ class SiteSettingsAdmin(ModelAdmin):
                 'ai_knowledge_status',
             ),
         }),
+        ('ИИ чернови за седмичната анкета', {
+            'description': (
+                'Всеки четвъртък ИИ подготвя 3 викторини за следващата седмица '
+                'и проверява верния отговор с втора заявка. Изберете една от '
+                'менюто „ИИ чернови за анкети“.'
+            ),
+            'fields': (
+                'enable_ai_poll_drafts',
+                'ai_poll_topic',
+                'ai_poll_auto_publish',
+            ),
+        }),
+        ('Екипен чат: автоматични съобщения', {
+            'description': (
+                'Сайтът пише в екипния чат като „Сайтът (автоматично)“. '
+                'Към съобщението е прикачен записът, но всеки го вижда само ако има достъп до него.'
+            ),
+            'fields': (
+                'team_chat_notify_polls',
+                'team_chat_notify_pending_digest',
+                'team_chat_notify_ai_flags',
+                'team_chat_notify_contact',
+            ),
+        }),
     )
 
     @admin.display(description='Знания на асистента')
@@ -2053,15 +2547,14 @@ class SiteSettingsAdmin(ModelAdmin):
             'ИИ функциите няма да работят, дори копчетата да са включени.'
         )
 
-    class Media:
-        css = {
-            'all': ('admin/css/meme_deletion.css',)
-        }
-        js = ('admin/js/meme_deletion.js',)
-
     def get_urls(self):
         opts = self.model._meta
         custom_urls = [
+            path(
+                'cleanup/',
+                self.admin_site.admin_view(self.cleanup_view),
+                name=f'{opts.app_label}_{opts.model_name}_cleanup',
+            ),
             path(
                 '<path:object_id>/delete-memes/',
                 self.admin_site.admin_view(self.delete_memes_view),
@@ -2119,12 +2612,7 @@ class SiteSettingsAdmin(ModelAdmin):
                 'Избраните записи не са валидни. Нищо не беше изтрито.',
                 messages.ERROR,
             )
-            return redirect(
-                reverse(
-                    'admin:blog_sitesettings_change',
-                    args=(obj.pk,),
-                )
-            )
+            return redirect(reverse('admin:blog_sitesettings_cleanup'))
 
         selected_objects = list(form.get_selected_queryset())
         if not selected_objects:
@@ -2133,12 +2621,7 @@ class SiteSettingsAdmin(ModelAdmin):
                 'Не сте избрали записи за изтриване.',
                 messages.WARNING,
             )
-            return redirect(
-                reverse(
-                    'admin:blog_sitesettings_change',
-                    args=(obj.pk,),
-                )
-            )
+            return redirect(reverse('admin:blog_sitesettings_cleanup'))
 
         selected_ids = [
             selected_object.pk for selected_object in selected_objects
@@ -2154,12 +2637,7 @@ class SiteSettingsAdmin(ModelAdmin):
             f'Изтрити са {len(selected_objects)} {object_label}.',
             messages.SUCCESS,
         )
-        return redirect(
-            reverse(
-                'admin:blog_sitesettings_change',
-                args=(obj.pk,),
-            )
-        )
+        return redirect(reverse('admin:blog_sitesettings_cleanup'))
 
     def delete_memes_view(self, request, object_id):
         return self._delete_selected_view(
@@ -2191,6 +2669,43 @@ class SiteSettingsAdmin(ModelAdmin):
             object_label='анкет(и)',
         )
 
+    def _cleanup_permissions(self, request):
+        return {
+            'can_delete_memes': self._has_related_delete_permission(request, MemeOfWeek),
+            'can_delete_suggestions': self._has_related_delete_permission(request, BellSongSuggestion),
+            'can_delete_polls': self._has_related_delete_permission(request, PollQuestion),
+        }
+
+    def _can_cleanup(self, request):
+        return self.has_change_permission(request) and any(self._cleanup_permissions(request).values())
+
+    def cleanup_view(self, request):
+        """„Почистване на записи“: delete old memes, song suggestions and polls.
+
+        Moved here from the settings page, so irreversible actions are not
+        next to everyday switches. Same rules as before: change permission for
+        the settings plus delete permission for each kind of record.
+        """
+        if not self._can_cleanup(request):
+            raise PermissionDenied
+        # The deletion URLs carry the settings record's id (kept from before).
+        settings_obj = self.model.objects.order_by('pk').first() or self.model.objects.create()
+        permissions = self._cleanup_permissions(request)
+        context = {
+            **self.admin_site.each_context(request),
+            **permissions,
+            'title': 'Почистване на записи',
+            'opts': self.model._meta,
+            'original': settings_obj,
+            'meme_selection_form': MemeSelectionForm(prefix='memes') if permissions['can_delete_memes'] else None,
+            'suggestion_selection_form': (
+                SongSuggestionSelectionForm(prefix='suggestions') if permissions['can_delete_suggestions'] else None
+            ),
+            'poll_selection_form': PollQuestionSelectionForm(prefix='polls') if permissions['can_delete_polls'] else None,
+        }
+        request.current_app = self.admin_site.name
+        return TemplateResponse(request, 'admin/site_cleanup.html', context)
+
     def render_change_form(
         self,
         request,
@@ -2200,35 +2715,9 @@ class SiteSettingsAdmin(ModelAdmin):
         form_url='',
         obj=None,
     ):
-        # Django reaches render_change_form only after its normal object-level
-        # view/change checks. Destructive controls are shown solely to users
-        # who also hold delete permission for the related model.
-        context['can_delete_memes'] = self._has_related_delete_permission(
-            request,
-            MemeOfWeek,
-        )
-        context['can_delete_suggestions'] = (
-            self._has_related_delete_permission(request, BellSongSuggestion)
-        )
-        context['can_delete_polls'] = self._has_related_delete_permission(
-            request,
-            PollQuestion,
-        )
-        context['meme_selection_form'] = (
-            MemeSelectionForm(prefix='memes')
-            if context['can_delete_memes']
-            else None
-        )
-        context['suggestion_selection_form'] = (
-            SongSuggestionSelectionForm(prefix='suggestions')
-            if context['can_delete_suggestions']
-            else None
-        )
-        context['poll_selection_form'] = (
-            PollQuestionSelectionForm(prefix='polls')
-            if context['can_delete_polls']
-            else None
-        )
+        # The irreversible deletion lists live on their own page („Почистване“);
+        # the settings page only links to it for people who may use it.
+        context['can_cleanup'] = self._can_cleanup(request)
         return super().render_change_form(
             request,
             context,

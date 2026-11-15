@@ -54,6 +54,7 @@ SHAREABLE_ADMIN_MODELS = frozenset({
     'blog.notification',
     'blog.pointtransaction',
     'blog.pollanswer',
+    'blog.polldraft',
     'blog.pollquestion',
     'blog.postdocument',
     'blog.postimage',

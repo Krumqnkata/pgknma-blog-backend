@@ -13,7 +13,8 @@ from blog.automatic_notifications import (
     notify_post_if_due,
 )
 from blog.meme_weeks import finalize_meme_weeks
-from blog.models import Event, Mission, PollQuestion, Posts
+from blog.team_chat_bot import daily_pending_digest
+from blog.models import Event, Mission, PollQuestion, Posts, SiteSettings
 from blog.notification_sources import synchronize_all_notification_sources
 from blog.push import (
     cancel_expired_notification_deliveries,
@@ -86,6 +87,12 @@ class Command(BaseCommand):
 
         # Closes finished meme weeks: winner, bonus points and announcement.
         counts['meme_weeks'] = len(finalize_meme_weeks(now=now))
+
+        # Shown in „Състояние на системата“ on the admin start page.
+        SiteSettings.objects.filter(pk=1).update(notifications_last_run_at=now)
+
+        # Once a day after 8:00: what is waiting for review, in the team chat.
+        daily_pending_digest(now=now)
 
         source_sync = synchronize_all_notification_sources(now=now)
         expired_pushes = cancel_expired_notification_deliveries(now=now)

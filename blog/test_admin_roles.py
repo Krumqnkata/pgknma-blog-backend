@@ -178,7 +178,7 @@ class AdminNavigationPermissionTests(TestCase):
         self.assertNotIn("Потребители", titles)
         self.assertNotIn("Значки", titles)
         self.assertNotIn("Текущи сигнали", titles)
-        self.assertNotIn("Администрация", _section_titles(navigation))
+        self.assertNotIn("Сайт и дневници", _section_titles(navigation))
 
     def test_gamification_manager_sees_only_relevant_section_and_read_only_users(self):
         navigation = self._navigation_for_role("Мениджъри на геймификацията")
@@ -197,7 +197,8 @@ class AdminNavigationPermissionTests(TestCase):
         sections = _section_titles(navigation)
         titles = _visible_titles(navigation)
 
-        self.assertIn("Ангажираност на потребителите", sections)
+        self.assertIn("Модерация", sections)
+        self.assertIn("Седмична анкета", sections)
         self.assertIn("Коментари", titles)
         self.assertNotIn("Геймификация", sections)
         self.assertNotIn("Валентинки", sections)
@@ -242,12 +243,16 @@ class AdminNavigationPermissionTests(TestCase):
 
         self.assertTrue(
             {
-                "Управление на съдържанието",
-                "Ангажираност на потребителите",
+                "Съдържание",
+                "Модерация",
+                "Седмична анкета",
+                "ИИ асистент",
                 "Геймификация",
+                "Геймификация: история",
                 "Валентинки",
-                "Администрация",
-                "Аутентикация и оторизация",
+                "Сайт и дневници",
+                "Документи и лични данни",
+                "Потребители и достъп",
             }.issubset(sections)
         )
 

@@ -4,178 +4,64 @@
 {% block title %}{% trans "Начално табло" %} | {{ site_title|default:_("Django site admin") }}{% endblock %}
 
 {% block content %}
-<div class="p-6">
-    <div class="mb-8">
-        <h1 class="text-2xl font-semibold text-font-important">{% trans "Добре дошли, " %}{{ request.user.username }}!</h1>
-
-        <div class="my-6 flex flex-col md:flex-row items-center rounded-lg border border-border-subtle bg-card-background p-6 shadow-sm">
-            <div class="flex-shrink-0 mb-4 md:mb-0">
-                <img src="{% static 'images/logo-sm.png' %}" width="250" height="150" alt="Лого на ПГКНМА" class="dark:opacity-90 dark:brightness-110">
-            </div>
-            <div class="flex-1 md:ml-6 italic flex flex-col items-center text-center">
-                <p id="quote-text" class="text-lg text-font-default font-medium leading-relaxed"></p>
-                <footer id="quote-author" class="mt-2 text-sm text-font-subtle font-semibold"></footer>
-            </div>
+<div class="ux-page">
+    <header class="ux-hello">
+        <img src="{% static 'images/logo-sm.png' %}" width="250" height="150" alt="Лого на ПГКНМА">
+        <div class="ux-hello-text">
+            <h1>{% trans "Добре дошли, " %}{{ request.user.username }}!</h1>
+            <p class="ux-quote"><span id="quote-text"></span> <span id="quote-author"></span></p>
         </div>
+        <a class="ux-guide-link" href="{% url 'admin-help' %}">
+            <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>{% trans "Ръководство" %}
+        </a>
+    </header>
 
-        <div class="mb-8 rounded-lg border-l-4 border-yellow-500 bg-yellow-500/10 p-4">
-            <h2 class="text-lg font-bold leading-tight text-font-important">
-                ⚠️ {% trans "Преди да направите промяна" %}
-            </h2>
-            <p class="mt-2 text-sm leading-6 text-font-default">
-                {% trans "Проверете избраните записи, филтрите и датите преди масово действие. При изтриване, миграция или deploy първо осигурете проверен backup." %}
-            </p>
+    {% if perms.blog.add_posts or perms.blog.change_bellsongsuggestion or perms.blog.view_comments or perms.blog.add_event or perms.blog.add_pollquestion or perms.blog.change_sitesettings or perms.blog.change_scheduleentry or perms.blog.change_memeofweek or perms.valentine.view_profile or perms.valentine.view_valenitines %}
+    <nav class="ux-actions" aria-labelledby="quick-actions-heading">
+        <h2 id="quick-actions-heading" class="ux-subtitle">{% trans "Бързи действия" %}</h2>
+        <div class="ux-chips">
+            {% if perms.blog.add_posts %}
+            <a href="{% url 'admin:blog_posts_add' %}" class="ux-chip" title="{% trans 'Създайте нова статия.' %}"><span class="material-symbols-outlined" aria-hidden="true">add</span>{% trans "Добави публикация" %}</a>
+            {% endif %}
+            {% if perms.blog.add_event %}
+            <a href="{% url 'admin:blog_event_add' %}" class="ux-chip" title="{% trans 'Ново събитие в календара.' %}"><span class="material-symbols-outlined" aria-hidden="true">event</span>{% trans "Добави събитие" %}</a>
+            {% endif %}
+            {% if perms.blog.add_pollquestion %}
+            <a href="{% url 'admin:blog_pollquestion_add' %}" class="ux-chip" title="{% trans 'Създайте нова анкета.' %}"><span class="material-symbols-outlined" aria-hidden="true">poll</span>{% trans "Добави анкета" %}</a>
+            {% endif %}
+            {% if perms.blog.change_bellsongsuggestion %}
+            <a href="{% url 'admin:blog_bellsongsuggestion_changelist' %}?status__exact=pending" class="ux-chip" title="{% trans 'Прегледайте предложенията.' %}"><span class="material-symbols-outlined" aria-hidden="true">music_note</span>{% trans "Одобри песни" %}</a>
+            {% endif %}
+            {% if perms.blog.change_memeofweek %}
+            <a href="{% url 'admin:blog_memeofweek_changelist' %}?status__exact=pending" class="ux-chip" title="{% trans 'Модерирай чакащите предложения.' %}"><span class="material-symbols-outlined" aria-hidden="true">sentiment_very_satisfied</span>{% trans "Прегледай мемета" %}</a>
+            {% endif %}
+            {% if perms.blog.view_comments %}
+            <a href="{% url 'admin:blog_comments_changelist' %}" class="ux-chip" title="{% trans 'Управлявайте отзивите.' %}"><span class="material-symbols-outlined" aria-hidden="true">comment</span>{% trans "Коментари" %}</a>
+            {% endif %}
+            {% if perms.blog.change_scheduleentry %}
+            <a href="{% url 'admin:blog_scheduleentry_import_csv' %}" class="ux-chip" title="{% trans 'Качи новия CSV файл.' %}"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span>{% trans "Импортирай програма" %}</a>
+            {% endif %}
+            {% if perms.valentine.view_profile %}
+            <a href="{% url 'admin:valentine_profile_changelist' %}" class="ux-chip" title="{% trans 'Кодове, PIN, CSV и класове.' %}"><span class="material-symbols-outlined" aria-hidden="true">person</span>{% trans "Valentine профили" %}</a>
+            {% endif %}
+            {% if perms.valentine.view_valenitines %}
+            <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="ux-chip" title="{% trans 'Прегледай текущата модерация.' %}"><span class="material-symbols-outlined" aria-hidden="true">report</span>{% trans "Valentine сигнали" %}</a>
+            {% endif %}
+            {% if perms.blog.change_sitesettings %}
+            <a href="{% url 'admin:blog_sitesettings_changelist' %}" class="ux-chip" title="{% trans 'Управление на сайта.' %}"><span class="material-symbols-outlined" aria-hidden="true">settings</span>{% trans "Настройки" %}</a>
+            {% endif %}
         </div>
-    </div>
+    </nav>
+    {% endif %}
+
+    {% admin_attention_dashboard %}
 
     {% admin_statistics_dashboard %}
 
-    {% if perms.blog.add_posts or perms.blog.change_bellsongsuggestion or perms.blog.view_comments or perms.blog.add_event or perms.blog.add_pollquestion or perms.blog.change_sitesettings or perms.blog.change_scheduleentry or perms.blog.change_memeofweek or perms.valentine.view_profile or perms.valentine.view_valenitines %}
-    <h2 class="mb-4 text-xl font-semibold text-font-important">{% trans "Бързи действия" %}</h2>
-    <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {% if perms.blog.add_posts %}
-        <a href="{% url 'admin:blog_posts_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-add text-2xl text-primary-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Добави публикация" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Създайте нова статия." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.blog.change_bellsongsuggestion %}
-        <a href="{% url 'admin:blog_bellsongsuggestion_changelist' %}?status__exact=pending" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-music_note text-2xl text-yellow-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Одобри песни" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Прегледайте предложенията." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.blog.view_comments %}
-        <a href="{% url 'admin:blog_comments_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-comment text-2xl text-blue-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Коментари" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Управлявайте отзивите." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.blog.add_event %}
-        <a href="{% url 'admin:blog_event_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-event text-2xl text-green-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Добави събитие" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Ново събитие в календара." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.blog.add_pollquestion %}
-        <a href="{% url 'admin:blog_pollquestion_add' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-poll text-2xl text-indigo-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Добави анкета" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Създайте нова анкета." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.blog.change_sitesettings %}
-        <a href="{% url 'admin:blog_sitesettings_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-settings text-2xl text-red-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Настройки" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Управление на сайта." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.blog.change_scheduleentry %}
-        <a href="{% url 'admin:blog_scheduleentry_import_csv' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-upload_file text-2xl text-cyan-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Импортирай програма" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Качи новия CSV файл." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.blog.change_memeofweek %}
-        <a href="{% url 'admin:blog_memeofweek_changelist' %}?status__exact=pending" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-sentiment_very_satisfied text-2xl text-orange-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Прегледай мемета" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Модерирай чакащите предложения." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.valentine.view_profile %}
-        <a href="{% url 'admin:valentine_profile_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-person text-2xl text-pink-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Valentine профили" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Кодове, PIN, CSV и класове." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
-
-        {% if perms.valentine.view_valenitines %}
-        <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="group block rounded-lg border border-border-subtle bg-card-background p-6 transition-all hover:border-primary-500 shadow-sm">
-            <div class="flex items-center">
-                <div class="rounded-full bg-base-200 p-3 group-hover:bg-primary-500/20">
-                    <span class="icon-report text-2xl text-red-500"></span>
-                </div>
-                <div class="ml-4">
-                    <h3 class="text-lg font-semibold text-font-important">{% trans "Valentine сигнали" %}</h3>
-                    <p class="text-sm text-font-subtle">{% trans "Прегледай текущата модерация." %}</p>
-                </div>
-            </div>
-        </a>
-        {% endif %}
+    <div class="ux-notice" role="note">
+        <h2>⚠️ {% trans "Преди да направите промяна" %}</h2>
+        <p>{% trans "Проверете избраните записи, филтрите и датите преди масово действие. При изтриване, миграция или deploy първо осигурете проверен backup." %}</p>
     </div>
-    {% endif %}
-
-    {% include "admin/_help_guide.html" %}
 </div>
 {% endblock %}
 
@@ -238,8 +124,8 @@
         const randomIndex = Math.floor(Math.random() * quotes.length);
         const randomQuote = quotes[randomIndex];
 
-        document.getElementById('quote-text').innerText = `"${randomQuote.text}"`;
-        document.getElementById('quote-author').innerText = `- ${randomQuote.author}`;
+        document.getElementById('quote-text').innerText = `„${randomQuote.text}“`;
+        document.getElementById('quote-author').innerText = `— ${randomQuote.author}`;
     });
 </script>
 {% endblock %}

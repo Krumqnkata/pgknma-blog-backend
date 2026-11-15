@@ -1,0 +1,227 @@
+# Bulgarian texts for the admin theme (django-unfold has no Bulgarian translation).
+# Only strings that Django's own Bulgarian catalog does not already translate.
+# After editing run:  python manage.py compile_admin_translations
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: bg\n"
+
+msgid "Welcome back to"
+msgstr "Добре дошли отново в"
+
+msgid "Return to site"
+msgstr "Към сайта"
+
+msgid "Type to search"
+msgstr "Търсене…"
+
+msgid "Search apps and models..."
+msgstr "Търсене на раздели…"
+
+msgid "Apply Filters"
+msgstr "Приложи филтрите"
+
+msgid "Reset filters"
+msgstr "Изчисти филтрите"
+
+msgid "Toggle filter"
+msgstr "Покажи/скрий филтъра"
+
+msgid "Toggle sidebar"
+msgstr "Покажи/скрий менюто"
+
+msgid "Toggle dark/light mode"
+msgstr "Тъмна/светла тема"
+
+msgid "Toggle password visibility"
+msgstr "Покажи/скрий паролата"
+
+msgid "Dark"
+msgstr "Тъмна"
+
+msgid "Light"
+msgstr "Светла"
+
+msgid "System"
+msgstr "Като системата"
+
+msgid "General"
+msgstr "Общи"
+
+msgid "All applications"
+msgstr "Всички раздели"
+
+msgid "Add row"
+msgstr "Добави ред"
+
+msgid "Choose file to upload"
+msgstr "Изберете файл"
+
+msgid "Click to cancel"
+msgstr "Натиснете за отказ"
+
+msgid "Click to download"
+msgstr "Натиснете за изтегляне"
+
+msgid "Create new record"
+msgstr "Нов запис"
+
+msgid "Date"
+msgstr "Дата"
+
+msgid "Date from"
+msgstr "От дата"
+
+msgid "Date to"
+msgstr "До дата"
+
+msgid "From"
+msgstr "От"
+
+msgid "To"
+msgstr "До"
+
+msgid "True"
+msgstr "Да"
+
+msgid "False"
+msgstr "Не"
+
+msgid "Value"
+msgstr "Стойност"
+
+msgid "Go back"
+msgstr "Назад"
+
+msgid "Next"
+msgstr "Напред"
+
+msgid "Previous"
+msgstr "Назад"
+
+msgid "Image preview"
+msgstr "Преглед на изображението"
+
+msgid "No data"
+msgstr "Няма данни"
+
+msgid "No results found"
+msgstr "Няма намерени резултати"
+
+msgid "Nothing matched your search"
+msgstr "Нищо не отговаря на търсенето"
+
+msgid "This page yielded into no results. Create a new item or reset your filters."
+msgstr "Няма записи. Добавете нов или изчистете филтрите."
+
+msgid "Recent searches"
+msgstr "Последни търсения"
+
+msgid "Run"
+msgstr "Изпълни"
+
+msgid "Run the selected action"
+msgstr "Изпълни избраното действие"
+
+msgid "Select"
+msgstr "Избери"
+
+msgid "Select action"
+msgstr "Изберете действие"
+
+msgid "Select action to run"
+msgstr "Изберете действие"
+
+msgid "Select record"
+msgstr "Изберете запис"
+
+msgid "Select value"
+msgstr "Изберете стойност"
+
+msgid "Select format"
+msgstr "Изберете формат"
+
+msgid "Select currency"
+msgstr "Изберете валута"
+
+msgid "Submit"
+msgstr "Изпрати"
+
+msgid "This item will be deleted."
+msgstr "Този запис ще бъде изтрит."
+
+msgid "Forgotten your password or username?"
+msgstr "Забравили сте паролата или потребителското име?"
+
+msgid "You have been successfully logged out from the administration"
+msgstr "Излязохте успешно от админ панела"
+
+msgid "Welcome"
+msgstr "Добре дошли"
+
+msgid "Navigate"
+msgstr "Придвижване"
+
+msgid "Open selection"
+msgstr "Отвори избраното"
+
+msgid "Open selection in new tab"
+msgstr "Отвори избраното в нов раздел"
+
+msgid "Open command tool"
+msgstr "Отвори бързото търсене"
+
+msgid "Open shortcuts list"
+msgstr "Клавишни комбинации"
+
+msgid "Available shortcuts"
+msgstr "Клавишни комбинации"
+
+msgid "Global shortcuts"
+msgstr "Навсякъде"
+
+msgid "Changelist shortcuts"
+msgstr "В списъците"
+
+msgid "Command tool shortcuts"
+msgstr "В бързото търсене"
+
+msgid "Record picture"
+msgstr "Направи снимка"
+
+msgid "Dataset not found. No action performed."
+msgstr "Данните не са намерени. Нищо не е направено."
+
+msgid "You can not create nested object without parent"
+msgstr "Първо запазете основния запис."
+
+msgid "Add %(name)s"
+msgstr "Добави %(name)s"
+
+msgid "Add another %(model)s"
+msgstr "Добави още %(model)s"
+
+msgid "By %(filter_title)s"
+msgstr "По %(filter_title)s"
+
+msgid "%(full_result_count)s total"
+msgstr "%(full_result_count)s общо"
+
+msgid "Sorting priority: %(priority_number)s"
+msgstr "Приоритет при подреждане: %(priority_number)s"
+
+msgid "Select all %(total_count)s %(module_name)s"
+msgstr "Избери всички %(total_count)s %(module_name)s"
+
+# Delete confirmation and new user pages (Unfold uses its own msgids).
+msgid "Are you sure you want to delete the %(object_name)s \"%(escaped_object)s\"? All of the following related items will be deleted:"
+msgstr "Сигурни ли сте, че искате да изтриете %(object_name)s „%(escaped_object)s“? Ще бъдат изтрити и всички свързани записи по-долу:"
+
+msgid "Deleting the %(object_name)s '%(escaped_object)s' would result in deleting related objects, but your account doesn't have permission to delete the following types of objects:"
+msgstr "Изтриването на %(object_name)s „%(escaped_object)s“ ще изтрие и свързани записи, но нямате право да изтривате следните видове записи:"
+
+msgid "Deleting the %(object_name)s '%(escaped_object)s' would require deleting the following protected related objects:"
+msgstr "За да изтриете %(object_name)s „%(escaped_object)s“, първо трябва да изтриете тези защитени свързани записи:"
+
+msgid "After you've created a user, you’ll be able to edit more user options."
+msgstr "След като създадете потребителя, ще можете да промените и останалите му настройки."

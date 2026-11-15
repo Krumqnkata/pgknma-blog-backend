@@ -1,0 +1,31 @@
+# Bulgarian texts for the admin JavaScript that Django's own catalog lacks.
+# Compile with: python manage.py compile_admin_translations
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: bg\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Choose %s by selecting them and then select the \"Choose\" arrow button."
+msgstr "Изберете %s и натиснете стрелката „Избери“."
+
+msgid "Choose all %s"
+msgstr "Избери всички %s"
+
+msgid "Choose selected %s"
+msgstr "Избери отбелязаните %s"
+
+msgid "Remove selected %s"
+msgstr "Премахни отбелязаните %s"
+
+msgid "Remove %s by selecting them and then select the \"Remove\" arrow button."
+msgstr "Изберете %s и натиснете стрелката „Премахни“."
+
+msgid "(click to clear)"
+msgstr "(натиснете, за да изчистите)"
+
+msgid "Remove all %s"
+msgstr "Премахни всички %s"
+
+msgid "You have selected an action, and you haven’t made any changes on individual fields. You’re probably looking for the Run button rather than the Save button."
+msgstr "Избрали сте действие, без да променяте полета. Вероятно търсите бутона за изпълнение, а не „Запис“."

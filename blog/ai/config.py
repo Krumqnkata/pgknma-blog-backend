@@ -12,11 +12,13 @@ from .models_catalog import DEFAULT_PUBLIC_MODEL, DEFAULT_STUDENT_TEXT_MODEL
 SUMMARIES = 'summaries'
 MODERATION = 'moderation'
 ASSISTANT = 'assistant'
+POLLS = 'polls'
 
 _FEATURE_FIELDS = {
     SUMMARIES: 'enable_ai_summaries',
     MODERATION: 'enable_ai_moderation',
     ASSISTANT: 'enable_ai_assistant',
+    POLLS: 'enable_ai_poll_drafts',
 }
 
 

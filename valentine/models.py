@@ -69,11 +69,11 @@ def default_academic_year_start():
 
 
 class Profile(models.Model):
-    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    code = models.CharField(max_length=6, unique=True, editable=False)
-    first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
-    clas = models.CharField(max_length=4)
+    uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, verbose_name="Идентификатор")
+    code = models.CharField(max_length=6, unique=True, editable=False, verbose_name="Код")
+    first_name = models.CharField(max_length=100, verbose_name="Име")
+    last_name = models.CharField(max_length=100, verbose_name="Фамилия")
+    clas = models.CharField(max_length=4, verbose_name="Клас")
     email = models.EmailField(blank=True, verbose_name="Имейл")
     is_active = models.BooleanField(
         default=True,
@@ -194,11 +194,13 @@ class Register(models.Model):
         editable=False,
         default=uuid.uuid4,
         unique=True,
+        verbose_name="Идентификатор",
     )
     profile = models.ForeignKey(
         Profile,
         on_delete=models.CASCADE,
         related_name="sessions",
+        verbose_name="Профил",
     )
     ip_address = models.CharField(
         max_length=45,
@@ -220,9 +222,9 @@ class Register(models.Model):
         editable=False,
         verbose_name="Мрежов ASN",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    expires_at = models.DateTimeField(default=default_session_expiry)
-    revoked = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Влязъл на")
+    expires_at = models.DateTimeField(default=default_session_expiry, verbose_name="Изтича на")
+    revoked = models.BooleanField(default=False, verbose_name="Прекратена")
 
     @property
     def is_valid(self):
@@ -402,14 +404,14 @@ class Valenitines(models.Model):
         blank=True,
         verbose_name="Причина за сигнала",
     )
-    reported_at = models.DateTimeField(null=True, blank=True)
+    reported_at = models.DateTimeField(null=True, blank=True, verbose_name="Докладвана на")
     moderation_status = models.CharField(
         max_length=20,
         choices=ModerationStatus.choices,
         default=ModerationStatus.CLEAR,
         verbose_name="Модерация",
     )
-    date = models.DateTimeField(auto_now_add=True)
+    date = models.DateTimeField(auto_now_add=True, verbose_name="Изпратена на")
     edited_at = models.DateTimeField(
         null=True,
         blank=True,

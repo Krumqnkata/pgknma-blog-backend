@@ -1,0 +1,20 @@
+{% load i18n static unfold admin_dashboard %}
+{% comment %}
+    Copy of Unfold's unfold/helpers/userlinks.html (django-unfold 0.102) with one
+    addition: the „?“ button that opens the guide for the current screen.
+    If Unfold is upgraded, compare with the new version of this template.
+{% endcomment %}
+
+<div class="flex flex-row gap-4 items-center ml-auto">
+    {% if environment %}
+        {% include "unfold/helpers/label.html" with text=environment.0 type=environment.1 %}
+    {% endif %}
+
+    {% admin_help_link %}
+
+    {% action_list %}
+
+    {% if nav_global_side %}
+        {{ nav_global_side }}
+    {% endif %}
+</div>
