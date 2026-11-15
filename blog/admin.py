@@ -1491,9 +1491,15 @@ class PollDraftAdmin(ModelAdmin):
             return []
         return super().get_actions_submit_line(request, object_id)
 
+    def has_publish_draft_permission(self, request, object_id=None):
+        # A method, not 'blog.add_pollquestion': Unfold's system check looks a
+        # dotted permission up in the database, which breaks `manage.py check`
+        # before the first migrate (CI, fresh servers).
+        return request.user.has_perm('blog.add_pollquestion')
+
     @unfold_action(
         description='Запази и избери тази анкета',
-        permissions=['blog.add_pollquestion'],
+        permissions=['publish_draft'],
         variant=ActionVariant.PRIMARY,
     )
     def publish_this_draft(self, request, obj):
