@@ -42,10 +42,10 @@
             <a href="{% url 'admin:blog_scheduleentry_import_csv' %}" class="ux-chip" title="{% trans 'Качи новия CSV файл.' %}"><span class="material-symbols-outlined" aria-hidden="true">upload_file</span>{% trans "Импортирай програма" %}</a>
             {% endif %}
             {% if perms.valentine.view_profile %}
-            <a href="{% url 'admin:valentine_profile_changelist' %}" class="ux-chip" title="{% trans 'Кодове, PIN, CSV и класове.' %}"><span class="material-symbols-outlined" aria-hidden="true">person</span>{% trans "Valentine профили" %}</a>
+            <a href="{% url 'admin:valentine_profile_changelist' %}" class="ux-chip" title="{% trans 'Кодове, PIN, CSV и класове.' %}"><span class="material-symbols-outlined" aria-hidden="true">person</span>{% trans "Профили (валентинки)" %}</a>
             {% endif %}
             {% if perms.valentine.view_valenitines %}
-            <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="ux-chip" title="{% trans 'Прегледай текущата модерация.' %}"><span class="material-symbols-outlined" aria-hidden="true">report</span>{% trans "Valentine сигнали" %}</a>
+            <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="ux-chip" title="{% trans 'Прегледай текущата модерация.' %}"><span class="material-symbols-outlined" aria-hidden="true">report</span>{% trans "Сигнали (валентинки)" %}</a>
             {% endif %}
             {% if perms.blog.change_sitesettings %}
             <a href="{% url 'admin:blog_sitesettings_changelist' %}" class="ux-chip" title="{% trans 'Управление на сайта.' %}"><span class="material-symbols-outlined" aria-hidden="true">settings</span>{% trans "Настройки" %}</a>

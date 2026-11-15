@@ -178,8 +178,8 @@ class Profile(models.Model):
 
     class Meta:
         ordering = ("clas", "first_name", "last_name")
-        verbose_name = "Valentine профил"
-        verbose_name_plural = "Valentine профили"
+        verbose_name = "Профил (валентинки)"
+        verbose_name_plural = "Профили (валентинки)"
         permissions = (
             (
                 "view_profile_codes",
@@ -239,8 +239,8 @@ class Register(models.Model):
 
     class Meta:
         ordering = ("-created_at",)
-        verbose_name = "Valentine сесия"
-        verbose_name_plural = "Valentine сесии"
+        verbose_name = "Вписване (валентинки)"
+        verbose_name_plural = "Вписвания (валентинки)"
 
 
 class ValentineLoginAttempt(models.Model):
@@ -267,8 +267,8 @@ class ValentineLoginAttempt(models.Model):
 
     class Meta:
         ordering = ("-updated_at",)
-        verbose_name = "Ограничение за Valentine вход"
-        verbose_name_plural = "Ограничения за Valentine вход"
+        verbose_name = "Ограничение за вход (валентинки)"
+        verbose_name_plural = "Ограничения за вход (валентинки)"
 
 
 class ValentineCampaign(models.Model):
@@ -305,8 +305,8 @@ class ValentineCampaign(models.Model):
 
     class Meta:
         ordering = ("-year",)
-        verbose_name = "Valentine кампания"
-        verbose_name_plural = "Valentine кампании"
+        verbose_name = "Кампания (валентинки)"
+        verbose_name_plural = "Кампании (валентинки)"
 
 
 class Valenitines(models.Model):
@@ -711,8 +711,8 @@ class Settings(models.Model):
         return "Настройки на Valentine платформата"
 
     class Meta:
-        verbose_name = "Настройки"
-        verbose_name_plural = "Настройки"
+        verbose_name = "Настройки (валентинки)"
+        verbose_name_plural = "Настройки (валентинки)"
         constraints = (
             models.CheckConstraint(
                 condition=models.Q(singleton_key="default"),

@@ -225,7 +225,7 @@ class ProfileAdmin(ModelAdmin):
         if platform_settings is None:
             self.message_user(
                 request,
-                "Първо създай Valentine настройки и активна кампания.",
+                "Първо създай „Настройки (валентинки)“ и активна кампания.",
                 messages.ERROR,
             )
             return HttpResponseRedirect(changelist_url)
@@ -735,7 +735,7 @@ class ProfileAdmin(ModelAdmin):
         if platform_settings is None:
             self.message_user(
                 request,
-                "Първо създай Valentine настройки и активна кампания.",
+                "Първо създай „Настройки (валентинки)“ и активна кампания.",
                 messages.ERROR,
             )
             return

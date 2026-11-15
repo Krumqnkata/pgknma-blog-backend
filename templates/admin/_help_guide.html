@@ -345,7 +345,7 @@
                     <a href="{% url 'admin:auth_user_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Потребители</a>
                     <a href="{% url 'admin:auth_group_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Групи</a>
                     <a href="{% url 'admin:blog_blogloginsession_changelist' %}?session_status=active" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Активни сесии</a>
-                    <a href="{% url 'admin:blog_userprofile_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Профилни снимки</a>
+                    <a href="{% url 'admin:blog_userprofile_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Потребителски профили</a>
                 </div>
                 <div class="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
                     <div>
@@ -493,7 +493,7 @@
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <div class="flex flex-wrap gap-3">
-                    <a href="{% url 'admin:valentine_profile_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Valentine профили</a>
+                    <a href="{% url 'admin:valentine_profile_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Профили (валентинки)</a>
                     <a href="{% url 'admin:valentine_profile_import_csv' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Импорт от CSV</a>
                     <a href="{% url 'admin:valentine_profile_active_codes_pdf' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Активни кодове в PDF</a>
                 </div>
@@ -544,7 +544,7 @@
             </summary>
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <ol class="list-decimal space-y-2 pl-5">
-                    <li>Отвори Valentine профилите и филтрирай по текущата учебна година.</li>
+                    <li>Отвори „Профили (валентинки)“ и филтрирай по текущата учебна година.</li>
                     <li>Маркирай желаните ученически профили.</li>
                     <li>Избери „Мигрирай към следващата учебна година“.</li>
                     <li>Въведи началната година на новата учебна година.</li>
@@ -568,7 +568,7 @@
             <div class="border-t border-border-subtle p-5 text-sm leading-6 text-font-default">
                 <div class="flex flex-wrap gap-3">
                     <a href="{% url 'admin:valentine_valentinecampaign_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Годишни кампании</a>
-                    <a href="{% url 'admin:valentine_settings_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Valentine настройки</a>
+                    <a href="{% url 'admin:valentine_settings_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Настройки (валентинки)</a>
                 </div>
                 <h3 class="mt-5 font-semibold text-font-important">Препоръчителен годишен процес</h3>
                 <ol class="mt-2 list-decimal space-y-2 pl-5">
@@ -639,7 +639,7 @@
                     <a href="{% url 'admin:valentine_valenitines_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Текущи сигнали</a>
                     <a href="{% url 'admin:valentine_archivedvalentine_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Архивирани сигнали</a>
                     <a href="{% url 'admin:valentine_valentinemoderationevent_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">История на модерацията</a>
-                    <a href="{% url 'admin:valentine_register_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Valentine сесии</a>
+                    <a href="{% url 'admin:valentine_register_changelist' %}" class="font-semibold text-primary-600 hover:underline dark:text-primary-400">Вписвания (валентинки)</a>
                 </div>
                 <ul class="mt-5 list-disc space-y-2 pl-5">
                     <li>Текущият списък съдържа само „Чака преглед“, „Скрито от модератор“ и „Възстановено“ от активната кампания.</li>
@@ -650,7 +650,7 @@
                     <li>Архивираният списък показва докладвани пратки от неактивни кампании.</li>
                     <li>Валентинките не могат да се изтриват през администрацията.</li>
                     <li>Експортът на модерирани валентинки съдържа лични данни и текстове — пази го защитено и го изтрий след отпадане на целта.</li>
-                    <li>Valentine сесиите показват IP, оператор, ASN, срок и дали са прекратени.</li>
+                    <li>„Вписвания (валентинки)“ показват IP, оператор, ASN, срок и дали са прекратени.</li>
                 </ul>
             </div>
         </details>

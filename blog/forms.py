@@ -349,7 +349,15 @@ class MultipleFileInput(forms.FileInput):
     allow_multiple_selected = True
 
 
-class MultipleFileField(forms.FileField):
+class _NothingUploadedIsNoChange:
+    """No upload gives an empty list, which Django counts as a change; then
+    every save wrote „Качи нови изображения…“ into the action log."""
+
+    def has_changed(self, initial, data):
+        return not self.disabled and bool(data)
+
+
+class MultipleFileField(_NothingUploadedIsNoChange, forms.FileField):
     default_error_messages = {
         **forms.FileField.default_error_messages,
         "too_many_files": "Може да качите най-много %(max_files)s файла наведнъж.",
@@ -375,7 +383,7 @@ class MultipleFileField(forms.FileField):
         return result
 
 
-class MultipleImageField(forms.ImageField):
+class MultipleImageField(_NothingUploadedIsNoChange, forms.ImageField):
     default_error_messages = {
         **forms.ImageField.default_error_messages,
         "too_many_files": "Може да качите най-много %(max_files)s изображения наведнъж.",

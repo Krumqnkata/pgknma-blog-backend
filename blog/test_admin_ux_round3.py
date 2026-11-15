@@ -101,6 +101,18 @@ class QuickStatusTests(SuperuserTestCase):
         self.assertIn('✓ Одобри', content)
         self.assertIn(self.url('approved'), content)
 
+    def test_decided_rows_keep_the_opposite_button(self):
+        changelist = reverse('admin:blog_bellsongsuggestion_changelist')
+        self.client.post(self.url('approved'))
+        content = self.client.get(changelist).content.decode()
+        self.assertIn(self.url('rejected'), content)
+        self.assertNotIn(self.url('approved'), content)
+
+        self.client.post(self.url('rejected'))
+        content = self.client.get(changelist).content.decode()
+        self.assertIn(self.url('approved'), content)
+        self.assertNotIn(self.url('rejected'), content)
+
     def test_approve_changes_status_and_notifies_student(self):
         response = self.client.post(self.url('approved'))
         self.assertEqual(response.status_code, 302)

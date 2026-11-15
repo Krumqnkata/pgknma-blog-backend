@@ -225,3 +225,33 @@ msgstr "За да изтриете %(object_name)s „%(escaped_object)s“, п�
 
 msgid "After you've created a user, you’ll be able to edit more user options."
 msgstr "След като създадете потребителя, ще можете да промените и останалите му настройки."
+
+# Clearer names for the user list and form (Django's own: „собствено име“,
+# „статус на персонал“, „статут на супер-потребител“…).
+msgid "first name"
+msgstr "име"
+
+msgid "last name"
+msgstr "фамилия"
+
+msgid "email address"
+msgstr "имейл"
+
+msgid "staff status"
+msgstr "достъп до админ панела"
+
+msgid "superuser status"
+msgstr "пълен достъп"
+
+msgid "date joined"
+msgstr "регистриран на"
+
+msgid "last login"
+msgstr "последен вход"
+
+# „Журнал на действията“
+msgid "log entry"
+msgstr "запис в журнала"
+
+msgid "log entries"
+msgstr "записи в журнала"

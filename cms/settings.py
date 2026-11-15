@@ -668,11 +668,11 @@ UNFOLD = {
     "SCRIPTS": [
         lambda request: static("admin/js/team_chat_badge.js"),
         # Lists as cards on a phone (column names for each cell).
-        lambda request: static("admin/js/admin_ux.js") + "?v=20261115d",
+        lambda request: static("admin/js/admin_ux.js") + "?v=20261115l",
     ],
     "STYLES": [
         lambda request: static("admin/css/team_chat_floating.css"),
         # ?v= forces browsers to fetch a new copy after a deploy (no hashed static files).
-        lambda request: static("admin/css/admin_ux.css") + "?v=20261115d",
+        lambda request: static("admin/css/admin_ux.css") + "?v=20261115l",
 ],
 }

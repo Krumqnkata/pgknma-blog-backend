@@ -304,3 +304,41 @@ def _system_status():
     if not site_settings.enable_user_registration:
         rows.append({'label': 'Регистрации', 'text': 'Спрени: нови потребители не могат да се регистрират.', 'tone': 'info'})
     return rows
+
+
+@register.simple_tag(takes_context=True)
+def admin_page_title(context):
+    """Browser-tab title: „Публикации“, „Нова публикация“, „Публикация“.
+
+    Used by templates/admin/base_site.html; other pages keep their own title.
+    """
+    from blog.admin_titles import add_label, item_title, list_title
+
+    title = context.get('title') or ''
+    if context.get('is_popup'):
+        return title  # „Изберете …“ is right in a picker window
+    cl = context.get('cl')
+    if cl is not None and getattr(cl, 'opts', None) is not None:
+        return list_title(cl.opts)
+    opts = context.get('opts')
+    if opts is not None and 'adminform' in context:
+        if context.get('add'):
+            return add_label(opts)
+        return item_title(opts)
+    return title
+
+
+@register.filter
+def admin_add_label(opts):
+    """„Нова публикация“ for the add buttons."""
+    from blog.admin_titles import add_label
+
+    return add_label(opts)
+
+
+@register.filter
+def admin_delete_label(opts):
+    """„Изтрий публикация“ for the delete button on a form."""
+    from blog.admin_titles import lower_noun
+
+    return f'Изтрий {lower_noun(opts.verbose_name)}'
