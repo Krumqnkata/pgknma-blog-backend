@@ -19,6 +19,23 @@ def _item(title, link, icon, *permissions, **extra):
     return item
 
 
+def _can_cleanup(request):
+    """„Почистване на записи“ needs settings access plus a delete permission."""
+    from .models import SiteSettings
+
+    model_admin = admin.site._registry.get(SiteSettings)
+    return model_admin is not None and model_admin._can_cleanup(request)
+
+
+def _model_items(app_label, rows):
+    return tuple(
+        _item(title, f"/admin/{app_label}/{model}/", icon, *_permissions(app_label, model))
+        for title, model, icon in rows
+    )
+
+
+# Daily work first (content, moderation, the weekly poll), open by default.
+# Rarely used areas are collapsible. Every page keeps its old address.
 ADMIN_NAVIGATION = (
     {
         "items": (
@@ -42,98 +59,123 @@ ADMIN_NAVIGATION = (
                 "/admin/blog/contactsubmission/",
                 "mail",
                 *_permissions("blog", "contactsubmission"),
+                badge="blog.admin_badges.contact_recent", badge_variant="warning",
             ),
+            _item("Ръководство", "/admin/help/", "menu_book"),
         ),
     },
     {
         "separator": True,
-        "title": "Управление на съдържанието",
+        "title": "Съдържание",
         "items": (
-            _item("Публикации", "/admin/blog/posts/", "article", *_permissions("blog", "posts")),
+            _item("Публикации", "/admin/blog/posts/", "article", *_permissions("blog", "posts"), badge="blog.admin_badges.posts_pending", badge_variant="warning"),
+            _item("Събития", "/admin/blog/event/", "event", *_permissions("blog", "event")),
+            _item("Официални известия", "/admin/blog/notification/", "notifications", *_permissions("blog", "notification")),
+            _item("Учебна програма", "/admin/blog/scheduleentry/", "calendar_month", *_permissions("blog", "scheduleentry")),
             _item("Категории", "/admin/blog/category/", "label", *_permissions("blog", "category")),
             _item("Снимки към публикации", "/admin/blog/postimage/", "image", *_permissions("blog", "postimage")),
             _item("Файлове към публикации", "/admin/blog/postdocument/", "book", *_permissions("blog", "postdocument")),
-            _item("Коментари", "/admin/blog/comments/", "comment", *_permissions("blog", "comments")),
-            _item("Събития", "/admin/blog/event/", "event", *_permissions("blog", "event")),
-            _item("Учебна програма", "/admin/blog/scheduleentry/", "calendar_month", *_permissions("blog", "scheduleentry")),
-            _item("Официални известия", "/admin/blog/notification/", "notifications", *_permissions("blog", "notification")),
-            _item("Правила на ИИ асистента", "/admin/blog/assistantrule/", "smart_toy", *_permissions("blog", "assistantrule")),
-            _item("Неотговорени въпроси (ИИ)", "/admin/blog/assistantunansweredquestion/", "contact_support", *_permissions("blog", "assistantunansweredquestion")),
-            _item("Прегледи на страници", "/admin/blog/pageview/", "visibility", *_permissions("blog", "pageview")),
+        ),
+    },
+    {
+        "separator": True,
+        "title": "Модерация",
+        "items": (
+            _item("Коментари", "/admin/blog/comments/", "comment", *_permissions("blog", "comments"), badge="blog.admin_badges.comments_flagged", badge_variant="warning"),
+            _item("Предложения за песни", "/admin/blog/bellsongsuggestion/", "music_note", *_permissions("blog", "bellsongsuggestion"), badge="blog.admin_badges.songs_pending", badge_variant="warning"),
+            _item("Меме на седмицата", "/admin/blog/memeofweek/", "sentiment_very_satisfied", *_permissions("blog", "memeofweek"), badge="blog.admin_badges.memes_pending", badge_variant="warning"),
+            _item("Победители по седмици", "/admin/blog/memeweekresult/", "emoji_events", *_permissions("blog", "memeweekresult")),
+        ),
+    },
+    {
+        "separator": True,
+        "title": "Седмична анкета",
+        "items": (
+            _item("ИИ чернови за анкети", "/admin/blog/polldraft/?status__exact=pending", "auto_awesome", *_permissions("blog", "polldraft"), badge="blog.admin_badges.poll_drafts_pending", badge_variant="warning"),
+            _item("Въпроси за анкети", "/admin/blog/pollquestion/", "poll", *_permissions("blog", "pollquestion")),
+            _item("Отговори на анкети", "/admin/blog/pollanswer/", "how_to_vote", *_permissions("blog", "pollanswer")),
         ),
     },
     {
         "separator": True,
         "collapsible": True,
-        "title": "Ангажираност на потребителите",
+        "title": "ИИ асистент",
         "items": (
-            _item("Въпроси за анкети", "/admin/blog/pollquestion/", "poll", *_permissions("blog", "pollquestion")),
-            _item("Отговори на анкети", "/admin/blog/pollanswer/", "how_to_vote", *_permissions("blog", "pollanswer")),
-            _item("Предложения за песни", "/admin/blog/bellsongsuggestion/", "music_note", *_permissions("blog", "bellsongsuggestion")),
-            _item("Меме на седмицата", "/admin/blog/memeofweek/", "sentiment_very_satisfied", *_permissions("blog", "memeofweek")),
-            _item("Победители по седмици", "/admin/blog/memeweekresult/", "emoji_events", *_permissions("blog", "memeweekresult")),
+            _item("Правила на ИИ асистента", "/admin/blog/assistantrule/", "smart_toy", *_permissions("blog", "assistantrule")),
+            _item("Неотговорени въпроси (ИИ)", "/admin/blog/assistantunansweredquestion/", "contact_support", *_permissions("blog", "assistantunansweredquestion"), badge="blog.admin_badges.unanswered_questions", badge_variant="warning"),
         ),
     },
     {
         "separator": True,
         "collapsible": True,
         "title": "Геймификация",
-        "items": tuple(
-            _item(title, f"/admin/blog/{model}/", icon, *_permissions("blog", model))
-            for title, model, icon in (
-                ("Потребителски профили", "userprofile", "account_circle"),
-                ("Нива", "gamificationlevel", "military_tech"),
-                ("Значки", "badge", "workspace_premium"),
-                ("Получени значки", "userbadge", "emoji_events"),
-                ("История на точките", "pointtransaction", "stars"),
-                ("Правила за точки", "gamificationpointrule", "rule"),
-                ("Настройки на игрите", "gamesettings", "sports_esports"),
-                ("Игрови задачи", "gamepuzzle", "extension"),
-                ("Игрови сесии", "gamesession", "history"),
-                ("Мисии", "mission", "flag"),
-                ("Прогрес по мисии", "usermissionprogress", "task_alt"),
-                ("Активности по мисии", "missionactivity", "timeline"),
-                ("Дигитални награди", "digitalreward", "redeem"),
-                ("Отключени награди", "userdigitalreward", "lock_open"),
-                ("Известия от играта", "gamificationnotification", "notifications_active"),
-            )
-        ),
+        "items": _model_items("blog", (
+            ("Нива", "gamificationlevel", "military_tech"),
+            ("Значки", "badge", "workspace_premium"),
+            ("Мисии", "mission", "flag"),
+            ("Дигитални награди", "digitalreward", "redeem"),
+            ("Правила за точки", "gamificationpointrule", "rule"),
+            ("Настройки на игрите", "gamesettings", "sports_esports"),
+            ("Игрови задачи", "gamepuzzle", "extension"),
+        )),
+    },
+    {
+        "collapsible": True,
+        "title": "Геймификация: история",
+        "items": _model_items("blog", (
+            ("Потребителски профили", "userprofile", "account_circle"),
+            ("Получени значки", "userbadge", "emoji_events"),
+            ("История на точките", "pointtransaction", "stars"),
+            ("Прогрес по мисии", "usermissionprogress", "task_alt"),
+            ("Активности по мисии", "missionactivity", "timeline"),
+            ("Отключени награди", "userdigitalreward", "lock_open"),
+            ("Игрови сесии", "gamesession", "history"),
+            ("Известия от играта", "gamificationnotification", "notifications_active"),
+        )),
     },
     {
         "separator": True,
         "collapsible": True,
         "title": "Валентинки",
-        "items": tuple(
-            _item(title, f"/admin/valentine/{model}/", icon, *_permissions("valentine", model))
-            for title, model, icon in (
-                ("Настройки", "settings", "settings"),
-                ("Потребители", "profile", "person"),
-                ("Регистър на вписаните", "register", "privacy_tip"),
-                ("Текущи сигнали", "valenitines", "message"),
-                ("Годишни кампании", "valentinecampaign", "calendar_month"),
-                ("Архивирани сигнали", "archivedvalentine", "archive"),
-            )
-        ),
+        "items": _model_items("valentine", (
+            ("Настройки", "settings", "settings"),
+            ("Потребители", "profile", "person"),
+            ("Регистър на вписаните", "register", "privacy_tip"),
+            ("Текущи сигнали", "valenitines", "message"),
+            ("Годишни кампании", "valentinecampaign", "calendar_month"),
+            ("Архивирани сигнали", "archivedvalentine", "archive"),
+        )),
     },
     {
         "separator": True,
         "collapsible": True,
-        "title": "Администрация",
+        "title": "Сайт и дневници",
         "items": (
             _item("Настройки на сайта", "/admin/blog/sitesettings/", "settings", *_permissions("blog", "sitesettings")),
+            _item(
+                "Почистване на записи", "/admin/blog/sitesettings/cleanup/", "delete_sweep",
+                *_permissions("blog", "sitesettings", ("change",)), _visible=_can_cleanup,
+            ),
             _item("Празнични логота", "/admin/blog/headerlogo/", "celebration", *_permissions("blog", "headerlogo")),
-            _item("Регистър с промени", "/admin/blog/changelog/", "settings", *_permissions("blog", "changelog")),
-            _item("Политики за поверителност", "/admin/blog/privacypolicy/", "privacy_tip", *_permissions("blog", "privacypolicy")),
-            _item("Условия за ползване", "/admin/blog/termsofservice/", "gavel", *_permissions("blog", "termsofservice")),
-            _item("Записи на съгласие за бисквитки", "/admin/blog/consentrecord/", "cookie", *_permissions("blog", "consentrecord")),
-            _item("История на почистването", "/admin/blog/personaldatacleanuprun/", "cleaning_services", *_permissions("blog", "personaldatacleanuprun")),
+            _item("Регистър с промени", "/admin/blog/changelog/", "update", *_permissions("blog", "changelog")),
             _item("Push абонаменти", "/admin/blog/pushsubscription/", "notifications_active", *_permissions("blog", "pushsubscription")),
+            _item("Прегледи на страници", "/admin/blog/pageview/", "visibility", *_permissions("blog", "pageview")),
             _item("Журнал на действията", "/admin/admin/logentry/", "history", *_permissions("admin", "logentry", ("view",))),
         ),
     },
     {
         "collapsible": True,
-        "title": "Аутентикация и оторизация",
+        "title": "Документи и лични данни",
+        "items": (
+            _item("Политики за поверителност", "/admin/blog/privacypolicy/", "privacy_tip", *_permissions("blog", "privacypolicy")),
+            _item("Условия за ползване", "/admin/blog/termsofservice/", "gavel", *_permissions("blog", "termsofservice")),
+            _item("Записи на съгласие за бисквитки", "/admin/blog/consentrecord/", "cookie", *_permissions("blog", "consentrecord")),
+            _item("История на почистването", "/admin/blog/personaldatacleanuprun/", "cleaning_services", *_permissions("blog", "personaldatacleanuprun")),
+        ),
+    },
+    {
+        "collapsible": True,
+        "title": "Потребители и достъп",
         "items": (
             _item("Потребители", "/admin/auth/user/", "person", *_permissions("auth", "user")),
             _item("Активни сесии", "/admin/blog/blogloginsession/?session_status=active", "devices", *_permissions("blog", "blogloginsession")),
@@ -195,8 +237,12 @@ def build_admin_navigation(request):
                 continue
             if required and not _model_admin_allows_access(request, required):
                 continue
+            # Optional extra check for pages that are not a model list.
+            visible = configured_item.get("_visible")
+            if visible is not None and not visible(request):
+                continue
             visible_items.append(
-                {key: value for key, value in configured_item.items() if key != "_permissions"}
+                {key: value for key, value in configured_item.items() if not key.startswith("_")}
             )
 
         if not visible_items:

@@ -398,6 +398,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
 LANGUAGE_CODE = 'bg'
+# Day.month.year dates (Django's Bulgarian locale has no date-time format).
+FORMAT_MODULE_PATH = ['cms.formats']
+# Bulgarian texts for the admin theme (django-unfold ships without them).
+LOCALE_PATHS = [BASE_DIR / 'locale']
 
 TIME_ZONE = 'Europe/Sofia'
 
@@ -663,86 +667,12 @@ UNFOLD = {
     },
     "SCRIPTS": [
         lambda request: static("admin/js/team_chat_badge.js"),
+        # Lists as cards on a phone (column names for each cell).
+        lambda request: static("admin/js/admin_ux.js") + "?v=20261115d",
     ],
     "STYLES": [
         lambda request: static("admin/css/team_chat_floating.css"),
-    lambda request: """
-        /* 1. СТРАНИЧНО МЕНЮ (Твоите съществуващи стилове) */
-        @media (min-width: 1024px) {
-            aside#sidebar {
-                margin-left: 0 !important;
-                display: flex !important;
-                width: 18rem !important;
-            }
-            
-            main {
-                margin-left: 18rem !important;
-            }
-
-            button[data-action="sidebar#toggle"] {
-                display: none !important;
-            }
-        }
-
-        /* 2. РАЗПЪВАНЕ НА ТАБЛИЦИТЕ С ПРАВА (Ново) */
-        
-        /* Основен контейнер - правим го на 100% ширина */
-        .permissions-box .selector, 
-        .form-row .selector {
-            width: 100% !important;
-            max-width: 100% !important;
-            display: flex !important;
-            flex-direction: row !important;
-            align-items: center !important;
-            gap: 1.5rem !important;
-        }
-
-        /* Двете колони (Налични и Избрани) */
-        .selector-available, .selector-chosen {
-            flex: 1 !important;
-            height: 700px !important; /* Голяма височина за лесна работа */
-            margin: 0 !important;
-            display: flex !important;
-            flex-direction: column !important;
-        }
-
-        /* Списъците (Select кутиите) */
-        .selector select {
-            height: 640px !important;
-            min-height: 640px !important;
-            width: 100% !important;
-            font-size: 0.875rem !important; /* Малко по-малък шрифт, за да се вижда всичко */
-            border-radius: 0.5rem !important;
-            padding: 0.5rem !important;
-            background-color: #1f2937 !important; /* Тъмен фон, пасващ на Unfold */
-            border-color: #374151 !important;
-            color: #f3f4f6 !important;
-        }
-
-        /* Търсачката над списъците */
-        .selector .selector-filter {
-            width: 100% !important;
-            padding: 0.5rem !important;
-            background-color: #111827 !important;
-            border: 1px solid #374151 !important;
-            border-radius: 0.5rem 0.5rem 0 0 !important;
-        }
-
-        /* Средната част със стрелките */
-        .selector-chooser {
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-            gap: 0.5rem !important;
-            padding: 0 !important;
-        }
-
-        /* Иконите на стрелките */
-        .selector-chooser li a {
-            background-color: #374151 !important;
-            border-radius: 0.375rem !important;
-            padding: 0.5rem !important;
-        }
-    """
+        # ?v= forces browsers to fetch a new copy after a deploy (no hashed static files).
+        lambda request: static("admin/css/admin_ux.css") + "?v=20261115d",
 ],
 }

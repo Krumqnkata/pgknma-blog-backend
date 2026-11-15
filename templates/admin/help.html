@@ -1,0 +1,20 @@
+{% extends "unfold/layouts/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% trans "Ръководство" %} | {{ site_title|default:_("Django site admin") }}{% endblock %}
+
+{% block extrahead %}
+    {{ block.super }}
+    <script src="{% static 'admin/js/admin_help.js' %}?v=20261115d" defer></script>
+{% endblock %}
+
+{% block content %}
+<div class="ux-page">
+    <div class="ux-help-search" role="search">
+        <label for="ux-help-search-input" class="sr-only">Търсене в ръководството</label>
+        <input type="search" id="ux-help-search-input" placeholder="Търсене в ръководството…" autocomplete="off">
+        <p id="ux-help-search-status" aria-live="polite">Пишете думи, например „анкета“, „CSV“ или „парола“.</p>
+    </div>
+    {% include "admin/_help_guide.html" %}
+</div>
+{% endblock %}

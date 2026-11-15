@@ -64,6 +64,7 @@ EDITOR_PERMISSIONS = (
 MODERATOR_PERMISSIONS = (
     _model_permissions("blog", ("comments", "pollanswer", "contactsubmission"), ("view", "delete"))
     | _model_permissions("blog", ("pollquestion",))
+    | _model_permissions("blog", ("polldraft",), ("view", "change", "delete"))
     | _model_permissions(
         "blog",
         ("bellsongsuggestion", "memeofweek"),

@@ -73,10 +73,15 @@ class AdminHelpGuideTests(TestCase):
         for user in (self.staff_user, self.superuser):
             with self.subTest(username=user.username):
                 self.client.force_login(user)
-                response = self.client.get(reverse("admin:index"))
+                # The guide moved to its own page; the start page links to it.
+                index = self.client.get(reverse("admin:index"))
+                self.assertEqual(index.status_code, 200)
+                self.assertTemplateUsed(index, "admin/index.html")
+                self.assertContains(index, reverse("admin-help"))
+
+                response = self.client.get(reverse("admin-help"))
 
                 self.assertEqual(response.status_code, 200)
-                self.assertTemplateUsed(response, "admin/index.html")
                 self.assertTemplateUsed(response, "admin/_help_guide.html")
                 self.assertContains(response, "Администраторско ръководство")
                 self.assertContains(response, "Геймификация — точки, мисии, значки")
@@ -278,12 +283,8 @@ class SiteSettingsDeletionSecurityTests(TestCase):
         )
         MemeOfWeek.objects.create(user=self.owner, title="selectable")
 
-        response = self.client.get(
-            reverse(
-                "admin:blog_sitesettings_change",
-                args=(self.settings.pk,),
-            )
-        )
+        # The deletion lists live on their own page („Почистване на записи“).
+        response = self.client.get(reverse("admin:blog_sitesettings_cleanup"))
 
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()

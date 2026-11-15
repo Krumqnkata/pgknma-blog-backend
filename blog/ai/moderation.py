@@ -94,6 +94,7 @@ def check_object(obj, text_builder, model):
         object_id=obj.pk,
         defaults={'verdict': AIContentCheck.VERDICT_ERROR},
     )
+    was_flagged = check.verdict == AIContentCheck.VERDICT_FLAGGED
     text = text_builder(obj).strip()
     check.attempts += 1
     check.checked_at = timezone.now()
@@ -113,6 +114,10 @@ def check_object(obj, text_builder, model):
         logger.warning('AI moderation failed for %s #%s: %s', content_type, obj.pk, exc)
         check.verdict, check.category, check.reason = AIContentCheck.VERDICT_ERROR, '', ''
     check.save()
+    if check.verdict == AIContentCheck.VERDICT_FLAGGED and not was_flagged:
+        from blog import team_chat_bot
+
+        team_chat_bot.ai_flagged(obj, check)
     return check
 
 

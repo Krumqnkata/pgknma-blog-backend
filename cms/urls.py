@@ -46,6 +46,7 @@ from blog.admin_chat import (
     team_chat_unread,
 )
 from django.contrib.sitemaps.views import sitemap
+from blog.admin_help import admin_help_page
 from blog.sitemaps import PostSitemap, StaticSitemap
 
 sitemaps = {
@@ -55,6 +56,11 @@ sitemaps = {
 
 urlpatterns = [
     path('post/<int:pk>', post_page, name='post-page'),
+    path(
+        'admin/help/',
+        admin.site.admin_view(admin_help_page),
+        name='admin-help',
+    ),
     path(
         'admin/team-chat/',
         admin.site.admin_view(team_chat_page),

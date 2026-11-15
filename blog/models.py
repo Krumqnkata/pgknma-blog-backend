@@ -183,8 +183,8 @@ def poll_media_upload_path(instance, filename):
     return f'polls/unknown/{filename}'
 
 class Category(models.Model):
-    full_name = models.CharField(max_length=100, help_text="Пълното име на категорията, което ще се показва на сайта.")
-    short_name = models.SlugField(max_length=100, unique=True, help_text="Кратко име в URL съвместим формат (слаг). Например: 'novini-ot-uchilishte'.")
+    full_name = models.CharField(max_length=100, help_text="Пълното име на категорията, което ще се показва на сайта.", verbose_name="Пълно име")
+    short_name = models.SlugField(max_length=100, unique=True, help_text="Кратко име в URL съвместим формат (слаг). Например: 'novini-ot-uchilishte'.", verbose_name="Кратко име (за адреса)")
     def __str__(self):
         return self.full_name
 
@@ -193,7 +193,7 @@ class Category(models.Model):
         verbose_name_plural = "Категории"
 
 class Posts(models.Model):
-    title = models.CharField(max_length=100, blank=False, help_text="Заглавието на публикацията до 100 символа.")
+    title = models.CharField(max_length=100, blank=False, verbose_name="Заглавие", help_text="Заглавието на публикацията до 100 символа.")
     categories = models.ManyToManyField(
         Category,
         related_name='posts',
@@ -201,14 +201,15 @@ class Posts(models.Model):
         verbose_name="Категории",
         help_text="Категориите, към които принадлежи публикацията. 'Общи' се добавя автоматично. Максимум 3.",
     )
-    banner = models.ImageField(upload_to=post_banner_upload_path, blank=True, null=True, validators=[validate_image_upload_size], help_text="Банер изображение, което ще се показва в горната част на публикацията.")
-    hook = models.TextField(max_length=100, help_text="Кратко въведение или 'кукичка', което да привлече вниманието на читателя до 100 символа.")
-    content = models.TextField(blank=False, help_text="Пълното съдържание на публикацията. Поддържа се Markdown формат.")
+    banner = models.ImageField(upload_to=post_banner_upload_path, blank=True, null=True, validators=[validate_image_upload_size], verbose_name="Банер", help_text="Банер изображение, което ще се показва в горната част на публикацията.")
+    hook = models.TextField(max_length=100, verbose_name="Кратко въведение", help_text="Кратко въведение или 'кукичка', което да привлече вниманието на читателя до 100 символа.")
+    content = models.TextField(blank=False, verbose_name="Текст", help_text="Пълното съдържание на публикацията. Поддържа се Markdown формат.")
     author = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
+        verbose_name="Автор",
         help_text="Авторът на публикацията. Полето се попълва автоматично.",
     )
     created_at = models.DateTimeField(
@@ -224,9 +225,10 @@ class Posts(models.Model):
     )
     published = BooleanField(
         default=False,
+        verbose_name="Публикувана",
         help_text="Включете, за да бъде публикацията публикувана веднага или на зададената дата.",
     )
-    allowed = models.BooleanField(default=False, help_text="Отбележете, за да одобрите публикацията за показване (за публикации, изискващи одобрение).")
+    allowed = models.BooleanField(default=False, verbose_name="Одобрена", help_text="Отбележете, за да одобрите публикацията за показване (за публикации, изискващи одобрение).")
     publication_notified_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -248,6 +250,7 @@ class Posts(models.Model):
         blank=True,
         default='',
         editable=False,
+        verbose_name="Отпечатък на текста за резюмето",
     )
     ai_summary_updated_at = models.DateTimeField(
         null=True,
@@ -296,12 +299,12 @@ class AssistantRule(models.Model):
 
     title = models.CharField(max_length=150, verbose_name="Заглавие")
     phrases = models.TextField(
-        verbose_name="Ключови фрази",
         help_text=(
             "По една фраза на ред. Правилото отговаря, ако във въпроса има ВСИЧКИ "
             "думи от поне една фраза (форма и окончания нямат значение). "
             "Пример: „кога ваканция“, „коледна ваканция“."
         ),
+        verbose_name="Ключови фрази",
     )
     answer = models.TextField(verbose_name="Отговор")
     link_title = models.CharField(max_length=120, blank=True, default='', verbose_name="Текст на линка")
@@ -320,8 +323,8 @@ class AssistantRule(models.Model):
     is_active = models.BooleanField(default=True, verbose_name="Активно")
     hit_count = models.PositiveIntegerField(default=0, editable=False, verbose_name="Използвано")
     last_hit_at = models.DateTimeField(null=True, blank=True, editable=False, verbose_name="Последно използвано")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Променено на")
 
     class Meta:
         verbose_name = "Правило на ИИ асистента"
@@ -348,7 +351,7 @@ class AssistantUnansweredQuestion(models.Model):
     STATUS_CHOICES = ((STATUS_NEW, 'Ново'), (STATUS_RESOLVED, 'Решено'))
 
     question = models.CharField(max_length=500, verbose_name="Въпрос")
-    normalized = models.CharField(max_length=255, unique=True, editable=False)
+    normalized = models.CharField(max_length=255, unique=True, editable=False, verbose_name="Нормализиран текст")
     times_asked = models.PositiveIntegerField(default=1, verbose_name="Пъти зададен")
     first_asked_at = models.DateTimeField(auto_now_add=True, verbose_name="Първо зададен")
     last_asked_at = models.DateTimeField(default=timezone.now, verbose_name="Последно зададен")
@@ -477,21 +480,24 @@ class AIContentCheck(models.Model):
 
 
 class Comments(models.Model):
-    content = models.TextField(blank=False, help_text="Съдържанието на коментара.")
+    content = models.TextField(blank=False, verbose_name="Коментар", help_text="Съдържанието на коментара.")
     user = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
+        verbose_name="Потребител",
         help_text="Потребителят, който е написал коментара.",
     )
-    created_at = models.DateTimeField(auto_now_add=True, help_text="Дата и час на създаване на коментара. Формат: YYYY-MM-DD HH:MM:SS.")
-    post = models.ForeignKey(Posts, on_delete=models.CASCADE, help_text="Публикацията, към която е коментарът.")
-    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='replies', help_text="Родителският коментар, ако този е отговор.")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Написан на", help_text="Дата и час на създаване на коментара.")
+    post = models.ForeignKey(Posts, on_delete=models.CASCADE, verbose_name="Публикация", help_text="Публикацията, към която е коментарът.")
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='replies', verbose_name="Отговор на", help_text="Родителският коментар, ако този е отговор.")
     ai_checks = GenericRelation(AIContentCheck)
 
     class Meta:
         ordering = ['created_at']
+        verbose_name = "Коментар"
+        verbose_name_plural = "Коментари"
 
     def clean(self):
         super().clean()
@@ -552,7 +558,7 @@ class BellSongSuggestion(models.Model):
     slot = models.CharField(max_length=20, choices=SLOT_CHOICES, default='morning', verbose_name="Кога да звучи", help_text="Изберете кога да звучи песента.")
     note = models.TextField(blank=True, null=True, verbose_name="Бележка", help_text="Допълнителна информация или коментар към предложението.")
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending', verbose_name="Статус", help_text="Статус на предложението (чакащо, одобрено, отхвърлено).")
-    submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Изпратено на", help_text="Дата и час на изпращане на предложението. Формат: YYYY-MM-DD HH:MM:SS.")
+    submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Изпратено на", help_text="Дата и час на изпращане на предложението.")
     voted_by = models.ManyToManyField(User, related_name='voted_songs', blank=True, verbose_name="Гласували потребители", help_text="Потребители, които са гласували за тази песен.")
     votes = models.IntegerField(default=0, verbose_name="Гласове", help_text="Брой на гласовете за песента.")
     ai_checks = GenericRelation(AIContentCheck)
@@ -596,7 +602,7 @@ class MemeOfWeek(models.Model):
         verbose_name="Статус",
         help_text="Статус на мемето: изчакващо, одобрено или отхвърлено.",
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата на качване", null=True, help_text="Дата и час на качване на мемето. Формат: YYYY-MM-DD HH:MM:SS.")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата на качване", null=True, help_text="Дата и час на качване на мемето.")
     voted_by = models.ManyToManyField(User, related_name='voted_memes', blank=True, verbose_name="Гласували потребители", help_text="Потребители, които са гласували за това меме.")
     votes = models.IntegerField(default=0, verbose_name="Гласове", help_text="Брой на гласовете за мемето.")
     week_start = models.DateField(
@@ -676,6 +682,7 @@ class UserProfile(models.Model):
         User,
         on_delete=models.CASCADE,
         help_text="Свързаният потребителски акаунт.",
+        verbose_name="Потребител",
     )
     avatar = models.ImageField(
         upload_to=profile_avatar_upload_path,
@@ -806,7 +813,7 @@ class Badge(models.Model):
         EPIC = 'epic', 'Епична'
         SEASONAL = 'seasonal', 'Сезонна'
 
-    slug = models.SlugField(max_length=80, unique=True)
+    slug = models.SlugField(max_length=80, unique=True, verbose_name="Кратко име (за адреса)")
     title = models.CharField(max_length=100, verbose_name='Име')
     description = models.TextField(verbose_name='Описание')
     icon = models.CharField(
@@ -879,7 +886,7 @@ class UserBadge(models.Model):
         related_name='manually_awarded_badges',
         verbose_name='Дадена от',
     )
-    reason = models.CharField(max_length=255, blank=True, default='')
+    reason = models.CharField(max_length=255, blank=True, default='', verbose_name="Причина")
 
     class Meta:
         verbose_name = 'Получена значка'
@@ -919,8 +926,8 @@ class PointTransaction(models.Model):
         default=Source.ACTIVITY,
         verbose_name='Източник',
     )
-    reference_type = models.CharField(max_length=60, blank=True, default='')
-    reference_id = models.CharField(max_length=80, blank=True, default='')
+    reference_type = models.CharField(max_length=60, blank=True, default='', verbose_name="Вид на източника")
+    reference_id = models.CharField(max_length=80, blank=True, default='', verbose_name="Номер на източника")
     idempotency_key = models.CharField(
         max_length=190,
         unique=True,
@@ -944,7 +951,7 @@ class PointTransaction(models.Model):
         related_name='reversal',
         verbose_name='Корекция на',
     )
-    metadata = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True, verbose_name="Допълнителни данни")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Създадена на')
 
     class Meta:
@@ -1012,7 +1019,7 @@ class GamificationPointRule(models.Model):
 
 
 class Mission(models.Model):
-    slug = models.SlugField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=100, unique=True, verbose_name="Кратко име (за адреса)")
     title = models.CharField(max_length=120, verbose_name='Име')
     description = models.TextField(verbose_name='Описание')
     start_date = models.DateTimeField(verbose_name='Начало')
@@ -1083,15 +1090,17 @@ class MissionActivity(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name='mission_activities',
+        verbose_name="Потребител",
     )
     mission = models.ForeignKey(
         Mission,
         on_delete=models.CASCADE,
         related_name='activities',
+        verbose_name="Мисия",
     )
-    action = models.CharField(max_length=50, db_index=True)
-    reference_id = models.CharField(max_length=100)
-    created_at = models.DateTimeField(auto_now_add=True)
+    action = models.CharField(max_length=50, db_index=True, verbose_name="Действие")
+    reference_id = models.CharField(max_length=100, verbose_name="Номер на източника")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Кога")
 
     class Meta:
         verbose_name = 'Активност по мисия'
@@ -1118,7 +1127,7 @@ class DigitalReward(models.Model):
         USER_TITLE = 'user_title', 'Титла'
         SPECIAL_ICON = 'special_icon', 'Специална икона'
 
-    key = models.SlugField(max_length=100, unique=True)
+    key = models.SlugField(max_length=100, unique=True, verbose_name="Ключ")
     title = models.CharField(max_length=100, verbose_name='Име')
     kind = models.CharField(max_length=20, choices=Kind.choices, verbose_name='Вид')
     config = models.JSONField(default=dict, blank=True, verbose_name='Настройки')
@@ -1137,21 +1146,24 @@ class UserDigitalReward(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name='digital_rewards',
+        verbose_name="Потребител",
     )
     reward = models.ForeignKey(
         DigitalReward,
         on_delete=models.CASCADE,
         related_name='owners',
+        verbose_name="Награда",
     )
-    unlocked_at = models.DateTimeField(auto_now_add=True)
+    unlocked_at = models.DateTimeField(auto_now_add=True, verbose_name="Отключена на")
     source_badge = models.ForeignKey(
         Badge,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name='unlocked_rewards',
+        verbose_name="От значка",
     )
-    selected = models.BooleanField(default=False)
+    selected = models.BooleanField(default=False, verbose_name="Избрана")
 
     class Meta:
         verbose_name = 'Отключена дигитална награда'
@@ -1299,10 +1311,10 @@ def enforce_post_category_limits(sender, instance, action, reverse, model, pk_se
 
 class ConsentRecord(models.Model):
     # Данни за потребителя
-    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, help_text="Потребителят, дал съгласие (ако е логнат).")
-    ip_address = models.CharField(max_length=45, blank=True, null=True, help_text="IP адрес на потребителя.")
-    network_operator = models.CharField(max_length=255, blank=True, default='', help_text="Организацията/операторът за IP адреса според локалната MaxMind ASN база.")
-    network_asn = models.BigIntegerField(blank=True, null=True, help_text="Autonomous System Number (ASN) за IP адреса.")
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, help_text="Потребителят, дал съгласие (ако е логнат).", verbose_name="Потребител")
+    ip_address = models.CharField(max_length=45, blank=True, null=True, help_text="IP адрес на потребителя.", verbose_name="IP адрес")
+    network_operator = models.CharField(max_length=255, blank=True, default='', help_text="Организацията/операторът за IP адреса според локалната MaxMind ASN база.", verbose_name="Мрежов оператор")
+    network_asn = models.BigIntegerField(blank=True, null=True, help_text="Autonomous System Number (ASN) за IP адреса.", verbose_name="Мрежа (ASN)")
 
     # Резултат
     STATUS_CHOICES = [
@@ -1310,11 +1322,15 @@ class ConsentRecord(models.Model):
         ('ACCEPTED', 'Приел'),
         ('REJECTED', 'Отказал'),
     ]
-    consent_status = models.CharField(max_length=10, choices=STATUS_CHOICES, help_text="Статус на даденото съгласие.")
+    consent_status = models.CharField(max_length=10, choices=STATUS_CHOICES, help_text="Статус на даденото съгласие.", verbose_name="Съгласие")
 
     # Доказателство
-    timestamp = models.DateTimeField(auto_now_add=True, help_text="Дата и час на записа на съгласието. Формат: YYYY-MM-DD HH:MM:SS.")
-    policy_version = models.CharField(max_length=50, default='v1.0', help_text="Версия на политиката за бисквитки, за която е дадено съгласието.")
+    timestamp = models.DateTimeField(auto_now_add=True, help_text="Дата и час на записа на съгласието.", verbose_name="Кога")
+    policy_version = models.CharField(max_length=50, default='v1.0', help_text="Версия на политиката за бисквитки, за която е дадено съгласието.", verbose_name="Версия на политиката")
+
+    class Meta:
+        verbose_name = "Запис на съгласие за бисквитки"
+        verbose_name_plural = "Записи на съгласие за бисквитки"
 
     def __str__(self):
         return f"Consent: {self.consent_status} at {self.timestamp.strftime('%Y-%m-%d %H:%M')}"
@@ -1334,9 +1350,9 @@ class PollQuestion(models.Model):
     subtitle = models.CharField(max_length=255, blank=True, null=True, verbose_name="Подзаглавие", help_text="Подзаглавие на анкетата (по избор).")
     task_description = models.TextField(verbose_name="Описание на задачата", help_text="Текст на въпроса или описание на задачата.", blank=True, default='')
     image = models.ImageField(upload_to=poll_media_upload_path, blank=True, null=True, validators=[validate_image_upload_size], verbose_name="Изображение към въпроса", help_text="Изображение, което се показва с въпроса.")
-    start_date = models.DateTimeField(verbose_name="Начална дата", default=timezone.now, help_text="Дата и час, от които анкетата е активна. Формат: YYYY-MM-DD HH:MM:SS.")
-    end_date = models.DateTimeField(verbose_name="Крайна дата", default=default_poll_end_date, help_text="Дата и час, до които анкетата е активна. Формат: YYYY-MM-DD HH:MM:SS.")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създаден на", help_text="Дата и час на създаване на анкетата. Формат: YYYY-MM-DD HH:MM:SS.")
+    start_date = models.DateTimeField(verbose_name="Начална дата", default=timezone.now, help_text="Дата и час, от които анкетата е активна.")
+    end_date = models.DateTimeField(verbose_name="Крайна дата", default=default_poll_end_date, help_text="Дата и час, до които анкетата е активна.")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създаден на", help_text="Дата и час на създаване на анкетата.")
     activation_notified_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -1394,7 +1410,7 @@ class PollAnswer(models.Model):
     )
     question = models.ForeignKey(PollQuestion, on_delete=models.CASCADE, verbose_name="Въпрос", help_text="Въпросът, на който е отговорено.")
     selected_option = models.ForeignKey(PollOption, on_delete=models.RESTRICT, verbose_name="Избрана опция", help_text="Опцията, която потребителят е избрал.")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Отговорено на", help_text="Дата и час на отговаряне. Формат: YYYY-MM-DD HH:MM:SS.")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Отговорено на", help_text="Дата и час на отговаряне.")
 
     def __str__(self):
         username = self.user.username if self.user else "изтрит потребител"
@@ -1429,6 +1445,99 @@ class PollAnswer(models.Model):
         ]
 
 
+POLL_OPTION_KEYS = (('a', 'A'), ('b', 'B'), ('c', 'C'), ('d', 'D'))
+
+
+class PollDraft(models.Model):
+    """A weekly quiz proposed by the AI. It becomes a PollQuestion once approved."""
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Чака избор'
+        PUBLISHED = 'published', 'Избрана (насрочена анкета)'
+        NOT_CHOSEN = 'not_chosen', 'Не е избрана'
+        FAILED = 'failed', 'Неуспешен опит на ИИ'
+
+    class Verification(models.TextChoices):
+        CONFIRMED = 'confirmed', '✓ Потвърден от втора проверка'
+        DISPUTED = 'disputed', '⚠ Втората проверка избра друг отговор'
+        UNCHECKED = 'unchecked', '? Не е проверен'
+
+    week_start = models.DateField(
+        help_text="Анкетата се показва от този понеделник до неделя включително.",
+        verbose_name="Седмица (понеделник)",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="Статус",
+    )
+    title = models.CharField(max_length=255, blank=True, default='', verbose_name="Заглавие")
+    task_description = models.TextField(blank=True, default='', verbose_name="Въпрос")
+    option_a = models.CharField(max_length=255, blank=True, default='', verbose_name="Отговор A")
+    option_b = models.CharField(max_length=255, blank=True, default='', verbose_name="Отговор B")
+    option_c = models.CharField(max_length=255, blank=True, default='', verbose_name="Отговор C")
+    option_d = models.CharField(max_length=255, blank=True, default='', verbose_name="Отговор D")
+    correct_key = models.CharField(
+        max_length=1,
+        choices=POLL_OPTION_KEYS,
+        blank=True,
+        default='',
+        verbose_name="Верен отговор",
+    )
+    explanation = models.TextField(
+        blank=True,
+        default='',
+        verbose_name="Обяснение от ИИ",
+        help_text="Защо отговорът е верен. Вижда се само в админа.",
+    )
+    verification = models.CharField(
+        max_length=20,
+        choices=Verification.choices,
+        default=Verification.UNCHECKED,
+        verbose_name="Втора проверка",
+    )
+    verification_note = models.CharField(max_length=255, blank=True, default='', verbose_name="Бележка от проверката")
+    ai_model = models.CharField(max_length=120, blank=True, default='', verbose_name="ИИ модел")
+    poll = models.ForeignKey(
+        PollQuestion,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ai_drafts',
+        verbose_name="Създадена анкета",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадена на")
+
+    class Meta:
+        verbose_name = "ИИ чернова за анкета"
+        verbose_name_plural = "ИИ чернови за анкети"
+        ordering = ['-week_start', 'created_at']
+
+    def __str__(self):
+        week = self.week_start.strftime('%d.%m.%Y') if self.week_start else '—'
+        return f"{week}: {self.title or 'без заглавие'}"
+
+    def options(self):
+        """(key, text) pairs in a–d order."""
+        return [(key, getattr(self, f'option_{key}')) for key, _ in POLL_OPTION_KEYS]
+
+    def clean(self):
+        super().clean()
+        if self.status == self.Status.FAILED:
+            return
+        errors = {}
+        if not self.title.strip():
+            errors['title'] = 'Въведете заглавие.'
+        for key, text in self.options():
+            if not text.strip():
+                errors[f'option_{key}'] = 'Въведете текст на отговора.'
+        if not self.correct_key:
+            errors['correct_key'] = 'Изберете верния отговор.'
+        if errors:
+            raise ValidationError(errors)
+
+
 class ContactSubmission(models.Model):
     REASON_CHOICES = [
         ('general', 'Общо запитване'),
@@ -1450,7 +1559,7 @@ class ContactSubmission(models.Model):
         help_text="Причината, поради която потребителят се свързва."
     )
     message = models.TextField(verbose_name="Съобщение", help_text="Съдържание на съобщението.")
-    submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Изпратено на", help_text="Дата и час на изпращане. Формат: YYYY-MM-DD HH:MM:SS.")
+    submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Изпратено на", help_text="Дата и час на изпращане.")
 
     def __str__(self):
         return f"Съобщение от {self.name} ({self.email}) относно '{self.get_reason_display()}'"
@@ -1481,8 +1590,8 @@ class Notification(models.Model):
     )
     text = models.TextField(verbose_name="Текст на известието", help_text="Съдържанието на известието, което ще се показва на потребителите.")
     enabled = models.BooleanField(default=True, verbose_name="Активирано", help_text="Отбележете, за да активирате и покажете известието на сайта.")
-    category = models.CharField(max_length=30, blank=True, default='general')
-    action_url = models.CharField(max_length=255, blank=True, default='')
+    category = models.CharField(max_length=30, blank=True, default='general', verbose_name="Категория")
+    action_url = models.CharField(max_length=255, blank=True, default='', verbose_name="Връзка при натискане")
     audience = models.CharField(
         max_length=20,
         choices=Audience.choices,
@@ -1551,7 +1660,7 @@ class Notification(models.Model):
             'в архива. Оставете празно за автоматичен срок според категорията.'
         ),
     )
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата и час на създаване на известието. Формат: YYYY-MM-DD HH:MM:SS.")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата и час на създаване на известието.")
 
     def __str__(self):
         return self.text
@@ -2238,7 +2347,7 @@ class PushSubscription(models.Model):
     )
     # Browser endpoints can be much longer than MySQL's safe indexed varchar
     # length under utf8mb4. Store the full value unindexed and index its digest.
-    endpoint = models.TextField(verbose_name='Push endpoint')
+    endpoint = models.TextField(verbose_name='Адрес за известия (endpoint)')
     endpoint_hash = models.CharField(
         max_length=64,
         unique=True,
@@ -2359,8 +2468,8 @@ class GamificationNotification(Notification):
 
 class TermsOfService(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Автор", help_text="Авторът, който е създал/редактирал условията.")
-    content = models.TextField(null=False, help_text="Пълният текст на Условията за ползване. Поддържа се Markdown.")
-    date = models.DateTimeField(auto_now_add=True, help_text="Дата на последната промяна. Формат: YYYY-MM-DD HH:MM:SS.")
+    content = models.TextField(null=False, help_text="Пълният текст на Условията за ползване. Поддържа се Markdown.", verbose_name="Текст")
+    date = models.DateTimeField(auto_now_add=True, help_text="Дата на последната промяна.", verbose_name="Дата")
 
     def __str__(self):
         username = self.user.username if self.user else "изтрит потребител"
@@ -2372,8 +2481,8 @@ class TermsOfService(models.Model):
 
 class PrivacyPolicy(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Автор", help_text="Авторът, който е създал/редактирал политиката.")
-    content = models.TextField(null=False, help_text="Пълният текст на Политиката за поверителност. Поддържа се Markdown.")
-    date = models.DateTimeField(auto_now_add=True, help_text="Дата на последната промяна. Формат: YYYY-MM-DD HH:MM:SS.")
+    content = models.TextField(null=False, help_text="Пълният текст на Политиката за поверителност. Поддържа се Markdown.", verbose_name="Текст")
+    date = models.DateTimeField(auto_now_add=True, help_text="Дата на последната промяна.", verbose_name="Дата")
 
     def __str__(self):
         username = self.user.username if self.user else "изтрит потребител"
@@ -2384,13 +2493,15 @@ class PrivacyPolicy(models.Model):
         verbose_name_plural = "Политики за поверителност"
 
 class PostImage(models.Model):
-    post = models.ForeignKey(Posts, related_name='images', on_delete=models.CASCADE, help_text="Публикацията, към която е свързана тази снимка.")
-    image = models.ImageField(upload_to=post_gallery_upload_path, validators=[validate_image_upload_size], help_text="Файлът с изображението.")
+    post = models.ForeignKey(Posts, related_name='images', on_delete=models.CASCADE, help_text="Публикацията, към която е свързана тази снимка.", verbose_name="Публикация")
+    image = models.ImageField(upload_to=post_gallery_upload_path, validators=[validate_image_upload_size], help_text="Файлът с изображението.", verbose_name="Изображение")
     display_image = models.ImageField(
         upload_to=post_gallery_display_upload_path, blank=True,
+        verbose_name="Изображение за показване",
     )
     thumbnail_image = models.ImageField(
         upload_to=post_gallery_thumbnail_upload_path, blank=True,
+        verbose_name="Миниатюра",
     )
     title = models.CharField(
         max_length=150,
@@ -2516,7 +2627,7 @@ class PostImage(models.Model):
                 raise
 
 class PostDocument(models.Model):
-    post = models.ForeignKey(Posts, related_name='documents', on_delete=models.CASCADE, help_text="Публикацията, към която е свързан този документ.")
+    post = models.ForeignKey(Posts, related_name='documents', on_delete=models.CASCADE, help_text="Публикацията, към която е свързан този документ.", verbose_name="Публикация")
     file = models.FileField(
         upload_to=post_document_upload_path,
         validators=[
@@ -2524,8 +2635,9 @@ class PostDocument(models.Model):
             validate_document_upload_size,
         ],
         help_text="Файлът с документа (PDF, DOCX, DOC, XLSX, XLS, PPTX, PPT, ZIP, RAR, 7Z, CSV, TXT, JSON, RTF).",
+        verbose_name="Файл",
     )
-    uploaded_at = models.DateTimeField(auto_now_add=True, help_text="Дата и час на качване на документа. Формат: YYYY-MM-DD HH:MM:SS.")
+    uploaded_at = models.DateTimeField(auto_now_add=True, help_text="Дата и час на качване на документа.", verbose_name="Качен на")
 
     def __str__(self):
         return self.file.name
@@ -2537,8 +2649,8 @@ class PostDocument(models.Model):
 
 class Event(models.Model):
     title = models.CharField(max_length=255, verbose_name="Заглавие", help_text="Име на събитието.")
-    start_datetime = models.DateTimeField(verbose_name="Начална дата и час", help_text="Кога започва събитието. Формат: YYYY-MM-DD HH:MM:SS.")
-    end_datetime = models.DateTimeField(blank=True, null=True, verbose_name="Крайна дата и час (по избор)", help_text="Кога приключва събитието (ако е приложимо). Формат: YYYY-MM-DD HH:MM:SS.")
+    start_datetime = models.DateTimeField(verbose_name="Начална дата и час", help_text="Кога започва събитието.")
+    end_datetime = models.DateTimeField(blank=True, null=True, verbose_name="Крайна дата и час (по избор)", help_text="Кога приключва събитието (ако е приложимо).")
     location = models.CharField(max_length=255, verbose_name="Местоположение", help_text="Къде ще се проведе събитието.")
     category = models.CharField(
         max_length=100,
@@ -2556,7 +2668,7 @@ class Event(models.Model):
     description = models.TextField(verbose_name="Описание", help_text="Подробно описание на събитието. Поддържа се Markdown.")
     attendees_text = models.CharField(max_length=255, verbose_name="Участници (текст)", help_text="Кой може да присъства (напр. 'Всички ученици', '8-12 клас').")
     published = models.BooleanField(default=True, verbose_name="Публикувано", help_text="Отбележете, за да се показва събитието на сайта.")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата на създаване на записа за събитието. Формат: YYYY-MM-DD HH:MM:SS.")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Създадено на", help_text="Дата на създаване на записа за събитието.")
     publication_notified_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -2628,7 +2740,7 @@ class ScheduleEntry(models.Model):
 class ScheduleImport(models.Model):
     """A restorable CSV snapshot of the school schedule."""
 
-    source_file = models.FileField(upload_to='schedule_imports/%Y/%m/')
+    source_file = models.FileField(upload_to='schedule_imports/%Y/%m/', verbose_name="Качен файл")
     imported_at = models.DateTimeField(auto_now_add=True, verbose_name="Импортирана на")
     imported_by = models.ForeignKey(
         User,
@@ -2672,7 +2784,7 @@ class PageView(models.Model):
         related_name='page_views',
         verbose_name='Потребител',
     )
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Видяна на")
 
     class Meta:
         verbose_name = 'Преглед на страница'
@@ -2690,15 +2802,16 @@ class PageView(models.Model):
 
 
 class Changelog(models.Model):
-    content = models.TextField(help_text="Съдържание на промените в Markdown формат.")
-    created_at = models.DateTimeField(auto_now_add=True, help_text="Дата на създаване.")
-    updated_at = models.DateTimeField(auto_now=True, help_text="Дата на последна редакция.")
-    is_active = models.BooleanField(default=True, help_text="Отбележете, за да се вземе предвид този запис.")
+    content = models.TextField(help_text="Съдържание на промените в Markdown формат.", verbose_name="Текст")
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Дата на създаване.", verbose_name="Създаден на")
+    updated_at = models.DateTimeField(auto_now=True, help_text="Дата на последна редакция.", verbose_name="Променен на")
+    is_active = models.BooleanField(default=True, help_text="Отбележете, за да се вземе предвид този запис.", verbose_name="Активен")
     notification_notified_at = models.DateTimeField(
         null=True,
         blank=True,
         editable=False,
         help_text='Кога е изпратено автоматичното известие за този запис.',
+        verbose_name="Известието е изпратено на",
     )
 
     class Meta:
@@ -2762,7 +2875,63 @@ class SiteSettings(models.Model):
         choices=AI_MODEL_CHOICES,
         default=DEFAULT_PUBLIC_AI_MODEL,
         verbose_name="ИИ модел за публично съдържание",
-        help_text="Използва се за резюметата на статиите. Числата са неврони за 1 милион токена (вход / изход).",
+        help_text="Използва се за резюметата на статиите и за черновите на анкетите. Числата са неврони за 1 милион токена (вход / изход).",
+    )
+    enable_ai_poll_drafts = models.BooleanField(
+        default=True,
+        verbose_name="ИИ: чернови за седмичната анкета",
+        help_text=(
+            "Всеки четвъртък ИИ подготвя 3 викторини за следващата седмица. "
+            "Изберете една от „ИИ чернови за анкети“. Ако за седмицата вече има "
+            "анкета, черновите не се правят."
+        ),
+    )
+    ai_poll_topic = models.CharField(
+        max_length=255,
+        default='ИТ и технологии',
+        verbose_name="ИИ анкети: тема",
+        help_text="За какво да са въпросите, напр. „ИТ и технологии“ или „История на компютрите“.",
+    )
+    ai_tasks_last_run_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="ИИ задачи: последно пускане",
+    )
+    notifications_last_run_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        editable=False,
+        verbose_name="Известия: последно пускане",
+    )
+    team_chat_notify_polls = models.BooleanField(
+        default=True,
+        verbose_name="Екипен чат: седмичната анкета",
+        help_text="Съобщение, когато ИИ черновите са готови, когато анкета е пусната автоматично или седмицата остане без анкета.",
+    )
+    team_chat_notify_pending_digest = models.BooleanField(
+        default=True,
+        verbose_name="Екипен чат: дневно обобщение на чакащото",
+        help_text="Веднъж дневно след 8:00: колко статии, песни, мемета и др. чакат преглед. Нищо, ако всичко е прегледано.",
+    )
+    team_chat_notify_ai_flags = models.BooleanField(
+        default=True,
+        verbose_name="Екипен чат: маркирано от ИИ",
+        help_text="Веднага, когато ИИ маркира коментар, песен или меме като възможно неподходящо.",
+    )
+    team_chat_notify_contact = models.BooleanField(
+        default=True,
+        verbose_name="Екипен чат: нов контактен формуляр",
+        help_text="Веднага при ново съобщение от формата за контакт. В чата се вижда само причината; името се вижда само от хората с достъп до формулярите.",
+    )
+    ai_poll_auto_publish = models.BooleanField(
+        default=True,
+        verbose_name="ИИ анкети: автоматично публикуване",
+        help_text=(
+            "Ако до понеделник никой не е избрал чернова, сайтът сам пуска "
+            "първата, чийто верен отговор е потвърден от втората проверка. "
+            "Ако няма потвърдена, тази седмица остава без анкета."
+        ),
     )
     ai_model_student_text = models.CharField(
         max_length=120,
@@ -2782,6 +2951,10 @@ class SiteSettings(models.Model):
             "за да отговаря само по правила — тогава не се изпращат заявки към Cloudflare."
         ),
     )
+
+    def __str__(self):
+        # Shown as the page title and in the breadcrumbs instead of "SiteSettings object (1)".
+        return "Настройки на сайта"
 
     class Meta:
         verbose_name = "Настройки на сайта"
@@ -2858,7 +3031,7 @@ class HeaderLogo(models.Model):
         verbose_name='Статично лого (по избор)',
         help_text='За посетители с включено „намалено движение“. Ако е празно при анимирано лого, се използва първият кадър автоматично.',
     )
-    image_still = models.ImageField(upload_to='header-logos/still/', blank=True, editable=False)
+    image_still = models.ImageField(upload_to='header-logos/still/', blank=True, editable=False, verbose_name="Неподвижно изображение")
     greeting = models.CharField(max_length=80, blank=True, verbose_name='Поздрав', help_text='Показва се до логото, напр. „Честит Ден на народните будители!“.')
     alt_text = models.CharField(max_length=120, blank=True, verbose_name='Алтернативен текст', help_text='За екранни четци. Ако е празно, се използва поздравът.')
     effect = models.CharField(max_length=10, choices=Effect.choices, default=Effect.NONE, verbose_name='Ефект в хедъра', help_text='Лека анимация; не се показва на хора с включено „намалено движение“.')
@@ -3007,7 +3180,7 @@ class BlogLoginSession(models.Model):
     network_asn = models.BigIntegerField(
         null=True,
         blank=True,
-        verbose_name='ASN',
+        verbose_name="Мрежа (ASN)",
     )
     device_label = models.CharField(
         max_length=120,
@@ -3043,6 +3216,7 @@ class BlogLoginSession(models.Model):
         blank=True,
         unique=True,
         editable=False,
+        verbose_name="Идентификатор на токена",
     )
 
     class Meta:
